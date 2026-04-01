@@ -3,6 +3,7 @@ import Link from "next/link";
 import { RoleDashboardIntro } from "@/components/dashboard/RoleDashboardIntro";
 import { KpiTile } from "@/components/dashboard/shared/KpiTile";
 import { PanelCard } from "@/components/dashboard/shared/PanelCard";
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { ROLES } from "@/lib/roles";
 
 const roleDef = ROLES.find((r) => r.slug === "fep")!;
@@ -74,6 +75,7 @@ export function FepDashboard() {
                 <th className="px-6 py-3.5">Grade</th>
                 <th className="px-6 py-3.5 text-right">Carats</th>
                 <th className="px-6 py-3.5">Status</th>
+                <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -87,6 +89,9 @@ export function FepDashboard() {
                   </td>
                   <td className="px-6 py-3.5 text-right font-medium text-slate-900">{row.ct}</td>
                   <td className="px-6 py-3.5 text-slate-600">{row.status}</td>
+                  <td className="px-6 py-3.5 text-right">
+                    <RowActionsMenu items={["Open parcel", "Mark hold", "Request transfer"]} />
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -97,18 +97,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-[var(--gs-page-bg)] text-[var(--gs-text)]">
       <aside className="fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-[var(--gs-border)] bg-[var(--gs-sidebar)] shadow-[4px_0_32px_rgba(15,23,42,0.04)]">
-        <div className="border-b border-orange-100/60 bg-gradient-to-br from-orange-50/90 via-white to-white px-5 py-6">
+        <div className="border-b border-orange-100/70 bg-gradient-to-br from-orange-50/95 via-white to-white px-5 py-7">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[var(--gs-accent)] shadow-sm ring-1 ring-orange-100/80">
-              <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-[var(--gs-accent)] shadow-sm ring-1 ring-orange-100/80">
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-orange-50 via-white to-white" />
+              <svg className="relative h-7 w-7 drop-shadow-[0_8px_22px_rgba(241,90,36,0.22)]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                 <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6L12 2z" />
               </svg>
             </div>
             <div className="min-w-0">
-              <Link href="/dashboard" className="block truncate text-base font-bold tracking-tight text-[var(--gs-navy)] hover:text-[var(--gs-accent)]">
-                GemStack
-              </Link>
-              <p className="truncate text-xs text-[var(--gs-muted)]">Gemstone ERP</p>
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/dashboard"
+                  className="block truncate text-2xl font-black tracking-tight text-[var(--gs-navy)] hover:text-[var(--gs-accent)]"
+                >
+                  <span className="bg-gradient-to-r from-[var(--gs-navy)] via-slate-900 to-[var(--gs-accent)] bg-clip-text text-transparent">
+                    GemStack
+                  </span>
+                </Link>
+                <span className="hidden rounded-full bg-orange-100/80 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-orange-800 ring-1 ring-orange-200/70 sm:inline">
+                  Beta
+                </span>
+              </div>
+              <p className="truncate text-sm font-medium text-[var(--gs-muted)]">Gemstone ERP • Inventory · Sales · Accounting</p>
             </div>
           </div>
         </div>
@@ -157,14 +168,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col pl-72">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-[var(--gs-border)] bg-white/95 px-6 backdrop-blur-md">
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-bold text-[var(--gs-navy)]">{title}</h1>
-            {sub ? <p className="truncate text-xs text-[var(--gs-muted)]">{sub}</p> : null}
+        <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl">
+          <div className="flex h-20 items-center justify-between gap-4 px-6">
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-black tracking-tight text-slate-900">{title}</h1>
+              {sub ? <p className="mt-0.5 truncate text-sm font-medium text-slate-500">{sub}</p> : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <TopBarActionIcons />
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <TopBarActionIcons />
-          </div>
+          <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
         </header>
 
         <main className="flex w-full flex-1 justify-center px-5 py-7 md:px-10 md:py-9">

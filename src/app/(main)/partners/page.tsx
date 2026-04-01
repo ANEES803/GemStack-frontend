@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { formatMoney } from "@/lib/format";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
@@ -98,6 +99,7 @@ export default function PartnersPage() {
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3 text-right">Profit ratio</th>
                   <th className="px-4 py-3 text-right">Capital balance</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -106,6 +108,9 @@ export default function PartnersPage() {
                     <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
                     <td className="px-4 py-3 text-right text-slate-700">{p.profitRatioPct}%</td>
                     <td className="px-4 py-3 text-right font-semibold text-[var(--gs-navy)]">{formatMoney(p.capitalBalance, "PKR")}</td>
+                    <td className="px-4 py-3 text-right">
+                      <RowActionsMenu items={["View ledger", "Adjust ratio", "Freeze partner"]} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -152,6 +157,7 @@ export default function PartnersPage() {
                 <th className="px-5 py-3">Date</th>
                 <th className="px-5 py-3">Partner</th>
                 <th className="px-5 py-3 text-right">Amount</th>
+                <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -160,6 +166,9 @@ export default function PartnersPage() {
                   <td className="px-5 py-3 text-slate-700">{w.dateIso}</td>
                   <td className="px-5 py-3 font-medium text-slate-900">{w.partnerName}</td>
                   <td className="px-5 py-3 text-right font-semibold text-slate-900">{formatMoney(w.amount, "PKR")}</td>
+                  <td className="px-5 py-3 text-right">
+                    <RowActionsMenu items={["View voucher", "Reverse", "Download"]} />
+                  </td>
                 </tr>
               ))}
             </tbody>

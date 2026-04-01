@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { formatMoney } from "@/lib/format";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
@@ -430,12 +431,17 @@ export function AccountingWorkspace() {
                       </td>
                       <td className="px-5 py-3 text-slate-600">{row.type}</td>
                       <td className="px-5 py-3 text-right">
-                        <button type="button" onClick={() => openCoaEdit(row)} className="mr-2 text-sm font-semibold text-[var(--gs-accent)] hover:underline">
-                          Edit
-                        </button>
-                        <button type="button" onClick={() => deleteCoa(row)} className="text-sm font-semibold text-red-600 hover:underline">
-                          Delete
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <RowActionsMenu
+                            actions={[
+                              { label: "Edit account", onSelect: () => openCoaEdit(row), tone: "accent" },
+                              { label: "Delete account", onSelect: () => deleteCoa(row), tone: "danger" },
+                              { label: "View ledger" },
+                              { label: "Duplicate" },
+                              { label: "Archive" },
+                            ]}
+                          />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -483,21 +489,28 @@ export function AccountingWorkspace() {
                     <td className="px-5 py-3 font-mono text-xs text-slate-700">{p.controlAccount}</td>
                     <td className="px-5 py-3 text-slate-600">{p.email || "—"}</td>
                     <td className="px-5 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPartyForm({
-                            name: p.name,
-                            kind: p.kind,
-                            controlAccount: p.controlAccount,
-                            email: p.email,
-                          });
-                          setPartyModal({ edit: p });
-                        }}
-                        className="text-sm font-semibold text-[var(--gs-accent)] hover:underline"
-                      >
-                        Edit
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <RowActionsMenu
+                          actions={[
+                            {
+                              label: "Edit party",
+                              onSelect: () => {
+                                setPartyForm({
+                                  name: p.name,
+                                  kind: p.kind,
+                                  controlAccount: p.controlAccount,
+                                  email: p.email,
+                                });
+                                setPartyModal({ edit: p });
+                              },
+                              tone: "accent",
+                            },
+                            { label: "Open ledger" },
+                            { label: "Email party" },
+                            { label: "Archive" },
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -546,22 +559,29 @@ export function AccountingWorkspace() {
                     <td className="px-5 py-3 capitalize text-slate-600">{p.tracking}</td>
                     <td className="px-5 py-3 text-slate-600">{p.costing}</td>
                     <td className="px-5 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProductForm({
-                            sku: p.sku,
-                            name: p.name,
-                            kind: p.kind,
-                            tracking: p.tracking,
-                            costing: p.costing,
-                          });
-                          setProductModal({ edit: p });
-                        }}
-                        className="text-sm font-semibold text-[var(--gs-accent)] hover:underline"
-                      >
-                        Edit
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <RowActionsMenu
+                          actions={[
+                            {
+                              label: "Edit product",
+                              onSelect: () => {
+                                setProductForm({
+                                  sku: p.sku,
+                                  name: p.name,
+                                  kind: p.kind,
+                                  tracking: p.tracking,
+                                  costing: p.costing,
+                                });
+                                setProductModal({ edit: p });
+                              },
+                              tone: "accent",
+                            },
+                            { label: "View product" },
+                            { label: "Clone" },
+                            { label: "Deactivate" },
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -661,7 +681,7 @@ export function AccountingWorkspace() {
                   <th className="py-2 pr-4">Qty</th>
                   <th className="py-2 pr-4">Cost</th>
                   <th className="py-2 pr-4">Tax</th>
-                  <th className="py-2 pr-4" />
+                  <th className="py-2 pr-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -707,13 +727,20 @@ export function AccountingWorkspace() {
                       />
                     </td>
                     <td className="py-3 pr-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setPurchaseLines((prev) => prev.filter((x) => x.id !== l.id))}
-                        className="text-xs font-semibold text-red-600 hover:underline"
-                      >
-                        Remove
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <RowActionsMenu
+                          actions={[
+                            {
+                              label: "Remove line",
+                              onSelect: () => setPurchaseLines((prev) => prev.filter((x) => x.id !== l.id)),
+                              tone: "danger",
+                            },
+                            { label: "Duplicate line" },
+                            { label: "Zero tax" },
+                            { label: "Notes" },
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -789,7 +816,7 @@ export function AccountingWorkspace() {
                   <th className="py-2 pr-4">Qty / weight</th>
                   <th className="py-2 pr-4">Rate (PKR)</th>
                   <th className="py-2 pr-4 text-right">Line</th>
-                  <th className="py-2 w-10" />
+                  <th className="py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -841,13 +868,21 @@ export function AccountingWorkspace() {
                       </td>
                       <td className="py-3 pr-4 text-right font-medium text-slate-900">{formatMoney(lineAmt, "PKR")}</td>
                       <td className="py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setSalesLines((prev) => (prev.length <= 1 ? prev : prev.filter((x) => x.id !== line.id)))}
-                          className="text-xs text-red-600 hover:underline"
-                        >
-                          ×
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <RowActionsMenu
+                            actions={[
+                              {
+                                label: "Remove line",
+                                onSelect: () =>
+                                  setSalesLines((prev) => (prev.length <= 1 ? prev : prev.filter((x) => x.id !== line.id))),
+                                tone: "danger",
+                              },
+                              { label: "Duplicate line" },
+                              { label: "Apply discount" },
+                              { label: "Notes" },
+                            ]}
+                          />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -939,6 +974,7 @@ export function AccountingWorkspace() {
                   <th className="px-4 py-3">Invoice</th>
                   <th className="px-4 py-3 text-right">Open balance</th>
                   <th className="px-4 py-3 text-right">Apply</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -947,6 +983,9 @@ export function AccountingWorkspace() {
                     <td className="px-4 py-3 font-mono text-slate-800">{a.inv}</td>
                     <td className="px-4 py-3 text-right text-slate-600">{formatMoney(a.open, "PKR")}</td>
                     <td className="px-4 py-3 text-right font-semibold text-[var(--gs-navy)]">{formatMoney(a.apply, "PKR")}</td>
+                    <td className="px-4 py-3 text-right">
+                      <RowActionsMenu items={["Open invoice", "Adjust apply", "Unlink"]} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -992,7 +1031,7 @@ export function AccountingWorkspace() {
                   <th className="py-2 pr-4">Account</th>
                   <th className="py-2 pr-4 text-right">Debit</th>
                   <th className="py-2 pr-4 text-right">Credit</th>
-                  <th className="py-2 w-10" />
+                  <th className="py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1023,9 +1062,16 @@ export function AccountingWorkspace() {
                       />
                     </td>
                     <td className="py-2 text-right">
-                      <button type="button" onClick={() => removeJeLine(l.id)} className="text-xs text-red-600 hover:underline">
-                        ×
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <RowActionsMenu
+                          actions={[
+                            { label: "Remove line", onSelect: () => removeJeLine(l.id), tone: "danger" },
+                            { label: "Duplicate line" },
+                            { label: "Swap Dr/Cr" },
+                            { label: "Notes" },
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}

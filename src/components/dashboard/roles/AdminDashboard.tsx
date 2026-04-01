@@ -3,6 +3,7 @@ import Link from "next/link";
 import { RoleDashboardIntro } from "@/components/dashboard/RoleDashboardIntro";
 import { KpiTile } from "@/components/dashboard/shared/KpiTile";
 import { PanelCard } from "@/components/dashboard/shared/PanelCard";
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { ROLES } from "@/lib/roles";
 
 const roleDef = ROLES.find((r) => r.slug === "admin")!;
@@ -114,6 +115,7 @@ export function AdminDashboard() {
                 <th className="px-6 py-3.5">Action</th>
                 <th className="px-6 py-3.5">Target</th>
                 <th className="px-6 py-3.5 text-right">When</th>
+                <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -123,6 +125,9 @@ export function AdminDashboard() {
                   <td className="px-6 py-3.5 text-slate-700">{a.action}</td>
                   <td className="px-6 py-3.5 text-slate-600">{a.target}</td>
                   <td className="px-6 py-3.5 text-right text-xs text-slate-500">{a.when}</td>
+                  <td className="px-6 py-3.5 text-right">
+                    <RowActionsMenu items={["Inspect", "Export row", "Escalate"]} />
+                  </td>
                 </tr>
               ))}
             </tbody>

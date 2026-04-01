@@ -3,6 +3,7 @@ import Link from "next/link";
 import { RoleDashboardIntro } from "@/components/dashboard/RoleDashboardIntro";
 import { KpiTile } from "@/components/dashboard/shared/KpiTile";
 import { PanelCard } from "@/components/dashboard/shared/PanelCard";
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { ROLES } from "@/lib/roles";
 
 const roleDef = ROLES.find((r) => r.slug === "stock-manager")!;
@@ -90,6 +91,7 @@ export function StockManagerDashboard() {
                 <th className="px-6 py-3.5">From</th>
                 <th className="px-6 py-3.5">To</th>
                 <th className="px-6 py-3.5 text-right">Carats</th>
+                <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -100,6 +102,9 @@ export function StockManagerDashboard() {
                   <td className="px-6 py-3.5 text-slate-700">{row.from}</td>
                   <td className="px-6 py-3.5 text-slate-700">{row.to}</td>
                   <td className="px-6 py-3.5 text-right font-medium text-slate-900">{row.ct}</td>
+                  <td className="px-6 py-3.5 text-right">
+                    <RowActionsMenu items={["View transfer", "Reassign", "Flag"]} />
+                  </td>
                 </tr>
               ))}
             </tbody>

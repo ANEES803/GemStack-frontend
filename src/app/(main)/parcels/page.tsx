@@ -1,4 +1,5 @@
 import { ListPageLayout, ListToolbar } from "@/components/ui/ListPageLayout";
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 
 const rows = [
   { code: "P-228", lot: "LO-09", grade: "A", carats: "42.5", fep: "A. Khan", status: "With FEP" as const },
@@ -30,6 +31,7 @@ export default function ParcelsPage() {
               <th className="px-6 py-3.5 text-right">Carats</th>
               <th className="px-6 py-3.5">FEP</th>
               <th className="px-6 py-3.5">Status</th>
+              <th className="px-6 py-3.5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -48,6 +50,9 @@ export default function ParcelsPage() {
                   <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusStyle(row.status)}`}>
                     {row.status}
                   </span>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <RowActionsMenu />
                 </td>
               </tr>
             ))}

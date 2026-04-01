@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ListPageLayout, ListToolbar } from "@/components/ui/ListPageLayout";
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 
 const rows = [
   { code: "LO-09", supplier: "Sapphire Co.", carats: "312.0", cost: "$48,200", date: "Mar 12, 2026" },
@@ -32,6 +33,7 @@ export default function LotsPage() {
               <th className="px-6 py-3.5 text-right">Carats</th>
               <th className="px-6 py-3.5 text-right">Total cost</th>
               <th className="px-6 py-3.5">Received</th>
+              <th className="px-6 py-3.5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -42,6 +44,9 @@ export default function LotsPage() {
                 <td className="px-6 py-4 text-right font-medium text-slate-900">{row.carats}</td>
                 <td className="px-6 py-4 text-right font-semibold text-slate-900">{row.cost}</td>
                 <td className="px-6 py-4 text-slate-600">{row.date}</td>
+                <td className="px-6 py-4 text-right">
+                  <RowActionsMenu />
+                </td>
               </tr>
             ))}
           </tbody>

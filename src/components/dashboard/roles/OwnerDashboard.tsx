@@ -4,6 +4,7 @@ import { RoleDashboardIntro } from "@/components/dashboard/RoleDashboardIntro";
 import { KpiTile } from "@/components/dashboard/shared/KpiTile";
 import { PanelCard } from "@/components/dashboard/shared/PanelCard";
 import { SalesAreaChart } from "@/components/dashboard/shared/SalesAreaChart";
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { ROLES } from "@/lib/roles";
 
 const ownerRole = ROLES.find((r) => r.slug === "owner")!;
@@ -184,6 +185,7 @@ export function OwnerDashboard() {
                 <th className="px-6 py-3.5">FEP</th>
                 <th className="px-6 py-3.5 text-right">Amount</th>
                 <th className="px-6 py-3.5">Status</th>
+                <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -194,6 +196,9 @@ export function OwnerDashboard() {
                   <td className="px-6 py-4 text-slate-600">{row.fep}</td>
                   <td className="px-6 py-4 text-right font-semibold text-slate-900">{row.amount}</td>
                   <td className="px-6 py-4">{statusPill(row.status)}</td>
+                  <td className="px-6 py-4 text-right">
+                    <RowActionsMenu items={["Open invoice", "Send reminder", "Download PDF"]} />
+                  </td>
                 </tr>
               ))}
             </tbody>

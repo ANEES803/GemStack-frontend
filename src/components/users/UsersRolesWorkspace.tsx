@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { ROLES, type RoleDefinition, type RoleSlug, roleHref } from "@/lib/roles";
 
 type UserStatus = "active" | "invited" | "disabled";
@@ -311,16 +312,17 @@ export function UsersRolesWorkspace() {
                   <td className="px-5 py-3 text-slate-600">{u.otpVerified ? "Verified" : "Pending"}</td>
                   <td className="px-5 py-3 text-slate-500">{u.lastLogin}</td>
                   <td className="px-5 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(u)}
-                      className="mr-3 text-sm font-semibold text-[var(--gs-accent)] hover:underline"
-                    >
-                      Edit
-                    </button>
-                    <button type="button" onClick={() => toggleDisable(u)} className="text-sm font-semibold text-slate-600 hover:underline">
-                      {u.status === "disabled" ? "Enable" : "Disable"}
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <RowActionsMenu
+                        actions={[
+                          { label: "Edit user", onSelect: () => openEdit(u), tone: "accent" },
+                          { label: u.status === "disabled" ? "Enable user" : "Disable user", onSelect: () => toggleDisable(u), tone: "default" },
+                          { label: "View profile" },
+                          { label: "Reset OTP" },
+                          { label: "Force logout" },
+                        ]}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { ListPageLayout, ListToolbar } from "@/components/ui/ListPageLayout";
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { type DemoInvoiceRow, loadAddedInvoices } from "@/lib/demoInvoices";
 
 const DEFAULT_ROWS: DemoInvoiceRow[] = [
@@ -68,6 +69,7 @@ export default function SalesPage() {
               <th className="px-6 py-3.5">Payment</th>
               <th className="px-6 py-3.5 text-right">Amount</th>
               <th className="px-6 py-3.5">Status</th>
+              <th className="px-6 py-3.5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -86,6 +88,9 @@ export default function SalesPage() {
                 <td className="px-6 py-4 text-slate-600">{row.method}</td>
                 <td className="px-6 py-4 text-right font-semibold text-slate-900">{row.amount}</td>
                 <td className="px-6 py-4">{pill(row.status)}</td>
+                <td className="px-6 py-4 text-right">
+                  <RowActionsMenu />
+                </td>
               </tr>
             ))}
           </tbody>

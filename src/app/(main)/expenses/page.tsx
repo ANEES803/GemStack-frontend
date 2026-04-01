@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { formatMoney } from "@/lib/format";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
@@ -112,6 +113,7 @@ export default function ExpensesPage() {
                 <th className="px-5 py-3">Description</th>
                 <th className="px-5 py-3">Method</th>
                 <th className="px-5 py-3 text-right">Amount</th>
+                <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -122,6 +124,9 @@ export default function ExpensesPage() {
                   <td className="px-5 py-3 text-slate-600">{r.description}</td>
                   <td className="px-5 py-3 text-slate-600">{r.method}</td>
                   <td className="px-5 py-3 text-right font-semibold text-slate-900">{formatMoney(r.amount, "PKR")}</td>
+                  <td className="px-5 py-3 text-right">
+                    <RowActionsMenu />
+                  </td>
                 </tr>
               ))}
             </tbody>

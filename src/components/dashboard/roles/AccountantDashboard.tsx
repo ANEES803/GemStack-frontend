@@ -3,6 +3,7 @@ import Link from "next/link";
 import { RoleDashboardIntro } from "@/components/dashboard/RoleDashboardIntro";
 import { KpiTile } from "@/components/dashboard/shared/KpiTile";
 import { PanelCard } from "@/components/dashboard/shared/PanelCard";
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { ROLES } from "@/lib/roles";
 
 const roleDef = ROLES.find((r) => r.slug === "accountant")!;
@@ -96,6 +97,7 @@ export function AccountantDashboard() {
                 <th className="px-6 py-3.5">Debit</th>
                 <th className="px-6 py-3.5">Credit</th>
                 <th className="px-6 py-3.5 text-right">Amount</th>
+                <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -106,6 +108,9 @@ export function AccountantDashboard() {
                   <td className="px-6 py-3.5 text-slate-600">{row.debit}</td>
                   <td className="px-6 py-3.5 text-slate-600">{row.credit}</td>
                   <td className="px-6 py-3.5 text-right font-semibold text-slate-900">{row.amt}</td>
+                  <td className="px-6 py-3.5 text-right">
+                    <RowActionsMenu items={["Open entry", "Reverse", "Export"]} />
+                  </td>
                 </tr>
               ))}
             </tbody>

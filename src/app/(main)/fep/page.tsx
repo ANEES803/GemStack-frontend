@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { formatMoney } from "@/lib/format";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
@@ -82,7 +83,7 @@ export default function FepPage() {
                 <th className="px-5 py-3 text-right">Earned</th>
                 <th className="px-5 py-3 text-right">Paid</th>
                 <th className="px-5 py-3 text-right">Balance</th>
-                <th className="px-5 py-3 text-right">Action</th>
+                <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -93,17 +94,20 @@ export default function FepPage() {
                   <td className="px-5 py-3 text-right text-slate-700">{formatMoney(r.paid, "PKR")}</td>
                   <td className="px-5 py-3 text-right font-semibold text-[var(--gs-navy)]">{formatMoney(balance(r), "PKR")}</td>
                   <td className="px-5 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPayOpen(r);
-                        setPayAmount(String(Math.max(0, balance(r))));
-                        setPayDate(new Date().toISOString().slice(0, 10));
-                      }}
-                      className="text-sm font-semibold text-[var(--gs-accent)] hover:underline"
-                    >
-                      Pay
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPayOpen(r);
+                          setPayAmount(String(Math.max(0, balance(r))));
+                          setPayDate(new Date().toISOString().slice(0, 10));
+                        }}
+                        className="text-sm font-semibold text-[var(--gs-accent)] hover:underline"
+                      >
+                        Pay
+                      </button>
+                      <RowActionsMenu items={["View", "Payment history", "Disable payouts"]} />
+                    </div>
                   </td>
                 </tr>
               ))}
