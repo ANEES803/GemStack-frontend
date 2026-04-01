@@ -1,5 +1,7 @@
-import { ModuleComingSoon } from "@/components/ModuleComingSoon";
+"use client";
+
+import { UsersRolesWorkspace } from "@/components/users/UsersRolesWorkspace";
 
 export default function UsersPage() {
-  return <ModuleComingSoon name="Users & roles" />;
+  return <UsersRolesWorkspace />;
 }

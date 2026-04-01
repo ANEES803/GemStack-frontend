@@ -1,5 +1,167 @@
-import { ModuleComingSoon } from "@/components/ModuleComingSoon";
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+
+import { formatMoney } from "@/lib/format";
+import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
+
+type FepRow = {
+  id: string;
+  name: string;
+  commissionEarned: number;
+  paid: number;
+};
+
+const INITIAL: FepRow[] = [
+  { id: "f1", name: "A. Khan", commissionEarned: 12400, paid: 8000 },
+  { id: "f2", name: "M. Ali", commissionEarned: 9800, paid: 9800 },
+  { id: "f3", name: "S. Noor", commissionEarned: 15200, paid: 5000 },
+];
 
 export default function FepPage() {
-  return <ModuleComingSoon name="FEP & commission" />;
+  const todayIso = useHydratedTodayIso();
+  const [rows, setRows] = useState<FepRow[]>(INITIAL);
+  const [payOpen, setPayOpen] = useState<FepRow | null>(null);
+  const [payAmount, setPayAmount] = useState("");
+  const [payDate, setPayDate] = useState("");
+
+  useEffect(() => {
+    if (todayIso) setPayDate((p) => p || todayIso);
+  }, [todayIso]);
+
+  const monthlyTotal = useMemo(() => rows.reduce((s, r) => s + r.commissionEarned, 0), [rows]);
+
+  function balance(r: FepRow) {
+    return r.commissionEarned - r.paid;
+  }
+
+  function submitPay() {
+    if (!payOpen) return;
+    const amt = Number(payAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      window.alert("Enter a valid amount.");
+      return;
+    }
+    setRows((prev) => prev.map((r) => (r.id === payOpen.id ? { ...r, paid: r.paid + amt } : r)));
+    setPayOpen(null);
+    setPayAmount("");
+    window.alert("Demo: Dr FEP Payable · Cr Cash. Connect API.");
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6">
+      <p className="max-w-2xl text-sm leading-relaxed text-[var(--gs-muted)]">
+        SRS: commission 4% of COGS from sales; track earned vs paid. Sales flow:{" "}
+        <Link href="/sales" className="font-semibold text-[var(--gs-accent)] hover:underline">
+          Invoices
+        </Link>
+        .
+      </p>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-2xl border border-[var(--gs-border)] bg-white p-5 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Commission (demo)</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--gs-navy)]">{formatMoney(monthlyTotal, "PKR")}</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-5 shadow-sm sm:col-span-2">
+          <p className="text-sm font-semibold text-emerald-900">Rule</p>
+          <p className="mt-1 text-sm text-emerald-800/90">Commission = 4% × COGS per sale; payment clears FEP payable.</p>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <h2 className="text-lg font-bold text-[var(--gs-navy)]">FEP commission</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+              <tr>
+                <th className="px-5 py-3">FEP</th>
+                <th className="px-5 py-3 text-right">Earned</th>
+                <th className="px-5 py-3 text-right">Paid</th>
+                <th className="px-5 py-3 text-right">Balance</th>
+                <th className="px-5 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => (
+                <tr key={r.id} className="hover:bg-slate-50/80">
+                  <td className="px-5 py-3 font-medium text-slate-900">{r.name}</td>
+                  <td className="px-5 py-3 text-right text-slate-700">{formatMoney(r.commissionEarned, "PKR")}</td>
+                  <td className="px-5 py-3 text-right text-slate-700">{formatMoney(r.paid, "PKR")}</td>
+                  <td className="px-5 py-3 text-right font-semibold text-[var(--gs-navy)]">{formatMoney(balance(r), "PKR")}</td>
+                  <td className="px-5 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPayOpen(r);
+                        setPayAmount(String(Math.max(0, balance(r))));
+                        setPayDate(new Date().toISOString().slice(0, 10));
+                      }}
+                      className="text-sm font-semibold text-[var(--gs-accent)] hover:underline"
+                    >
+                      Pay
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {payOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 p-3 pt-6 sm:items-center sm:p-4 sm:py-8">
+          <div className="w-full max-w-md max-h-[min(92vh,calc(100dvh-1.5rem))] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-[var(--gs-navy)]">Pay commission</h3>
+                <p className="mt-1 text-sm text-slate-500">{payOpen.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPayOpen(null)}
+                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Date *</label>
+                <input
+                  type="date"
+                  value={payDate}
+                  onChange={(e) => setPayDate(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Amount (PKR) *</label>
+                <input
+                  inputMode="decimal"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setPayOpen(null)} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">
+                  Cancel
+                </button>
+                <button type="button" onClick={submitPay} className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white">
+                  Record payment
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }

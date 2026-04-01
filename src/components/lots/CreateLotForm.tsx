@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
 const SUPPLIERS_SEED = ["Sapphire Co.", "Global Gems Ltd", "Ceylon Traders", "Antwerp BV"];
 
@@ -22,18 +24,23 @@ function parseMoney(s: string): number {
 
 function formatMoney(n: number): string {
   if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function CreateLotForm() {
   const router = useRouter();
+  const todayIso = useHydratedTodayIso();
 
-  const [lotIdPreview] = useState(() => {
+  const [lotIdPreview, setLotIdPreview] = useState("LO-········");
+  useEffect(() => {
     const t = Date.now().toString(36).toUpperCase();
-    return `LO-${t.slice(-8)}`;
-  });
+    setLotIdPreview(`LO-${t.slice(-8)}`);
+  }, []);
 
-  const [receivedDate, setReceivedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [receivedDate, setReceivedDate] = useState("");
+  useEffect(() => {
+    if (todayIso) setReceivedDate((d) => d || todayIso);
+  }, [todayIso]);
   const [isThirdParty, setIsThirdParty] = useState(false);
 
   const [supplierChoice, setSupplierChoice] = useState<string>(SUPPLIERS_SEED[0] ?? "");

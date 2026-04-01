@@ -1,5 +1,7 @@
-import { ModuleComingSoon } from "@/components/ModuleComingSoon";
+"use client";
+
+import { AccountingWorkspace } from "@/components/accounting/AccountingWorkspace";
 
 export default function AccountingPage() {
-  return <ModuleComingSoon name="Accounting & ledger" />;
+  return <AccountingWorkspace />;
 }

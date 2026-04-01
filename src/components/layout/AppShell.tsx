@@ -16,12 +16,13 @@ const ROUTE_HEADINGS: Record<string, { title: string; sub?: string }> = {
   "/lots/new": { title: "Create lot", sub: "New bulk purchase or third-party stock" },
   "/parcels": { title: "Parcels", sub: "Inventory by grade & FEP" },
   "/sales": { title: "Invoices", sub: "Sales & payments" },
-  "/accounting": { title: "Accounting", sub: "Ledgers & journals" },
-  "/expenses": { title: "Expenses", sub: "Operational spend" },
-  "/reports": { title: "Reports", sub: "Exports & statements" },
-  "/fep": { title: "FEP & commission", sub: "Field sales" },
-  "/partners": { title: "Partners", sub: "Capital & profit" },
-  "/users": { title: "Users & roles", sub: "Access control" },
+  "/sales/new": { title: "Create invoice", sub: "Add a new sales invoice" },
+  "/accounting": { title: "Accounting", sub: "COA, masters, purchase, sales lines & journals" },
+  "/expenses": { title: "Expenses", sub: "Categories & cash/bank postings" },
+  "/reports": { title: "Reports", sub: "P&L, BS, ledger, inventory & sales" },
+  "/fep": { title: "FEP & commission", sub: "Earned vs paid (4% COGS)" },
+  "/partners": { title: "Partners", sub: "Capital, drawings & profit split" },
+  "/users": { title: "Users & roles", sub: "Create users, roles & permissions (SRS)" },
 };
 
 function shellHeading(pathname: string): { title: string; sub?: string } {
