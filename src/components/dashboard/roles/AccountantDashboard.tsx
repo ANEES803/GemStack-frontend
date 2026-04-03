@@ -88,7 +88,7 @@ export function AccountantDashboard() {
       </div>
 
       <PanelCard title="Recent journal lines" description="Auto-posted from sales & expenses (demo)" bodyClassName="!p-0">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-slate-500">

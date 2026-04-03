@@ -407,7 +407,7 @@ export function AccountingWorkspace() {
               Add account
             </button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
                 <tr>
@@ -470,7 +470,7 @@ export function AccountingWorkspace() {
               Add party
             </button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
                 <tr>
@@ -538,7 +538,7 @@ export function AccountingWorkspace() {
               Add product
             </button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
                 <tr>
@@ -608,7 +608,7 @@ export function AccountingWorkspace() {
                 className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
               />
               <p className="mt-2 text-xs text-slate-500">
-                Example: $1,000 → Rs {(1000 * parseFloat(usdRate || "0")).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                Example: $1,000 → {formatMoney(Math.round(1000 * parseFloat(usdRate || "0")), "PKR")}
               </p>
             </div>
           </div>
@@ -673,7 +673,7 @@ export function AccountingWorkspace() {
               </div>
             </div>
           </div>
-          <div className="overflow-x-auto p-5 pt-0">
+          <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] p-5 pt-0">
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs font-bold uppercase tracking-wide text-slate-500">
                 <tr>
@@ -808,7 +808,7 @@ export function AccountingWorkspace() {
               </div>
             </div>
           </div>
-          <div className="overflow-x-auto p-5 pt-0">
+          <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] p-5 pt-0">
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs font-bold uppercase tracking-wide text-slate-500">
                 <tr>
@@ -967,7 +967,7 @@ export function AccountingWorkspace() {
               </select>
             </div>
           </div>
-          <div className="mt-6 overflow-x-auto">
+          <div className="mt-6 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
                 <tr>
@@ -1024,7 +1024,7 @@ export function AccountingWorkspace() {
               />
             </div>
           </div>
-          <div className="mt-6 overflow-x-auto">
+          <div className="mt-6 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs font-bold uppercase tracking-wide text-slate-500">
                 <tr>

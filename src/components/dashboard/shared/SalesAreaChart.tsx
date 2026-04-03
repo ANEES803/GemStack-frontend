@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -37,6 +37,11 @@ const chartDay = [
 ];
 
 export function SalesAreaChart() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [range, setRange] = useState<"month" | "week" | "day">("month");
   const gradId = useId().replace(/:/g, "");
 
@@ -77,42 +82,49 @@ export function SalesAreaChart() {
         </div>
       </div>
       <div className="mt-6 h-72 min-h-[288px] w-full min-w-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--gs-chart-line)" stopOpacity={0.22} />
-                <stop offset="100%" stopColor="var(--gs-chart-line)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="4 4" stroke="#eceff5" vertical={false} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} dy={8} />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tick={{ fill: "#94a3b8", fontSize: 12 }}
-              tickFormatter={(v) => `${v >= 1000 ? `${v / 1000}k` : v}`}
-            />
-            <Tooltip
-              contentStyle={{
-                borderRadius: "14px",
-                border: "1px solid #e8ecf1",
-                boxShadow: "0 12px 32px rgba(15,23,42,0.1)",
-                padding: "10px 14px",
-              }}
-              labelStyle={{ color: "#64748b", fontSize: 12, marginBottom: 4 }}
-            />
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke="var(--gs-chart-line)"
-              strokeWidth={2.5}
-              fill={`url(#${gradId})`}
-              dot={{ fill: "var(--gs-chart-line)", strokeWidth: 0, r: 3 }}
-              activeDot={{ r: 5, strokeWidth: 0 }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {mounted ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--gs-chart-line)" stopOpacity={0.22} />
+                  <stop offset="100%" stopColor="var(--gs-chart-line)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="4 4" stroke="#eceff5" vertical={false} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} dy={8} />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                tick={{ fill: "#94a3b8", fontSize: 12 }}
+                tickFormatter={(v) => `${v >= 1000 ? `${v / 1000}k` : v}`}
+              />
+              <Tooltip
+                contentStyle={{
+                  borderRadius: "14px",
+                  border: "1px solid #e8ecf1",
+                  boxShadow: "0 12px 32px rgba(15,23,42,0.1)",
+                  padding: "10px 14px",
+                }}
+                labelStyle={{ color: "#64748b", fontSize: 12, marginBottom: 4 }}
+              />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="var(--gs-chart-line)"
+                strokeWidth={2.5}
+                fill={`url(#${gradId})`}
+                dot={{ fill: "var(--gs-chart-line)", strokeWidth: 0, r: 3 }}
+                activeDot={{ r: 5, strokeWidth: 0 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div
+            className="flex h-full w-full items-center justify-center rounded-xl bg-slate-50/80 text-sm text-slate-400"
+            aria-hidden
+          />
+        )}
       </div>
     </div>
   );

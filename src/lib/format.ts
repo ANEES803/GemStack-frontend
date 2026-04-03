@@ -1,15 +1,37 @@
-/** Fixed locale so SSR and browser produce identical strings (avoids hydration mismatches). */
-const LOCALE = "en-US";
+/** Thousands separators + decimals without `toLocaleString` so SSR (Node) and the browser always match. */
+function withGrouping(intDigits: string): string {
+  return intDigits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function formatAbsPKR(abs: number): string {
+  const [intPart, dec] = abs.toFixed(2).split(".");
+  const decTrimmed = dec.replace(/0+$/, "");
+  const frac = decTrimmed ? `.${decTrimmed}` : "";
+  return `${withGrouping(intPart)}${frac}`;
+}
+
+function formatAbsUSD(abs: number): string {
+  const [intPart, dec] = abs.toFixed(2).split(".");
+  return `${withGrouping(intPart)}.${dec}`;
+}
 
 export function formatMoney(n: number, currency: "USD" | "PKR" = "USD"): string {
   if (!Number.isFinite(n)) return "—";
+  const neg = n < 0;
+  const v = Math.abs(n);
+  const sign = neg ? "-" : "";
   if (currency === "PKR") {
-    return `Rs ${n.toLocaleString(LOCALE, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+    return `Rs ${sign}${formatAbsPKR(v)}`;
   }
-  return `$${n.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${sign}${formatAbsUSD(v)}`;
 }
 
 export function formatPct(n: number): string {
   if (!Number.isFinite(n)) return "—";
-  return `${n.toLocaleString(LOCALE, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%`;
+  const neg = n < 0;
+  const v = Math.abs(n);
+  const [intPart, dec] = v.toFixed(2).split(".");
+  const decTrimmed = dec.replace(/0+$/, "");
+  const frac = decTrimmed ? `.${decTrimmed}` : "";
+  return `${neg ? "-" : ""}${withGrouping(intPart)}${frac}%`;
 }

@@ -104,7 +104,7 @@ export default function ExpensesPage() {
         <div className="border-b border-slate-100 px-5 py-4">
           <h2 className="text-lg font-bold text-[var(--gs-navy)]">Recent expenses</h2>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
               <tr>

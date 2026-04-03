@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { AppDialog } from "@/components/ui/AppDialog";
+
 export const PAYMENT_OPTIONS = ["Bank transfer", "Cash", "PayPal", "Credit / debit card", "Wire (SWIFT)", "Other"] as const;
 
 export type ReceivePaymentInitial = {
@@ -40,8 +42,6 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
     setMethod("Bank transfer");
   }, [open, initial]);
 
-  if (!open) return null;
-
   function submit() {
     window.alert(
       `Demo: Record payment\nMethod: ${method}\nInvoice: ${invoiceId || "—"}\nCustomer: ${customerName || "—"}\nAmount: ${amount || "—"}\nConnect API to post.`,
@@ -49,121 +49,115 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
     onClose();
   }
 
+  const fieldLabel = "mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-500";
+  const inputClass =
+    "w-full min-h-[42px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/20";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-3 pt-8 sm:items-center sm:p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold text-[var(--gs-navy)]">{title}</h2>
-            <p className="mt-1 text-sm text-slate-500">Choose how the customer paid and confirm details.</p>
-          </div>
+    <AppDialog
+      open={open}
+      onClose={onClose}
+      titleId="receive-payment-title"
+      title={title}
+      description="Choose how the customer paid and confirm details."
+      size="lg"
+      footer={
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="mt-5 space-y-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Payment method *</p>
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {PAYMENT_OPTIONS.map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() => setMethod(opt)}
-                  className={`rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${
-                    method === opt
-                      ? "border-[var(--gs-accent)] bg-[var(--gs-accent-soft)] text-[var(--gs-navy)] ring-2 ring-[var(--gs-accent)]/30"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Invoice #</label>
-              <input
-                value={invoiceId}
-                onChange={(e) => setInvoiceId(e.target.value)}
-                placeholder="INV-1041"
-                className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Customer name *</label>
-              <input
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Phone</label>
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Amount received</label>
-              <input
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Notes / detail</label>
-              <textarea
-                rows={3}
-                value={detail}
-                onChange={(e) => setDetail(e.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="w-full rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={submit}
-            className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--gs-accent-hover)]"
+            className="w-full rounded-lg bg-[var(--gs-navy)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 sm:w-auto"
           >
             Record payment
           </button>
         </div>
+      }
+    >
+      <div className="space-y-4 sm:space-y-5">
+        <fieldset className="rounded-xl border border-slate-200/90 bg-slate-50/60 p-3 shadow-sm sm:p-3.5">
+          <legend className="sr-only">Payment method</legend>
+          <p id="receive-payment-method-label" className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+            Payment method *
+          </p>
+          <div
+            className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-2"
+            role="radiogroup"
+            aria-labelledby="receive-payment-method-label"
+          >
+            {PAYMENT_OPTIONS.map((opt) => {
+              const selected = method === opt;
+              return (
+                <label
+                  key={opt}
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 shadow-sm transition sm:px-2.5 sm:py-2 ${
+                    selected
+                      ? "border-[var(--gs-accent)] bg-white ring-1 ring-[var(--gs-accent)]/30"
+                      : "border-slate-200/90 bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="receive-payment-method"
+                    value={opt}
+                    checked={selected}
+                    onChange={() => setMethod(opt)}
+                    className="h-3.5 w-3.5 shrink-0 border-slate-300 text-[var(--gs-accent)] focus:ring-[var(--gs-accent)]"
+                  />
+                  <span
+                    className={`min-w-0 flex-1 text-left text-[11px] font-semibold leading-snug sm:text-xs ${
+                      selected ? "text-[var(--gs-navy)]" : "text-slate-600"
+                    }`}
+                  >
+                    {opt}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm sm:p-4">
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Invoice &amp; payer</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className={fieldLabel}>Invoice #</label>
+              <input value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} placeholder="INV-1041" className={inputClass} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={fieldLabel}>Customer name *</label>
+              <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label className={fieldLabel}>Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label className={fieldLabel}>Phone</label>
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={fieldLabel}>Amount received</label>
+              <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className={inputClass} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={fieldLabel}>Notes / detail</label>
+              <textarea
+                rows={2}
+                value={detail}
+                onChange={(e) => setDetail(e.target.value)}
+                className={`${inputClass} min-h-[72px] resize-y py-2`}
+              />
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </AppDialog>
   );
 }

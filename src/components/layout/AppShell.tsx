@@ -11,10 +11,14 @@ function cx(...parts: (string | false | undefined)[]) {
   return parts.filter(Boolean).join(" ");
 }
 
+/** List index pages render their own <h1> in ListPageLayout — hide the shell title to avoid “Lots / Lots” duplication. */
+const PATHS_WITH_PAGE_OWNED_TITLE = new Set(["/lots", "/parcels", "/sales"]);
+
 const ROUTE_HEADINGS: Record<string, { title: string; sub?: string }> = {
   "/lots": { title: "Lots", sub: "Bulk purchases" },
   "/lots/new": { title: "Create lot", sub: "New bulk purchase or third-party stock" },
   "/parcels": { title: "Parcels", sub: "Inventory by grade & FEP" },
+  "/parcels/new": { title: "New parcel", sub: "Split from a lot — grade, carats & FEP" },
   "/sales": { title: "Invoices", sub: "Sales & payments" },
   "/sales/new": { title: "Create invoice", sub: "Add a new sales invoice" },
   "/accounting": { title: "Accounting", sub: "COA, masters, purchase, sales lines & journals" },
@@ -93,9 +97,13 @@ function TopBarActionIcons() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { title, sub } = shellHeading(pathname);
+  const showShellPageTitle = !PATHS_WITH_PAGE_OWNED_TITLE.has(pathname);
 
   return (
-    <div className="flex min-h-screen bg-[var(--gs-page-bg)] text-[var(--gs-text)]">
+    <div
+      className="flex min-h-screen bg-gradient-to-b from-slate-50 via-[var(--gs-page-bg)] to-slate-100/60 text-[var(--gs-text)]"
+      suppressHydrationWarning
+    >
       <aside className="fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-[var(--gs-border)] bg-[var(--gs-sidebar)] shadow-[4px_0_32px_rgba(15,23,42,0.04)]">
         <div className="border-b border-orange-100/70 bg-gradient-to-br from-orange-50/95 via-white to-white px-5 py-7">
           <div className="flex items-center gap-3">
@@ -167,13 +175,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col pl-72">
-        <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl">
-          <div className="flex h-20 items-center justify-between gap-4 px-6">
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl font-black tracking-tight text-slate-900">{title}</h1>
-              {sub ? <p className="mt-0.5 truncate text-sm font-medium text-slate-500">{sub}</p> : null}
-            </div>
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col pl-72" suppressHydrationWarning>
+        <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl">
+          <div
+            className={cx(
+              "flex items-center justify-between gap-3 px-4 sm:gap-4 sm:px-6",
+              showShellPageTitle ? "min-h-[4.5rem] py-3 sm:min-h-[5rem] sm:py-3.5" : "h-14 sm:h-[3.75rem]",
+            )}
+          >
+            {showShellPageTitle ? (
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-2xl font-black tracking-tight text-slate-900">{title}</h1>
+                {sub ? <p className="mt-0.5 truncate text-sm font-medium text-slate-500">{sub}</p> : null}
+              </div>
+            ) : (
+              <div className="min-w-0 flex-1" />
+            )}
             <div className="flex shrink-0 items-center gap-1">
               <TopBarActionIcons />
             </div>
@@ -181,8 +198,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
         </header>
 
-        <main className="flex w-full flex-1 justify-center px-5 py-7 md:px-10 md:py-9">
-          <div className="w-full max-w-[1600px]">{children}</div>
+        <main
+          className={cx(
+            "flex w-full min-w-0 flex-1 justify-center px-3 sm:px-5 md:px-10",
+            showShellPageTitle ? "py-5 sm:py-7 md:py-9" : "pb-6 pt-5 sm:pb-8 sm:pt-7 md:pb-10 md:pt-9",
+          )}
+        >
+          <div className="w-full min-w-0 max-w-[1600px]">{children}</div>
         </main>
       </div>
     </div>

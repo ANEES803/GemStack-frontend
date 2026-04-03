@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { formatMoney } from "@/lib/format";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
 const SUPPLIERS_SEED = ["Sapphire Co.", "Global Gems Ltd", "Ceylon Traders", "Antwerp BV"];
@@ -20,11 +21,6 @@ const PAID_FROM_ACCOUNTS = [
 function parseMoney(s: string): number {
   const n = parseFloat(s.replace(/,/g, ""));
   return Number.isFinite(n) ? n : 0;
-}
-
-function formatMoney(n: number): string {
-  if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function CreateLotForm() {
@@ -362,12 +358,12 @@ export function CreateLotForm() {
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               <div className="flex justify-between gap-4 rounded-xl bg-white/80 px-4 py-3 ring-1 ring-slate-100">
                 <dt className="text-[var(--gs-muted)]">Final cost</dt>
-                <dd className="font-semibold text-slate-900">${formatMoney(finalCost)}</dd>
+                <dd className="font-semibold text-slate-900">{formatMoney(finalCost, "USD")}</dd>
               </div>
               <div className="flex justify-between gap-4 rounded-xl bg-white/80 px-4 py-3 ring-1 ring-slate-100">
                 <dt className="text-[var(--gs-muted)]">Cost per carat</dt>
                 <dd className="font-semibold text-slate-900">
-                  {weightNum > 0 ? `$${formatMoney(costPerCt)}` : "—"}
+                  {weightNum > 0 ? formatMoney(costPerCt, "USD") : "—"}
                 </dd>
               </div>
             </dl>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { AppDialog } from "@/components/ui/AppDialog";
 import type { DemoCustomer } from "@/lib/demoCustomers";
 
 type Props = {
@@ -25,8 +26,6 @@ export function AddCustomerModal({ open, onClose, onSave }: Props) {
     }
   }, [open]);
 
-  if (!open) return null;
-
   function save() {
     if (!name.trim()) {
       window.alert("Name is required.");
@@ -37,61 +36,67 @@ export function AddCustomerModal({ open, onClose, onSave }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/45 p-3 pt-8 sm:items-center">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6">
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Add new customer</h2>
-          <button type="button" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100" aria-label="Close">
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="mt-4 space-y-3">
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Name *</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Phone</label>
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Detail / notes</label>
-            <textarea
-              rows={3}
-              value={detail}
-              onChange={(e) => setDetail(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-            />
-          </div>
-        </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">
+    <AppDialog
+      open={open}
+      onClose={onClose}
+      titleId="add-customer-title"
+      title="Add new customer"
+      size="md"
+      footer={
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto sm:py-2.5"
+          >
             Cancel
           </button>
-          <button type="button" onClick={save} className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white">
+          <button
+            type="button"
+            onClick={save}
+            className="w-full rounded-xl bg-[var(--gs-accent)] px-5 py-3 text-sm font-semibold text-white sm:w-auto sm:py-2.5"
+          >
             Save customer
           </button>
         </div>
+      }
+    >
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Name *</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Phone</label>
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Detail / notes</label>
+          <textarea
+            rows={3}
+            value={detail}
+            onChange={(e) => setDetail(e.target.value)}
+            className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+          />
+        </div>
       </div>
-    </div>
+    </AppDialog>
   );
 }

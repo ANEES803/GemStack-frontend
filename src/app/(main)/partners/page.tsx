@@ -92,7 +92,7 @@ export default function PartnersPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-[var(--gs-border)] bg-white p-5 shadow-sm lg:col-span-2">
           <h2 className="text-lg font-bold text-[var(--gs-navy)]">Partners</h2>
-          <div className="mt-4 overflow-x-auto">
+          <div className="mt-4 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
                 <tr>
@@ -150,7 +150,7 @@ export default function PartnersPage() {
             Record withdrawal
           </button>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
               <tr>

@@ -107,7 +107,7 @@ export function AdminDashboard() {
       </div>
 
       <PanelCard title="Recent audit trail" description="Who changed what (sample rows)" bodyClassName="!p-0">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[520px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-slate-500">

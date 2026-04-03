@@ -289,7 +289,7 @@ export function UsersRolesWorkspace() {
             Add user
           </button>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
               <tr>
@@ -316,10 +316,14 @@ export function UsersRolesWorkspace() {
                       <RowActionsMenu
                         actions={[
                           { label: "Edit user", onSelect: () => openEdit(u), tone: "accent" },
-                          { label: u.status === "disabled" ? "Enable user" : "Disable user", onSelect: () => toggleDisable(u), tone: "default" },
-                          { label: "View profile" },
-                          { label: "Reset OTP" },
-                          { label: "Force logout" },
+                          {
+                            label: u.status === "disabled" ? "Enable user" : "Disable user",
+                            onSelect: () => toggleDisable(u),
+                            tone: u.status === "disabled" ? "success" : "warning",
+                          },
+                          { label: "View profile", tone: "default" },
+                          { label: "Reset OTP", tone: "info" },
+                          { label: "Force logout", tone: "danger" },
                         ]}
                       />
                     </div>
@@ -338,7 +342,7 @@ export function UsersRolesWorkspace() {
             ● full · ◐ view · ◑ own/limited · — none. Tune in your policy layer; FEP is restricted from company-wide reports per SRS.
           </p>
         </div>
-        <div className="overflow-x-auto p-5 pt-0">
+        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] p-5 pt-0">
           <table className="min-w-[720px] w-full text-center text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs font-bold uppercase tracking-wide text-slate-500">
