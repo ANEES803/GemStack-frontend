@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { ReceivePaymentModal, type ReceivePaymentInitial } from "@/components/sales/ReceivePaymentModal";
 import { ListPageLayout, ListToolbar } from "@/components/ui/ListPageLayout";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { type DemoInvoiceRow, loadAddedInvoices } from "@/lib/demoInvoices";
@@ -29,13 +30,28 @@ function pill(status: DemoInvoiceRow["status"]) {
   );
 }
 
+function rowToPaymentInitial(row: DemoInvoiceRow): ReceivePaymentInitial {
+  return {
+    invoiceId: row.id,
+    customerName: row.customer,
+    amount: row.amount.replace(/[$,]/g, "").trim(),
+  };
+}
+
 export default function SalesPage() {
   const [rows, setRows] = useState<DemoInvoiceRow[]>(DEFAULT_ROWS);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentInitial, setPaymentInitial] = useState<ReceivePaymentInitial | undefined>(undefined);
 
   useEffect(() => {
     const added = loadAddedInvoices();
     if (added.length > 0) setRows([...added, ...DEFAULT_ROWS]);
   }, []);
+
+  function openReceivePayment(initial?: ReceivePaymentInitial) {
+    setPaymentInitial(initial);
+    setPaymentOpen(true);
+  }
 
   return (
     <ListPageLayout
@@ -43,6 +59,13 @@ export default function SalesPage() {
       subtitle="Record gemstone sales, channels, and payments. New invoices are saved in this browser (demo)."
       actions={
         <>
+          <button
+            type="button"
+            onClick={() => openReceivePayment()}
+            className="rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+          >
+            Receive payment
+          </button>
           <button
             type="button"
             className="rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
@@ -59,6 +82,8 @@ export default function SalesPage() {
       }
       toolbar={<ListToolbar placeholder="Search by invoice, customer, FEP…" />}
     >
+      <ReceivePaymentModal open={paymentOpen} onClose={() => setPaymentOpen(false)} initial={paymentInitial} />
+
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
@@ -89,7 +114,16 @@ export default function SalesPage() {
                 <td className="px-6 py-4 text-right font-semibold text-slate-900">{row.amount}</td>
                 <td className="px-6 py-4">{pill(row.status)}</td>
                 <td className="px-6 py-4 text-right">
-                  <RowActionsMenu />
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openReceivePayment(rowToPaymentInitial(row))}
+                      className="text-sm font-semibold text-[var(--gs-accent)] hover:underline"
+                    >
+                      Receive payment
+                    </button>
+                    <RowActionsMenu />
+                  </div>
                 </td>
               </tr>
             ))}
