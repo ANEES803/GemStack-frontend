@@ -9,9 +9,9 @@ import { ROLES } from "@/lib/roles";
 const roleDef = ROLES.find((r) => r.slug === "stock-manager")!;
 
 const movements = [
-  { when: "Today", parcel: "P-228", from: "Warehouse", to: "A. Khan", ct: "12.5" },
-  { when: "Yesterday", parcel: "P-221", from: "M. Ali", to: "Warehouse", ct: "8.0" },
-  { when: "Mar 26", parcel: "P-215", from: "Warehouse", to: "S. Noor", ct: "22.0" },
+  { when: "Today", lot: "L-228", from: "Warehouse", to: "A. Khan", ct: "12.5" },
+  { when: "Yesterday", lot: "L-221", from: "M. Ali", to: "Warehouse", ct: "8.0" },
+  { when: "Mar 26", lot: "L-215", from: "Warehouse", to: "S. Noor", ct: "22.0" },
 ];
 
 export function StockManagerDashboard() {
@@ -32,7 +32,7 @@ export function StockManagerDashboard() {
           }
         />
         <KpiTile
-          label="Active parcels"
+          label="Active lots"
           value="42"
           sub="In system"
           tone="blue"
@@ -74,10 +74,10 @@ export function StockManagerDashboard() {
           Manage lots
         </Link>
         <Link
-          href="/parcels"
+          href="/inventory?tab=items"
           className="rounded-full bg-[var(--gs-navy)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
         >
-          Manage parcels
+          Items
         </Link>
       </div>
 
@@ -87,7 +87,7 @@ export function StockManagerDashboard() {
             <thead>
               <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th className="px-6 py-3.5">When</th>
-                <th className="px-6 py-3.5">Parcel</th>
+                <th className="px-6 py-3.5">Lot</th>
                 <th className="px-6 py-3.5">From</th>
                 <th className="px-6 py-3.5">To</th>
                 <th className="px-6 py-3.5 text-right">Carats</th>
@@ -96,9 +96,9 @@ export function StockManagerDashboard() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {movements.map((row) => (
-                <tr key={row.parcel + row.when} className="hover:bg-slate-50/80">
+                <tr key={row.lot + row.when} className="hover:bg-slate-50/80">
                   <td className="px-6 py-3.5 text-slate-600">{row.when}</td>
-                  <td className="px-6 py-3.5 font-mono text-xs font-semibold text-slate-900">{row.parcel}</td>
+                  <td className="px-6 py-3.5 font-mono text-xs font-semibold text-slate-900">{row.lot}</td>
                   <td className="px-6 py-3.5 text-slate-700">{row.from}</td>
                   <td className="px-6 py-3.5 text-slate-700">{row.to}</td>
                   <td className="px-6 py-3.5 text-right font-medium text-slate-900">{row.ct}</td>

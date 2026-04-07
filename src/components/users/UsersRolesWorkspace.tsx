@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
-import { ROLES, type RoleDefinition, type RoleSlug, roleHref } from "@/lib/roles";
+import { ROLES, type RoleDefinition, type RoleSlug } from "@/lib/roles";
 
 type UserStatus = "active" | "invited" | "disabled";
 
@@ -65,23 +64,6 @@ const INITIAL_USERS: UserRow[] = [
     otpVerified: false,
   },
 ];
-
-function accentRing(accent: RoleDefinition["accent"]): string {
-  switch (accent) {
-    case "orange":
-      return "border-orange-200 bg-gradient-to-br from-orange-50 to-white ring-orange-100";
-    case "violet":
-      return "border-violet-200 bg-gradient-to-br from-violet-50 to-white ring-violet-100";
-    case "blue":
-      return "border-blue-200 bg-gradient-to-br from-blue-50 to-white ring-blue-100";
-    case "teal":
-      return "border-teal-200 bg-gradient-to-br from-teal-50 to-white ring-teal-100";
-    case "emerald":
-      return "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white ring-emerald-100";
-    default:
-      return "border-slate-200 bg-white";
-  }
-}
 
 function statusPill(status: UserStatus) {
   if (status === "active") {
@@ -239,41 +221,6 @@ export function UsersRolesWorkspace() {
           </span>
         </div>
       </div>
-
-      <section>
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-[var(--gs-navy)]">Roles</h2>
-            <p className="mt-1 text-sm text-[var(--gs-muted)]">Aligned with SRS §1.7 — each role has a sample dashboard preview.</p>
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {ROLES.map((r) => (
-            <div key={r.slug} className={`rounded-2xl border p-5 shadow-sm ring-1 ${accentRing(r.accent)}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{r.label}</p>
-                  <h3 className="mt-1 text-lg font-bold text-[var(--gs-navy)]">{r.title}</h3>
-                </div>
-                <Link
-                  href={roleHref(r.slug)}
-                  className="shrink-0 text-xs font-semibold text-[var(--gs-accent)] hover:underline"
-                >
-                  Demo dashboard →
-                </Link>
-              </div>
-              <ul className="mt-3 space-y-1.5 text-sm text-slate-600">
-                {r.canSee.map((line) => (
-                  <li key={line} className="flex gap-2">
-                    <span className="text-slate-400">•</span>
-                    <span>{line}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </section>
 
       <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">

@@ -4,6 +4,8 @@ import Script from "next/script";
 
 import "./globals.css";
 
+import { AppToastHost } from "@/components/ui/AppToastHost";
+
 /** Bitdefender and some AV extensions inject `bis_skin_checked` on divs before React hydrates, causing false hydration errors. */
 const STRIP_EXTENSION_ATTRS_JS = `
 (function () {
@@ -47,6 +49,25 @@ const STRIP_EXTENSION_ATTRS_JS = `
 })();
 `;
 
+/** Apply persisted theme ASAP to avoid flashes and ensure `dark` works everywhere. */
+const APPLY_THEME_EARLY_JS = `
+(function () {
+  try {
+    var key = "gemstack-theme";
+    var mode = localStorage.getItem(key);
+    var isDark = false;
+    if (mode === "dark") isDark = true;
+    else if (mode === "light") isDark = false;
+    else {
+      isDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    var el = document.documentElement;
+    if (isDark) el.classList.add("dark");
+    else el.classList.remove("dark");
+  } catch (e) {}
+})();
+`;
+
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -67,6 +88,8 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         <Script id="strip-av-extension-attrs" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: STRIP_EXTENSION_ATTRS_JS }} />
+        <Script id="apply-theme-early" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: APPLY_THEME_EARLY_JS }} />
+        <AppToastHost />
         {children}
       </body>
     </html>

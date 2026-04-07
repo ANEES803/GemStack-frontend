@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AddCustomerModal } from "@/components/sales/AddCustomerModal";
+import { InvoicePrintDialog } from "@/components/sales/InvoicePrintDialog";
 import { ReceivePaymentModal } from "@/components/sales/ReceivePaymentModal";
 import { addCustomer, loadCustomers, type DemoCustomer } from "@/lib/demoCustomers";
 import { appendDemoInvoice, rowFromInvoicePayload } from "@/lib/demoInvoices";
+import { revenueAccountLabel } from "@/lib/demoRevenueAccounts";
+import { loadServiceItemsForSelect } from "@/lib/itemCatalogStorage";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
 function parseMoney(v: string): number {
@@ -25,6 +28,7 @@ export function CreateInvoiceForm() {
   const [customerPick, setCustomerPick] = useState("");
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
 
   const [invoiceNo, setInvoiceNo] = useState("INV-NEW");
   const [parcelNo, setParcelNo] = useState("");
@@ -38,9 +42,15 @@ export function CreateInvoiceForm() {
   const [paymentMethod, setPaymentMethod] = useState("Bank");
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState<"Paid" | "Pending">("Pending");
+  const [serviceCatalog, setServiceCatalog] = useState<ReturnType<typeof loadServiceItemsForSelect>>([]);
+  const [invoiceServicePick, setInvoiceServicePick] = useState("");
 
   useEffect(() => {
     setCustomers(loadCustomers());
+  }, []);
+
+  useEffect(() => {
+    setServiceCatalog(loadServiceItemsForSelect());
   }, []);
 
   useEffect(() => {
@@ -57,6 +67,41 @@ export function CreateInvoiceForm() {
       amount: amount.trim() || undefined,
     }),
     [invoiceNo, customer, customerEmail, customerPhone, customerDetail, amount],
+  );
+
+  const invoicePdfData = useMemo(
+    () => ({
+      invoiceNo: invoiceNo.trim() || "DRAFT",
+      dateIso: dateIso || "—",
+      customer: customer.trim(),
+      customerEmail: customerEmail.trim(),
+      customerPhone: customerPhone.trim(),
+      customerDetail: customerDetail.trim(),
+      holder: holder.trim(),
+      paymentMethod,
+      amountDisplay: (() => {
+        const t = amount.trim();
+        if (!t) return "$0.00";
+        return t.includes("$") ? t : `$${t}`;
+      })(),
+      status,
+      parcelNo: parcelNo.trim(),
+      fbInvoiceLink: fbInvoiceLink.trim(),
+    }),
+    [
+      invoiceNo,
+      dateIso,
+      customer,
+      customerEmail,
+      customerPhone,
+      customerDetail,
+      holder,
+      paymentMethod,
+      amount,
+      status,
+      parcelNo,
+      fbInvoiceLink,
+    ],
   );
 
   function applyCustomer(c: DemoCustomer) {
@@ -124,13 +169,29 @@ export function CreateInvoiceForm() {
             Select an existing customer or add a new one. Receive payment opens the same payment flow used on the invoice list.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setReceiveOpen(true)}
-          className="shrink-0 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
-        >
-          Receive payment
-        </button>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setPrintOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+          >
+            <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" aria-hidden>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6.72 13.829v-.75a.75.75 0 011.5 0v.75m0 0V18a.75.75 0 01-.75.75H4.5a.75.75 0 01-.75-.75v-4.171m9 0V18A.75.75 0 0113.5 19.5h-3a.75.75 0 01-.75-.75v-4.171M3 11.25h18M3.75 4.5h16.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75H3.75a.75.75 0 01-.75-.75v-4.5a.75.75 0 01.75-.75z"
+              />
+            </svg>
+            Print invoice
+          </button>
+          <button
+            type="button"
+            onClick={() => setReceiveOpen(true)}
+            className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+          >
+            Receive payment
+          </button>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-[var(--gs-border)] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_10px_28px_rgba(15,23,42,0.05)] md:p-8">
@@ -237,6 +298,35 @@ export function CreateInvoiceForm() {
             />
           </div>
 
+          {serviceCatalog.length > 0 ? (
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                Service item (from catalog — optional)
+              </label>
+              <select
+                value={invoiceServicePick}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setInvoiceServicePick(id);
+                  const s = serviceCatalog.find((x) => x.id === id);
+                  if (s) setAmount(String(s.rate));
+                }}
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
+              >
+                <option value="">— None —</option>
+                {serviceCatalog.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.itemName} · {s.rate.toLocaleString(undefined, { maximumFractionDigits: 2 })} ·{" "}
+                    {revenueAccountLabel(s.revenueAccountId)}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-slate-500">
+                Pulls default rate from Inventory → Items → Service catalog. Services are not stock-tracked.
+              </p>
+            </div>
+          ) : null}
+
           <div>
             <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Payment method</label>
             <select
@@ -273,13 +363,20 @@ export function CreateInvoiceForm() {
           </div>
         </div>
 
-        <div className="mt-8 flex flex-col gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:justify-end">
+        <div className="mt-8 flex flex-col gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:flex-wrap sm:justify-end">
           <Link
             href="/sales"
             className="inline-flex justify-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
           >
             Cancel
           </Link>
+          <button
+            type="button"
+            onClick={() => setPrintOpen(true)}
+            className="inline-flex justify-center rounded-full border-2 border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+          >
+            Print invoice
+          </button>
           <button
             type="button"
             onClick={onSave}
@@ -293,6 +390,8 @@ export function CreateInvoiceForm() {
       <AddCustomerModal open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSave={onNewCustomerSaved} />
 
       <ReceivePaymentModal open={receiveOpen} onClose={() => setReceiveOpen(false)} initial={receiveInitial} />
+
+      <InvoicePrintDialog open={printOpen} onClose={() => setPrintOpen(false)} data={invoicePdfData} />
     </div>
   );
 }

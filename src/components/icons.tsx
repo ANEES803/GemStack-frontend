@@ -1,13 +1,19 @@
-import type { NavItem } from "@/lib/navigation";
+import type { NavIconName } from "@/lib/navigation";
 
-const iconClass = "h-[18px] w-[18px] shrink-0 stroke-[1.75]";
+const iconClass = "h-[14.4px] w-[14.4px] shrink-0 stroke-[1.4]";
 
-export function NavIcon({ name }: { name: NavItem["icon"] }) {
+export function NavIcon({ name }: { name: NavIconName }) {
   switch (name) {
     case "dashboard":
       return (
         <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75A2.25 2.25 0 0115.75 18h2.25A2.25 2.25 0 0120.25 15.75v-2.25a2.25 2.25 0 00-2.25-2.25h-2.25a2.25 2.25 0 00-2.25 2.25v2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25A2.25 2.25 0 0113.5 8.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25z" />
+        </svg>
+      );
+    case "accounting":
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       );
     case "lot":
@@ -26,6 +32,18 @@ export function NavIcon({ name }: { name: NavItem["icon"] }) {
       return (
         <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+      );
+    case "purchase":
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+        </svg>
+      );
+    case "inventory":
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3" />
         </svg>
       );
     case "ledger":

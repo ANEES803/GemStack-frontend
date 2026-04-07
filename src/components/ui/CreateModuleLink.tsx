@@ -13,8 +13,8 @@ const variantStyles: Record<
     icon: "text-white/90",
   },
   parcels: {
-    bar: "from-violet-600 via-indigo-600 to-blue-600",
-    shadow: "shadow-[0_4px_14px_rgba(124,58,237,0.35)]",
+    bar: "from-amber-500 via-orange-500 to-[var(--gs-accent)]",
+    shadow: "shadow-[0_4px_14px_rgba(241,90,36,0.35)]",
     icon: "text-white/90",
   },
   sales: {

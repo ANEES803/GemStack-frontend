@@ -110,7 +110,7 @@ export function CreateLotForm() {
     };
   }
 
-  function onSave(goParcels: boolean) {
+  function onSave() {
     const err = validate();
     if (err) {
       window.alert(err);
@@ -118,16 +118,8 @@ export function CreateLotForm() {
     }
     const payload = buildPayload();
     console.log("[CreateLot] demo save", payload);
-    window.alert(
-      goParcels
-        ? "Demo: lot saved. Next step — create parcels (wire API later)."
-        : "Demo: lot saved (frontend only). Check the console for the payload.",
-    );
-    if (goParcels) {
-      router.push(`/parcels?fromLot=${encodeURIComponent(lotIdPreview)}`);
-    } else {
-      router.push("/lots");
-    }
+    window.alert("Demo: lot saved (frontend only). Check the console for the payload.");
+    router.push("/lots");
   }
 
   return (
@@ -431,17 +423,10 @@ export function CreateLotForm() {
             </Link>
             <button
               type="button"
-              onClick={() => onSave(false)}
-              className="inline-flex justify-center rounded-full bg-[var(--gs-navy)] px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-            >
-              Save lot
-            </button>
-            <button
-              type="button"
-              onClick={() => onSave(true)}
+              onClick={() => onSave()}
               className="inline-flex justify-center rounded-full bg-[var(--gs-accent)] px-6 py-3 text-sm font-semibold text-white shadow-md shadow-orange-200/50 transition hover:bg-[var(--gs-accent-hover)]"
             >
-              Save &amp; create parcels
+              Save lot
             </button>
           </div>
         </div>

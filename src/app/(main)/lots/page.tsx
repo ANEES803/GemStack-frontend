@@ -159,17 +159,6 @@ export default function LotsPage() {
     <ListPageLayout
       title="Lots"
       subtitle="Bulk purchases — total weight and cost at lot level before parcels are split."
-      decorativeEnd={
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 shadow-sm ring-1 ring-amber-200/70">
-          <svg className="h-7 w-7 text-amber-900" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"
-            />
-          </svg>
-        </div>
-      }
       actions={<CreateModuleLink href="/lots/new" variant="lots">New lot</CreateModuleLink>}
       toolbar={
         <ListToolbarInteractive

@@ -1,7 +1,8 @@
 "use client";
 
+import { ArrowUpDown, Filter } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 function cx(...parts: (string | false | undefined)[]) {
   return parts.filter(Boolean).join(" ");
@@ -89,20 +90,20 @@ export function ListToolbarInteractive({
 
   useEffect(() => setMounted(true), []);
 
-  function updateSortPosition() {
+  const updateSortPosition = useCallback(() => {
     const el = sortRef.current;
     if (!el || !sortOpen) return;
     const r = el.getBoundingClientRect();
     setSortPos(computePanelPosition(r, Math.min(288, window.innerWidth - 20), Math.min(360, Math.floor(window.innerHeight * 0.55)), "start"));
-  }
+  }, [sortOpen]);
 
-  function updateFilterPosition() {
+  const updateFilterPosition = useCallback(() => {
     const el = filterRef.current;
     if (!el || !filterOpen) return;
     const r = el.getBoundingClientRect();
     const targetW = Math.min(400, window.innerWidth - 20);
     setFilterPos(computePanelPosition(r, targetW, Math.min(480, Math.floor(window.innerHeight * 0.65)), "end"));
-  }
+  }, [filterOpen]);
 
   useLayoutEffect(() => {
     if (!sortOpen) {
@@ -117,7 +118,7 @@ export function ListToolbarInteractive({
       window.removeEventListener("resize", onWin);
       window.removeEventListener("scroll", onWin, true);
     };
-  }, [sortOpen]);
+  }, [sortOpen, updateSortPosition]);
 
   useLayoutEffect(() => {
     if (!filterOpen) {
@@ -132,7 +133,7 @@ export function ListToolbarInteractive({
       window.removeEventListener("resize", onWin);
       window.removeEventListener("scroll", onWin, true);
     };
-  }, [filterOpen]);
+  }, [filterOpen, updateFilterPosition]);
 
   useEffect(() => {
     if (!sortOpen && !filterOpen) return;
@@ -254,26 +255,25 @@ export function ListToolbarInteractive({
           />
         </div>
 
-        <div className="flex w-full shrink-0 flex-wrap items-stretch gap-2 sm:w-auto sm:items-center md:flex-nowrap">
-          <div className="relative min-w-0 flex-1 sm:min-w-[auto] sm:flex-initial" ref={sortRef}>
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto md:flex-nowrap">
+          <div className="relative shrink-0" ref={sortRef}>
             <button
               type="button"
               onClick={() => {
                 setFilterOpen(false);
                 setSortOpen((o) => !o);
               }}
-              className="inline-flex h-full min-h-[44px] w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:w-auto"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
               aria-expanded={sortOpen}
               aria-haspopup="listbox"
+              aria-label="Sort by"
+              title="Sort by"
             >
-              Sort by
-              <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-              </svg>
+              <ArrowUpDown className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
             </button>
           </div>
 
-          <div className="relative min-w-0 flex-1 sm:min-w-[auto] sm:flex-initial" ref={filterRef}>
+          <div className="relative shrink-0" ref={filterRef}>
             <button
               type="button"
               onClick={() => {
@@ -281,16 +281,15 @@ export function ListToolbarInteractive({
                 setFilterOpen((o) => !o);
               }}
               className={cx(
-                "inline-flex h-full min-h-[44px] w-full items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition sm:w-auto",
+                "inline-flex h-10 w-10 items-center justify-center rounded-full text-white shadow-sm transition",
                 "bg-[var(--gs-navy)] hover:bg-slate-800",
                 hasActiveFilters && "ring-2 ring-[var(--gs-accent)]/50 ring-offset-2",
               )}
               aria-expanded={filterOpen}
+              aria-label="Filter"
+              title="Filter"
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
-              </svg>
-              Filter
+              <Filter className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
             </button>
           </div>
         </div>

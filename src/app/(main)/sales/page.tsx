@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { ReceivePaymentModal, type ReceivePaymentInitial } from "@/components/sales/ReceivePaymentModal";
 import { CreateModuleLink } from "@/components/ui/CreateModuleLink";
@@ -14,6 +15,7 @@ import {
   type SortOption,
 } from "@/components/ui/ListToolbarInteractive";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
+import { loadCustomers, type DemoCustomer } from "@/lib/demoCustomers";
 import { type DemoInvoiceRow, loadAddedInvoices } from "@/lib/demoInvoices";
 
 const DEFAULT_ROWS: DemoInvoiceRow[] = [
@@ -104,10 +106,15 @@ function csvEscape(cell: string): string {
   return s;
 }
 
-export default function SalesPage() {
+function SalesPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab") ?? "transactions";
+
   const [rows, setRows] = useState<DemoInvoiceRow[]>(DEFAULT_ROWS);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentInitial, setPaymentInitial] = useState<ReceivePaymentInitial | undefined>(undefined);
+  const [customers, setCustomers] = useState<DemoCustomer[]>([]);
 
   const [search, setSearch] = useState("");
   const [sortId, setSortId] = useState("recommended");
@@ -123,6 +130,16 @@ export default function SalesPage() {
     const added = loadAddedInvoices();
     if (added.length > 0) setRows([...added, ...DEFAULT_ROWS]);
   }, []);
+
+  useEffect(() => {
+    setCustomers(loadCustomers());
+  }, []);
+
+  useEffect(() => {
+    if (!searchParams.get("tab")) {
+      router.replace("/sales?tab=transactions", { scroll: false });
+    }
+  }, [router, searchParams]);
 
   const viewRows = useMemo(() => rows.map((r, i) => augmentRow(r, i)), [rows]);
 
@@ -214,20 +231,99 @@ export default function SalesPage() {
   }
 
   return (
+    <>
+      <div className="mb-5 flex flex-wrap gap-2">
+        {(
+          [
+            ["transactions", "Sales flow"],
+            ["customers", "Customers"],
+            ["receipts", "Receipts / payments"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => router.push(`/sales?tab=${id}`, { scroll: false })}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
+              tab === id ? "bg-[var(--gs-navy)] text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "customers" && (
+        <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
+          <div className="border-b border-slate-100 p-5">
+            <h2 className="text-lg font-bold text-[var(--gs-navy)]">Customers</h2>
+            <p className="mt-1 text-sm text-[var(--gs-muted)]">Customer list and profiles — demo data from browser storage.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th className="px-5 py-3">Name</th>
+                  <th className="px-5 py-3">Email</th>
+                  <th className="px-5 py-3">Phone</th>
+                  <th className="px-5 py-3">Notes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {customers.map((c) => (
+                  <tr key={c.id} className="hover:bg-slate-50/80">
+                    <td className="px-5 py-3 font-medium text-slate-900">{c.name}</td>
+                    <td className="px-5 py-3 text-slate-600">{c.email}</td>
+                    <td className="px-5 py-3 text-slate-600">{c.phone}</td>
+                    <td className="px-5 py-3 text-slate-600">{c.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {tab === "receipts" && (
+        <section className="rounded-2xl border border-[var(--gs-border)] bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Receipts & customer payments</h2>
+          <p className="mt-1 text-sm text-[var(--gs-muted)]">Allocate incoming payments to open invoices — same flow as Receive payment on invoices.</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => openReceivePayment()}
+              className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm"
+            >
+              Receive payment
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/sales?tab=receipts")}
+              className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+            >
+              Receipts tab
+            </button>
+          </div>
+        </section>
+      )}
+
+      {tab === "transactions" && (
+    <>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {(["Quotation", "Sales order", "Delivery note", "Sales invoice", "Sales return"] as const).map((doc) => (
+          <button
+            key={doc}
+            type="button"
+            onClick={() => window.alert(`Demo: open ${doc} list / create`)}
+            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-[var(--gs-accent)] hover:text-[var(--gs-accent)]"
+          >
+            {doc}
+          </button>
+        ))}
+      </div>
     <ListPageLayout
-      title="Invoices"
-      subtitle="Record gemstone sales, channels, and payments. New invoices are saved in this browser (demo)."
-      decorativeEnd={
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-sky-100 shadow-sm ring-1 ring-sky-200/70">
-          <svg className="h-7 w-7 text-sky-900" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"
-            />
-          </svg>
-        </div>
-      }
+      title="Sales documents"
+      subtitle="Quotation → order → delivery → invoice → return. Invoices below are demo + browser-saved."
       actions={
         <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:flex-wrap sm:items-stretch sm:justify-end sm:gap-2 md:items-center">
           <div className="flex flex-wrap gap-2 sm:contents">
@@ -248,12 +344,13 @@ export default function SalesPage() {
             <button
               type="button"
               onClick={exportCsv}
-              className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-400/40 transition hover:from-emerald-600 hover:to-emerald-700 sm:min-h-0 sm:flex-initial sm:rounded-full"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-400/40 transition hover:from-emerald-600 hover:to-emerald-700"
+              aria-label="Export CSV"
+              title="Export CSV"
             >
               <svg className="h-4 w-4 shrink-0 opacity-95" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
-              Export CSV
             </button>
           </div>
           <CreateModuleLink href="/sales/new" variant="sales">
@@ -299,8 +396,6 @@ export default function SalesPage() {
         />
       }
     >
-      <ReceivePaymentModal open={paymentOpen} onClose={() => setPaymentOpen(false)} initial={paymentInitial} />
-
       <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
@@ -369,5 +464,18 @@ export default function SalesPage() {
         </table>
       </div>
     </ListPageLayout>
+    </>
+      )}
+
+      <ReceivePaymentModal open={paymentOpen} onClose={() => setPaymentOpen(false)} initial={paymentInitial} />
+    </>
+  );
+}
+
+export default function SalesPage() {
+  return (
+    <Suspense fallback={<div className="py-10 text-center text-sm text-slate-500">Loading sales…</div>}>
+      <SalesPageContent />
+    </Suspense>
   );
 }
