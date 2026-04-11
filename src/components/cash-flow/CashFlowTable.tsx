@@ -14,10 +14,10 @@ export function CashFlowTable({ rows, reconciliationDiff, onLineClick }: Props) 
   const showWarning = Math.abs(reconciliationDiff) >= 0.01;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
       <div className="max-h-[min(560px,70vh)] overflow-auto">
         <table className="w-full min-w-[480px] border-collapse text-sm">
-          <thead className="sticky top-0 z-[1] border-b border-slate-200 bg-[var(--gs-table-head)] text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+          <thead className="sticky top-0 z-[1] border-b border-[var(--gs-border)] bg-[var(--gs-table-head)] text-left text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
             <tr>
               <th className="px-4 py-3">Description</th>
               <th className="px-4 py-3 text-right">Amount</th>
@@ -34,23 +34,23 @@ export function CashFlowTable({ rows, reconciliationDiff, onLineClick }: Props) 
               const pad = 12 + row.depth * 18;
 
               const labelClass = isSection
-                ? "pt-5 text-xs font-bold uppercase tracking-wide text-[var(--gs-navy)]"
+                ? "pt-5 text-xs font-bold uppercase tracking-wide text-[var(--gs-text)]"
                 : isGrand
-                  ? "font-bold text-[var(--gs-navy)]"
+                  ? "font-bold text-[var(--gs-text)]"
                   : isTotal
-                    ? "font-bold text-slate-900"
+                    ? "font-bold text-[var(--gs-text)]"
                     : isSummary
-                      ? "font-semibold text-slate-800"
-                      : "font-medium text-slate-800";
+                      ? "font-semibold text-[var(--gs-text)]"
+                      : "font-medium text-[var(--gs-text)]";
 
               const amountClass =
                 isGrand || isTotal
-                  ? "font-bold tabular-nums text-slate-900"
+                  ? "font-bold tabular-nums text-[var(--gs-text)]"
                   : isSummary
-                    ? "font-semibold tabular-nums text-slate-900"
-                    : "tabular-nums text-slate-800";
+                    ? "font-semibold tabular-nums text-[var(--gs-text)]"
+                    : "tabular-nums text-[var(--gs-text)]";
 
-              const checkClass = showWarning ? "bg-red-50 font-bold text-red-800" : "bg-emerald-50/60 font-semibold text-emerald-900";
+              const checkClass = showWarning ? "bg-red-50 font-bold text-red-800" : "bg-emerald-50/60 font-semibold text-[var(--gs-text)]";
 
               const fmt = (n: number) =>
                 n < 0 ? `(${formatMoney(Math.abs(n), "PKR")})` : formatMoney(n, "PKR");
@@ -59,9 +59,9 @@ export function CashFlowTable({ rows, reconciliationDiff, onLineClick }: Props) 
                 <tr
                   key={row.id}
                   onClick={() => isDetail && onLineClick(row)}
-                  className={`border-b border-slate-100 ${
-                    isDetail ? "cursor-pointer hover:bg-orange-50/50" : ""
-                  } ${isCheck ? checkClass : "bg-white"}`}
+                  className={`border-b border-[var(--gs-border)] ${
+                    isDetail ? "cursor-pointer hover:bg-[var(--gs-accent-soft)]/50" : ""
+                  } ${isCheck ? checkClass : "bg-[var(--gs-card)]"}`}
                 >
                   <td className="px-4 py-2.5 align-top" style={{ paddingLeft: pad }}>
                     <span className={labelClass}>{row.label}</span>
@@ -92,7 +92,7 @@ export function CashFlowTable({ rows, reconciliationDiff, onLineClick }: Props) 
           Opening cash plus net change does not equal closing cash. Review the reconciliation line.
         </p>
       ) : (
-        <p className="border-t border-emerald-100 bg-emerald-50/50 px-4 py-3 text-xs font-medium text-emerald-900">
+        <p className="border-t border-emerald-100 bg-emerald-50/50 px-4 py-3 text-xs font-medium text-[var(--gs-text)]">
           Cash roll-forward ties: opening + net change = closing balance.
         </p>
       )}

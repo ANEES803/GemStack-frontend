@@ -61,23 +61,23 @@ export default function FepPage() {
       </p>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-[var(--gs-border)] bg-white p-5 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Commission (demo)</p>
-          <p className="mt-2 text-2xl font-bold text-[var(--gs-navy)]">{formatMoney(monthlyTotal, "PKR")}</p>
+        <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Commission (demo)</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--gs-text)]">{formatMoney(monthlyTotal, "PKR")}</p>
         </div>
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-5 shadow-sm sm:col-span-2">
-          <p className="text-sm font-semibold text-emerald-900">Rule</p>
-          <p className="mt-1 text-sm text-emerald-800/90">Commission = 4% × COGS per sale; payment clears FEP payable.</p>
+          <p className="text-sm font-semibold text-[var(--gs-text)]">Rule</p>
+          <p className="mt-1 text-sm text-[var(--gs-text)]/90">Commission = 4% × COGS per sale; payment clears FEP payable.</p>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">FEP commission</h2>
+      <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+        <div className="border-b border-[var(--gs-border)] px-5 py-4">
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">FEP commission</h2>
         </div>
         <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+            <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
               <tr>
                 <th className="px-5 py-3">FEP</th>
                 <th className="px-5 py-3 text-right">Earned</th>
@@ -86,13 +86,13 @@ export default function FepPage() {
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--gs-border)]">
               {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/80">
-                  <td className="px-5 py-3 font-medium text-slate-900">{r.name}</td>
-                  <td className="px-5 py-3 text-right text-slate-700">{formatMoney(r.commissionEarned, "PKR")}</td>
-                  <td className="px-5 py-3 text-right text-slate-700">{formatMoney(r.paid, "PKR")}</td>
-                  <td className="px-5 py-3 text-right font-semibold text-[var(--gs-navy)]">{formatMoney(balance(r), "PKR")}</td>
+                <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
+                  <td className="px-5 py-3 font-medium text-[var(--gs-text)]">{r.name}</td>
+                  <td className="px-5 py-3 text-right text-[var(--gs-text)]">{formatMoney(r.commissionEarned, "PKR")}</td>
+                  <td className="px-5 py-3 text-right text-[var(--gs-text)]">{formatMoney(r.paid, "PKR")}</td>
+                  <td className="px-5 py-3 text-right font-semibold text-[var(--gs-text)]">{formatMoney(balance(r), "PKR")}</td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button
@@ -117,17 +117,17 @@ export default function FepPage() {
       </div>
 
       {payOpen ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 p-3 pt-6 sm:items-center sm:p-4 sm:py-8">
-          <div className="w-full max-w-md max-h-[min(92vh,calc(100dvh-1.5rem))] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-3 pt-6 sm:items-center sm:p-4 sm:py-8">
+          <div className="w-full max-w-md max-h-[min(92vh,calc(100dvh-1.5rem))] overflow-y-auto overscroll-contain rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4 shadow-2xl sm:p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-bold text-[var(--gs-navy)]">Pay commission</h3>
-                <p className="mt-1 text-sm text-slate-500">{payOpen.name}</p>
+                <h3 className="text-lg font-bold text-[var(--gs-text)]">Pay commission</h3>
+                <p className="mt-1 text-sm text-[var(--gs-muted)]">{payOpen.name}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setPayOpen(null)}
-                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                className="rounded-full p-2 text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
                 aria-label="Close"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
@@ -137,25 +137,25 @@ export default function FepPage() {
             </div>
             <div className="mt-4 space-y-3">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Date *</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Date *</label>
                 <input
                   type="date"
                   value={payDate}
                   onChange={(e) => setPayDate(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Amount (PKR) *</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Amount (PKR) *</label>
                 <input
                   inputMode="decimal"
                   value={payAmount}
                   onChange={(e) => setPayAmount(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setPayOpen(null)} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">
+                <button type="button" onClick={() => setPayOpen(null)} className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)]">
                   Cancel
                 </button>
                 <button type="button" onClick={submitPay} className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white">

@@ -6,7 +6,7 @@ import { InventoryHub } from "@/components/inventory/InventoryHub";
 
 export default function InventoryPage() {
   return (
-    <Suspense fallback={<div className="py-10 text-center text-sm text-slate-500">Loading inventory…</div>}>
+    <Suspense fallback={<div className="py-10 text-center text-sm text-[var(--gs-muted)]">Loading inventory…</div>}>
       <InventoryHub />
     </Suspense>
   );

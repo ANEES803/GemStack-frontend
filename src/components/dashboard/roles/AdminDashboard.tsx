@@ -74,12 +74,12 @@ export function AdminDashboard() {
               ["Database", "Success", "2m ago"],
               ["Email queue", "Success", "15m ago"],
             ].map(([name, st, t]) => (
-              <li key={String(name)} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-100/90">
-                <span className="font-medium text-slate-800">{name}</span>
+              <li key={String(name)} className="flex items-center justify-between rounded-xl bg-[var(--gs-hover)] px-4 py-3 ring-1 ring-[var(--gs-border)]/90">
+                <span className="font-medium text-[var(--gs-text)]">{name}</span>
                 <span className="flex items-center gap-2 text-emerald-700">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   {st}
-                  <span className="text-xs text-slate-400">{t}</span>
+                  <span className="text-xs text-[var(--gs-muted)]">{t}</span>
                 </span>
               </li>
             ))}
@@ -93,13 +93,13 @@ export function AdminDashboard() {
         >
           <Link
             href="/users"
-            className="rounded-xl bg-[var(--gs-navy)] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            className="rounded-xl bg-[var(--gs-accent)] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
           >
             Manage users & roles
           </Link>
           <Link
             href="/accounting"
-            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-3 text-center text-sm font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)]"
           >
             Review accounting modules
           </Link>
@@ -110,7 +110,7 @@ export function AdminDashboard() {
         <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[520px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-[var(--gs-border)]/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">
                 <th className="px-6 py-3.5">Actor</th>
                 <th className="px-6 py-3.5">Action</th>
                 <th className="px-6 py-3.5">Target</th>
@@ -118,13 +118,13 @@ export function AdminDashboard() {
                 <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--gs-border)]">
               {audits.map((a) => (
-                <tr key={a.when + a.action} className="hover:bg-slate-50/80">
-                  <td className="px-6 py-3.5 font-mono text-xs text-slate-800">{a.who}</td>
-                  <td className="px-6 py-3.5 text-slate-700">{a.action}</td>
-                  <td className="px-6 py-3.5 text-slate-600">{a.target}</td>
-                  <td className="px-6 py-3.5 text-right text-xs text-slate-500">{a.when}</td>
+                <tr key={a.when + a.action} className="hover:bg-[var(--gs-hover)]/80">
+                  <td className="px-6 py-3.5 font-mono text-xs text-[var(--gs-text)]">{a.who}</td>
+                  <td className="px-6 py-3.5 text-[var(--gs-text)]">{a.action}</td>
+                  <td className="px-6 py-3.5 text-[var(--gs-muted)]">{a.target}</td>
+                  <td className="px-6 py-3.5 text-right text-xs text-[var(--gs-muted)]">{a.when}</td>
                   <td className="px-6 py-3.5 text-right">
                     <RowActionsMenu items={["Inspect", "Export row", "Escalate"]} />
                   </td>

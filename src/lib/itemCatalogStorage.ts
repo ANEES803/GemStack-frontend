@@ -28,6 +28,8 @@ export type StoredItemRow = {
   serviceUnit: string;
   /** COA account id for service revenue recognition (demo); empty for inventory */
   revenueAccountId: string;
+  /** Lot code when item kind is Rough and linked to a rough purchase lot (demo) */
+  linkedRoughLotCode: string;
 };
 
 const STORAGE_KEY = "gemstack-items-catalog-v1";

@@ -9,13 +9,13 @@ import {
   FileText,
   Import,
   MoreVertical,
+  Pencil,
   Plus,
   Search,
   Trash2,
   X,
   Sheet,
   Table,
-  Layers,
   ClipboardCheck,
 } from "lucide-react";
 import Link from "next/link";
@@ -24,6 +24,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 
 import { DEMO_REVENUE_ACCOUNTS, revenueAccountLabel } from "@/lib/demoRevenueAccounts";
 import { loadItemCatalog, saveItemCatalog, type StoredItemRow } from "@/lib/itemCatalogStorage";
+import { ROUGH_LOTS_SEED } from "@/lib/roughLotsSeed";
 
 import {
   defaultStandardFieldRules,
@@ -53,9 +54,6 @@ type Tab = "items" | "stock" | "reports" | "audit";
 const VALID_INVENTORY_TABS = new Set<Tab>(["items", "stock", "reports", "audit"]);
 
 type ReportSubTab = "overview" | "analysis" | "custodian" | "typewise" | "itemname";
-
-/** Filter stock list by inventory item kind (built-in or custom type id). */
-type ItemKindFilterTab = "all" | typeof KIND_ROUGH | typeof KIND_CUT | string;
 
 type AuditLineSnap = {
   itemId: string;
@@ -128,13 +126,160 @@ function persistAuditClosedIds(ids: Set<string>) {
 
 const ADD_NEW_TYPE_VALUE = "__add_new_type__";
 
-/** Demo placeholder PNG (1×1) — replace with real QR data URL from API. */
+const CUSTOM_INVENTORY_LOCATIONS_KEY = "gemstack-inventory-custom-locations-v1";
+
+function loadCustomLocations(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_INVENTORY_LOCATIONS_KEY);
+    if (!raw) return [];
+    const p = JSON.parse(raw) as unknown;
+    if (!Array.isArray(p)) return [];
+    return p.filter((x): x is string => typeof x === "string");
+  } catch {
+    return [];
+  }
+}
+
+function persistCustomLocations(locations: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CUSTOM_INVENTORY_LOCATIONS_KEY, JSON.stringify(locations));
+  } catch {
+    /* ignore */
+  }
+}
+
+const CUSTOM_INVENTORY_CUSTODIANS_KEY = "gemstack-inventory-custom-custodians-v1";
+
+function loadCustomCustodians(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_INVENTORY_CUSTODIANS_KEY);
+    if (!raw) return [];
+    const p = JSON.parse(raw) as unknown;
+    if (!Array.isArray(p)) return [];
+    return p.filter((x): x is string => typeof x === "string");
+  } catch {
+    return [];
+  }
+}
+
+function persistCustomCustodians(names: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CUSTOM_INVENTORY_CUSTODIANS_KEY, JSON.stringify(names));
+  } catch {
+    /* ignore */
+  }
+}
+
+const CUSTOM_INVENTORY_CATEGORIES_KEY = "gemstack-inventory-custom-categories-v1";
+
+function loadCustomCategories(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_INVENTORY_CATEGORIES_KEY);
+    if (!raw) return [];
+    const p = JSON.parse(raw) as unknown;
+    if (!Array.isArray(p)) return [];
+    return p.filter((x): x is string => typeof x === "string");
+  } catch {
+    return [];
+  }
+}
+
+function persistCustomCategories(categories: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CUSTOM_INVENTORY_CATEGORIES_KEY, JSON.stringify(categories));
+  } catch {
+    /* ignore */
+  }
+}
+
+const HIDDEN_LOCATION_PRESETS_KEY = "gemstack-inventory-hidden-location-presets-v1";
+
+function loadHiddenLocationPresets(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(HIDDEN_LOCATION_PRESETS_KEY);
+    if (!raw) return [];
+    const p = JSON.parse(raw) as unknown;
+    if (!Array.isArray(p)) return [];
+    return p.filter((x): x is string => typeof x === "string");
+  } catch {
+    return [];
+  }
+}
+
+function persistHiddenLocationPresets(names: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(HIDDEN_LOCATION_PRESETS_KEY, JSON.stringify(names));
+  } catch {
+    /* ignore */
+  }
+}
+
+const HIDDEN_CUSTODIAN_PRESETS_KEY = "gemstack-inventory-hidden-custodian-presets-v1";
+
+function loadHiddenCustodianPresets(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(HIDDEN_CUSTODIAN_PRESETS_KEY);
+    if (!raw) return [];
+    const p = JSON.parse(raw) as unknown;
+    if (!Array.isArray(p)) return [];
+    return p.filter((x): x is string => typeof x === "string");
+  } catch {
+    return [];
+  }
+}
+
+function persistHiddenCustodianPresets(names: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(HIDDEN_CUSTODIAN_PRESETS_KEY, JSON.stringify(names));
+  } catch {
+    /* ignore */
+  }
+}
+
+const HIDDEN_CATEGORY_PRESETS_KEY = "gemstack-inventory-hidden-category-presets-v1";
+
+function loadHiddenCategoryPresets(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(HIDDEN_CATEGORY_PRESETS_KEY);
+    if (!raw) return [];
+    const p = JSON.parse(raw) as unknown;
+    if (!Array.isArray(p)) return [];
+    return p.filter((x): x is string => typeof x === "string");
+  } catch {
+    return [];
+  }
+}
+
+function persistHiddenCategoryPresets(names: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(HIDDEN_CATEGORY_PRESETS_KEY, JSON.stringify(names));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Default category labels merged with custom and row-derived values */
+const DEFAULT_CATEGORY_OPTIONS = ["Faceted", "Services", "Rough"] as const;
+
+/** Demo placeholder PNG (1×1)  replace with real QR data URL from API. */
 const DUMMY_NEW_ITEM_QR_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 type AddTypeSpecMode = "rough" | "cut" | "builder";
 
-const GRADE_OPTIONS = ["AAA", "AA", "A", "B", "C", "Commercial", "—"] as const;
+const GRADE_OPTIONS = ["AAA", "AA", "A", "B", "C", "Commercial", ""] as const;
 
 type ItemLineEntryType = "inventory" | "service";
 
@@ -157,7 +302,7 @@ type ItemRow = {
   dimLength: string;
   dimWidth: string;
   dimHeight: string;
-  /** Unit of measure quantity — amount = uom × rate */
+  /** Unit of measure quantity  amount = uom × rate */
   uom: number;
   pieces: number;
   rate: number;
@@ -168,14 +313,19 @@ type ItemRow = {
   customFieldValuesJson: string;
   /** Optional unit label for service lines (e.g. Hours) */
   serviceUnit: string;
-  /** Revenue (income) COA link for service lines — demo ids from `demoRevenueAccounts` */
+  /** Revenue (income) COA link for service lines  demo ids from `demoRevenueAccounts` */
   revenueAccountId: string;
+  /** Linked rough purchase lot (demo); only used when `itemKind` is Rough */
+  linkedRoughLotCode: string;
 };
 
-function itemAmount(r: ItemRow): number {
-  if (r.entryType === "service") return r.rate;
-  return r.uom * r.rate;
-}
+type SplitDraftRow = {
+  id: string;
+  itemName: string;
+  uom: string;
+  pieces: string;
+  rate: string;
+};
 
 const INITIAL_ITEMS: ItemRow[] = [
   {
@@ -189,9 +339,9 @@ const INITIAL_ITEMS: ItemRow[] = [
     category: "Faceted",
     type: "Product",
     grade: "AA",
-    dimLength: "—",
-    dimWidth: "—",
-    dimHeight: "—",
+    dimLength: "",
+    dimWidth: "",
+    dimHeight: "",
     uom: 18.2,
     pieces: 42,
     rate: 1250,
@@ -199,8 +349,9 @@ const INITIAL_ITEMS: ItemRow[] = [
     custodian: "J. Smith",
     details: "Mixed sizes; stored in sealed bag.",
     customFieldValuesJson: "{}",
-    serviceUnit: "—",
+    serviceUnit: "",
     revenueAccountId: "",
+    linkedRoughLotCode: "",
   },
   {
     id: "i2",
@@ -212,19 +363,20 @@ const INITIAL_ITEMS: ItemRow[] = [
     itemKind: KIND_ROUGH,
     category: "Services",
     type: "Service",
-    grade: "—",
-    dimLength: "—",
-    dimWidth: "—",
-    dimHeight: "—",
+    grade: "",
+    dimLength: "",
+    dimWidth: "",
+    dimHeight: "",
     uom: 1,
     pieces: 1,
     rate: 150,
-    location: "—",
-    custodian: "—",
+    location: "",
+    custodian: "",
     details: "Per-stone appraisal retainer.",
     customFieldValuesJson: "{}",
     serviceUnit: "Hours",
     revenueAccountId: "8",
+    linkedRoughLotCode: "",
   },
   {
     id: "i3",
@@ -237,9 +389,9 @@ const INITIAL_ITEMS: ItemRow[] = [
     category: "Rough",
     type: "Raw",
     grade: "B",
-    dimLength: "—",
-    dimWidth: "—",
-    dimHeight: "—",
+    dimLength: "",
+    dimWidth: "",
+    dimHeight: "",
     uom: 240,
     pieces: 120,
     rate: 45,
@@ -247,8 +399,9 @@ const INITIAL_ITEMS: ItemRow[] = [
     custodian: "M. Lee",
     details: "Bulk rough; sort before cutting.",
     customFieldValuesJson: "{}",
-    serviceUnit: "—",
+    serviceUnit: "",
     revenueAccountId: "",
+    linkedRoughLotCode: "LO-09",
   },
   {
     id: "i4",
@@ -260,7 +413,7 @@ const INITIAL_ITEMS: ItemRow[] = [
     itemKind: KIND_CUT,
     category: "Faceted",
     type: "Product",
-    grade: "—",
+    grade: "",
     dimLength: "4.2",
     dimWidth: "3.1",
     dimHeight: "2.0",
@@ -271,8 +424,9 @@ const INITIAL_ITEMS: ItemRow[] = [
     custodian: "J. Smith",
     details: "Cut; dimensions in mm.",
     customFieldValuesJson: "{}",
-    serviceUnit: "—",
+    serviceUnit: "",
     revenueAccountId: "",
+    linkedRoughLotCode: "",
   },
 ];
 
@@ -313,8 +467,8 @@ function downloadTextFile(filename: string, content: string, mime: string) {
 }
 
 function formatDims(r: ItemRow): string {
-  if (r.dimLength === "—" && r.dimWidth === "—" && r.dimHeight === "—") return "—";
-  return [r.dimLength, r.dimWidth, r.dimHeight].filter((x) => x && x !== "—").join(" × ") || "—";
+  if (r.dimLength === "" && r.dimWidth === "" && r.dimHeight === "") return "";
+  return [r.dimLength, r.dimWidth, r.dimHeight].filter((x) => x && x !== "").join(" × ") || "";
 }
 
 function parseCustomFieldValues(json: string): Record<string, string> {
@@ -328,20 +482,59 @@ function parseCustomFieldValues(json: string): Record<string, string> {
 }
 
 function formatSpecCell(r: ItemRow, customTypes: readonly CustomInventoryType[]): string {
-  if (r.entryType === "service") return "—";
+  if (r.entryType === "service") return "";
   const mode = getInventoryTypeUiMode(r.itemKind, customTypes);
   if (mode === "rough") return r.grade;
   if (mode === "cut") return formatDims(r);
   const t = customTypes.find((x) => x.id === r.itemKind);
   const vals = parseCustomFieldValues(r.customFieldValuesJson);
   if (t?.builderFields?.length) {
-    const parts = t.builderFields.map((f) => `${f.label}: ${vals[f.id]?.trim() || "—"}`);
-    return parts.join(" · ") || "—";
+    const visible = t.builderFields.filter((f) => f.visible !== false);
+    const parts = visible.map((f) => `${f.label}: ${vals[f.id]?.trim() || ""}`);
+    return parts.join(" · ") || "";
   }
   return fieldPresetForKind(r.itemKind, customTypes) === KIND_ROUGH ? r.grade : formatDims(r);
 }
 
-function rowsToCsv(data: ItemRow[]): string {
+function inventoryStockAmount(
+  itemKind: ItemKindKey,
+  uom: number,
+  pieces: number,
+  rate: number,
+  customTypes: readonly CustomInventoryType[],
+): number {
+  if (!Number.isFinite(rate) || rate < 0) return 0;
+  if (isBuiltinKind(itemKind)) {
+    const u = Number.isFinite(uom) && uom >= 0 ? uom : 0;
+    return u * rate;
+  }
+  const customStd = customTypes.find((t) => t.id === itemKind)?.standardFields;
+  const rUom = resolveStandardFieldRule("uomQty", customStd);
+  const rPieces = resolveStandardFieldRule("pieces", customStd);
+  if (!rUom.enabled) {
+    const p = Number.isFinite(pieces) && pieces >= 0 ? Math.floor(pieces) : 0;
+    return rPieces.enabled ? p * rate : rate;
+  }
+  const u = Number.isFinite(uom) && uom >= 0 ? uom : 0;
+  return u * rate;
+}
+
+function lineAmount(r: ItemRow, customTypes: readonly CustomInventoryType[]): number {
+  if (r.entryType === "service") return r.rate;
+  return inventoryStockAmount(r.itemKind, r.uom, r.pieces, r.rate, customTypes);
+}
+
+/** Quantity used in reports when UOM is off (pieces) vs on (UOM). */
+function inventoryPrimaryQty(r: ItemRow, customTypes: readonly CustomInventoryType[]): number {
+  if (r.entryType === "service") return 0;
+  if (isBuiltinKind(r.itemKind)) return r.uom;
+  const customStd = customTypes.find((t) => t.id === r.itemKind)?.standardFields;
+  const rUom = resolveStandardFieldRule("uomQty", customStd);
+  if (!rUom.enabled) return r.pieces;
+  return r.uom;
+}
+
+function rowsToCsv(data: ItemRow[], customTypes: readonly CustomInventoryType[]): string {
   const headers = [
     "Line type",
     "Item #",
@@ -363,12 +556,13 @@ function rowsToCsv(data: ItemRow[]): string {
     "Service unit",
     "Revenue account",
     "Has image",
+    "Linked rough lot",
   ];
   const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
   const lines = [
     headers.join(","),
     ...data.map((r) => {
-      const amt = itemAmount(r);
+      const amt = lineAmount(r, customTypes);
       return [
         r.entryType,
         esc(r.itemNo),
@@ -390,6 +584,7 @@ function rowsToCsv(data: ItemRow[]): string {
         esc(r.serviceUnit),
         esc(revenueAccountLabel(r.revenueAccountId)),
         r.imageDataUrl ? "yes" : "no",
+        esc(r.linkedRoughLotCode ?? ""),
       ].join(",");
     }),
   ];
@@ -398,9 +593,11 @@ function rowsToCsv(data: ItemRow[]): string {
 
 function ItemsImportExportMenu({
   rows,
+  customTypes,
   onImportFiles,
 }: {
   rows: ItemRow[];
+  customTypes: readonly CustomInventoryType[];
   onImportFiles: (files: FileList | null) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -418,20 +615,20 @@ function ItemsImportExportMenu({
   const close = useCallback(() => setOpen(false), []);
 
   const runExport = useCallback(() => {
-    window.alert(`Demo: export ${rows.length} item(s) — connect API for full export.`);
+    window.alert(`Demo: export ${rows.length} item(s)  connect API for full export.`);
   }, [rows.length]);
 
   const runPdf = useCallback(() => {
-    window.alert("Demo: Download to PDF — connect report service or window.print() from a preview.");
+    window.alert("Demo: Download to PDF  connect report service or window.print() from a preview.");
   }, []);
 
   const runCsv = useCallback(() => {
-    downloadTextFile(`items-${new Date().toISOString().slice(0, 10)}.csv`, rowsToCsv(rows), "text/csv;charset=utf-8;");
+    downloadTextFile(`items-${new Date().toISOString().slice(0, 10)}.csv`, rowsToCsv(rows, customTypes), "text/csv;charset=utf-8;");
     close();
-  }, [rows, close]);
+  }, [rows, customTypes, close]);
 
   const runExcel = useCallback(() => {
-    window.alert("Demo: Download to Excel (.xlsx) — connect API or add a sheet library; CSV download is available now.");
+    window.alert("Demo: Download to Excel (.xlsx)  connect API or add a sheet library; CSV download is available now.");
     close();
   }, [close]);
 
@@ -456,32 +653,32 @@ function ItemsImportExportMenu({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+        className="inline-flex items-center gap-1 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-2.5 py-1.5 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
         aria-expanded={open}
         aria-haspopup="menu"
       >
-        <Import className="h-3.5 w-3.5 shrink-0 text-slate-600" strokeWidth={2} aria-hidden />
+        <Import className="h-3.5 w-3.5 shrink-0 text-[var(--gs-muted)]" strokeWidth={2} aria-hidden />
         Import / Export
-        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition", open && "rotate-180")} strokeWidth={2} aria-hidden />
+        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-[var(--gs-muted)] transition", open && "rotate-180")} strokeWidth={2} aria-hidden />
       </button>
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-1.5 min-w-[15rem] rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-slate-900/5"
+          className="absolute right-0 z-50 mt-1.5 min-w-[15rem] rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-xl ring-1 ring-[var(--gs-border)]"
         >
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
             onClick={triggerImport}
           >
             <Import className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-            Import…
+            Import...
           </button>
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
             onClick={() => {
               runExport();
               close();
@@ -490,11 +687,11 @@ function ItemsImportExportMenu({
             <FileSpreadsheet className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
             Export
           </button>
-          <div className="my-1 border-t border-slate-100" />
+          <div className="my-1 border-t border-[var(--gs-border)]" />
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
             onClick={() => {
               runPdf();
               close();
@@ -506,7 +703,7 @@ function ItemsImportExportMenu({
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
             onClick={runCsv}
           >
             <Table className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
@@ -515,7 +712,7 @@ function ItemsImportExportMenu({
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
             onClick={runExcel}
           >
             <Sheet className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
@@ -553,7 +750,7 @@ function AuditSaveDropdown({
         type="button"
         onClick={() => setOpen((o) => !o)}
         disabled={disabled}
-        className="inline-flex items-center gap-1.5 rounded-full bg-[var(--gs-navy)] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-full bg-[var(--gs-accent)] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)] disabled:pointer-events-none disabled:opacity-50"
         aria-expanded={open}
         aria-haspopup="menu"
       >
@@ -568,12 +765,12 @@ function AuditSaveDropdown({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-1.5 min-w-[13rem] rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-slate-900/5"
+          className="absolute right-0 z-50 mt-1.5 min-w-[13rem] rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-xl ring-1 ring-[var(--gs-border)]"
         >
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
             onClick={() => {
               onSaveNow();
               setOpen(false);
@@ -584,7 +781,7 @@ function AuditSaveDropdown({
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
             onClick={() => {
               onSaveAndClose();
               setOpen(false);
@@ -602,9 +799,9 @@ function cn(...parts: (string | false | undefined)[]) {
   return parts.filter(Boolean).join(" ");
 }
 
-const FIELD_LABEL = "block text-xs font-semibold uppercase tracking-wide text-slate-500";
+const FIELD_LABEL = "block text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]";
 const FIELD_INPUT =
-  "mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/15";
+  "mt-1.5 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm text-[var(--gs-text)] outline-none transition placeholder:text-[var(--gs-muted)] focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/15";
 
 function FormSection({
   title,
@@ -620,13 +817,13 @@ function FormSection({
   return (
     <section
       className={cn(
-        "rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/80 p-4 shadow-sm",
+        "rounded-xl border border-[var(--gs-border)] bg-gradient-to-b from-[var(--gs-card)] to-[var(--gs-card)] p-4 shadow-sm",
         className,
       )}
     >
-      <div className="border-b border-slate-100 pb-2">
-        <h4 className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">{title}</h4>
-        {subtitle ? <p className="mt-1 text-[11px] leading-snug text-slate-500">{subtitle}</p> : null}
+      <div className="border-b border-[var(--gs-border)] pb-2">
+        <h4 className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--gs-muted)]">{title}</h4>
+        {subtitle ? <p className="mt-1 text-[11px] leading-snug text-[var(--gs-muted)]">{subtitle}</p> : null}
       </div>
       <div className="mt-4 space-y-4">{children}</div>
     </section>
@@ -640,18 +837,18 @@ function LineTypeToggle({
 }: {
   value: ItemLineEntryType;
   onChange: (next: ItemLineEntryType) => void;
-  hint: string;
+  hint?: string;
 }) {
   return (
     <div>
       <p className={FIELD_LABEL}>Item line type</p>
-      <div className="mt-2 inline-flex rounded-xl border border-slate-200 bg-slate-50/80 p-1">
+      <div className="mt-2 inline-flex rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-1">
         <button
           type="button"
           onClick={() => onChange("inventory")}
           className={cn(
             "rounded-lg px-4 py-2 text-sm font-semibold transition",
-            value === "inventory" ? "bg-[var(--gs-accent)] text-white shadow-sm" : "text-slate-600 hover:bg-white",
+            value === "inventory" ? "bg-[var(--gs-accent)] text-white shadow-sm" : "text-[var(--gs-muted)] hover:bg-[var(--gs-card)]",
           )}
         >
           Inventory
@@ -661,13 +858,13 @@ function LineTypeToggle({
           onClick={() => onChange("service")}
           className={cn(
             "rounded-lg px-4 py-2 text-sm font-semibold transition",
-            value === "service" ? "bg-[var(--gs-accent)] text-white shadow-sm" : "text-slate-600 hover:bg-white",
+            value === "service" ? "bg-[var(--gs-accent)] text-white shadow-sm" : "text-[var(--gs-muted)] hover:bg-[var(--gs-card)]",
           )}
         >
           Service
         </button>
       </div>
-      <p className="mt-1 text-[11px] text-slate-500">{hint}</p>
+      {hint ? <p className="mt-1 text-[11px] text-[var(--gs-muted)]">{hint}</p> : null}
     </div>
   );
 }
@@ -694,7 +891,7 @@ function ItemImageDropzone({ value, onChange }: { value: string | null; onChange
 
   return (
     <div>
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Image (optional)</p>
+      <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Image (optional)</p>
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -709,7 +906,7 @@ function ItemImageDropzone({ value, onChange }: { value: string | null; onChange
         }}
         className={cn(
           "mt-2 flex min-h-[7.5rem] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-5 transition",
-          dragOver ? "border-[var(--gs-accent)] bg-orange-50/60" : "border-slate-200 bg-slate-50/70 hover:border-slate-300",
+          dragOver ? "border-[var(--gs-accent)] bg-[var(--gs-accent-soft)]/60" : "border-[var(--gs-border)] bg-[var(--gs-hover)]/70 hover:border-[var(--gs-border-strong)]",
         )}
         onClick={() => inputRef.current?.click()}
         onKeyDown={(e) => {
@@ -739,7 +936,7 @@ function ItemImageDropzone({ value, onChange }: { value: string | null; onChange
             <img src={value} alt="" className="mx-auto max-h-44 w-auto rounded-lg object-contain shadow-sm" />
             <button
               type="button"
-              className="absolute right-1 top-1 rounded-full border border-slate-200 bg-white p-1.5 text-slate-600 shadow-sm hover:bg-red-50 hover:text-red-700"
+              className="absolute right-1 top-1 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] p-1.5 text-[var(--gs-muted)] shadow-sm hover:bg-red-50 hover:text-red-700"
               onClick={(e) => {
                 e.stopPropagation();
                 onChange(null);
@@ -751,8 +948,8 @@ function ItemImageDropzone({ value, onChange }: { value: string | null; onChange
           </div>
         ) : (
           <div className="text-center">
-            <p className="text-sm font-semibold text-slate-800">Drop an image here or click to upload</p>
-            <p className="mt-1 text-xs text-slate-500">PNG, JPG, WebP — max {Math.round(MAX_ITEM_IMAGE_BYTES / 1e6)} MB</p>
+            <p className="text-sm font-semibold text-[var(--gs-text)]">Drop an image here or click to upload</p>
+            <p className="mt-1 text-xs text-[var(--gs-muted)]">PNG, JPG, WebP  max {Math.round(MAX_ITEM_IMAGE_BYTES / 1e6)} MB</p>
           </div>
         )}
       </div>
@@ -760,38 +957,22 @@ function ItemImageDropzone({ value, onChange }: { value: string | null; onChange
   );
 }
 
-/** Plain text field: type freely; suggestions from `options` (prefix match first) appear as you type — not a separate select control */
-function AutocompleteTextField({
+/** Multi-select inventory type filter: empty set = show all kinds. */
+function ItemKindMultiSelect({
   id,
   label,
-  value,
-  onChange,
   options,
-  placeholder,
+  selectedKeys,
+  onChange,
 }: {
   id: string;
   label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: readonly string[];
-  placeholder?: string;
+  options: readonly { key: string; label: string }[];
+  selectedKeys: Set<string>;
+  onChange: (next: Set<string>) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const blurCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const sortedUnique = useMemo(
-    () => Array.from(new Set(options.filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    [options],
-  );
-
-  const suggestions = useMemo(() => {
-    const q = value.trim().toLowerCase();
-    if (!q) return [];
-    const pref = sortedUnique.filter((o) => o.toLowerCase().startsWith(q));
-    if (pref.length) return pref.slice(0, 25);
-    return sortedUnique.filter((o) => o.toLowerCase().includes(q)).slice(0, 25);
-  }, [sortedUnique, value]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -801,80 +982,74 @@ function AutocompleteTextField({
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  useEffect(
-    () => () => {
-      if (blurCloseTimer.current) clearTimeout(blurCloseTimer.current);
-    },
-    [],
-  );
+  const summary = useMemo(() => {
+    if (selectedKeys.size === 0) return "All types";
+    const labels = [...selectedKeys]
+      .map((k) => options.find((o) => o.key === k)?.label ?? k)
+      .filter(Boolean);
+    if (labels.length <= 2) return labels.join(", ");
+    return `${labels.slice(0, 2).join(", ")} +${labels.length - 2}`;
+  }, [selectedKeys, options]);
 
-  const showList = open && value.trim().length > 0 && suggestions.length > 0;
+  function toggle(key: string) {
+    const next = new Set(selectedKeys);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    onChange(next);
+  }
 
   return (
-    <div className="relative" ref={rootRef}>
-      <label htmlFor={id} className="block text-xs font-bold uppercase tracking-wide text-slate-500">
-        {label}
-      </label>
-      <input
-        id={id}
-        type="text"
-        inputMode="text"
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => {
-          if (blurCloseTimer.current) clearTimeout(blurCloseTimer.current);
-          setOpen(true);
-        }}
-        onBlur={() => {
-          if (blurCloseTimer.current) clearTimeout(blurCloseTimer.current);
-          blurCloseTimer.current = setTimeout(() => setOpen(false), 120);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") setOpen(false);
-        }}
-        placeholder={placeholder}
-        autoComplete="off"
-        autoCorrect="off"
-        spellCheck={false}
-        name={`${id}-freeform`}
-        className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-        aria-autocomplete="list"
-        aria-controls={showList ? `${id}-suggestions` : undefined}
-        aria-expanded={showList}
-        role="combobox"
-      />
-      {showList ? (
-        <ul
-          id={`${id}-suggestions`}
+    <div className="relative min-w-0 w-[50%] max-w-[20rem]" ref={rootRef}>
+      <span className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">{label}</span>
+      <button
+        type="button"
+        id={`${id}-trigger`}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`${label}: ${summary}`}
+        onClick={() => setOpen((o) => !o)}
+        className="mt-2 flex w-full min-w-[6rem] items-center justify-between gap-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2.5 text-left text-sm outline-none transition hover:border-[var(--gs-border-strong)] focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]"
+      >
+        <span className="min-w-0 flex-1 truncate text-[var(--gs-text)]">{summary}</span>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-[var(--gs-muted)] transition", open && "rotate-180")} strokeWidth={2} aria-hidden />
+      </button>
+      {open ? (
+        <div
           role="listbox"
-          className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-slate-900/5"
+          aria-multiselectable="true"
+          className="absolute left-0 right-0 z-[120] mt-1 max-h-64 overflow-y-auto rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-2 shadow-xl ring-1 ring-[var(--gs-border)]"
         >
-          {suggestions.map((opt) => (
-            <li key={opt} role="option">
-              <button
-                type="button"
-                className="w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  if (blurCloseTimer.current) clearTimeout(blurCloseTimer.current);
-                  onChange(opt);
-                  setOpen(false);
-                }}
-              >
-                {opt}
-              </button>
-            </li>
-          ))}
-        </ul>
+          <div className="mb-2 flex flex-wrap items-center gap-2 border-b border-[var(--gs-border)] pb-2">
+            <button
+              type="button"
+              className="text-xs font-semibold text-[var(--gs-accent)] hover:underline"
+              onClick={() => onChange(new Set())}
+            >
+              Clear filter (all types)
+            </button>
+          </div>
+          <ul className="space-y-0.5">
+            {options.map((o) => (
+              <li key={o.key}>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-[var(--gs-hover)]">
+                  <input
+                    type="checkbox"
+                    className="rounded border-[var(--gs-border)]"
+                    checked={selectedKeys.has(o.key)}
+                    onChange={() => toggle(o.key)}
+                  />
+                  <span className="text-sm text-[var(--gs-text)]">{o.label}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </div>
   );
 }
 
-/** Searchable popover picker — same UI for location & custodian; no browser “last used” autocomplete */
+/** Searchable popover picker  same UI for location & custodian; no browser "last used" autocomplete */
 function SearchableFieldPicker({
   id,
   label,
@@ -884,6 +1059,9 @@ function SearchableFieldPicker({
   placeholder,
   emptyLabel,
   leadingOption,
+  canManageOption,
+  onRenameOption,
+  onDeleteOption,
 }: {
   id: string;
   label: string;
@@ -892,8 +1070,11 @@ function SearchableFieldPicker({
   options: readonly string[];
   placeholder?: string;
   emptyLabel?: string;
-  /** e.g. “All locations” — always shown at top, not mixed with search history */
+  /** e.g. "All locations"  always shown at top, not mixed with search history */
   leadingOption?: { value: string; label: string };
+  canManageOption?: (opt: string) => boolean;
+  onRenameOption?: (from: string, to: string) => void;
+  onDeleteOption?: (opt: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -922,7 +1103,7 @@ function SearchableFieldPicker({
   const display =
     leadingOption && value === leadingOption.value
       ? leadingOption.label
-      : value.trim() || emptyLabel || placeholder || "Select…";
+      : value.trim() || emptyLabel || placeholder || "Select...";
   const hasExact = q.trim() && sortedUnique.some((o) => o.toLowerCase() === q.trim().toLowerCase());
   const canUseCustom = q.trim() && !hasExact;
   const showLeading =
@@ -931,7 +1112,7 @@ function SearchableFieldPicker({
 
   return (
     <div className="relative" ref={rootRef}>
-      <label htmlFor={`${id}-trigger`} className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+      <label htmlFor={`${id}-trigger`} className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
         {label}
       </label>
       <button
@@ -940,19 +1121,19 @@ function SearchableFieldPicker({
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpen((o) => !o)}
-        className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left text-sm outline-none transition hover:border-slate-300 focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]"
+        className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2.5 text-left text-sm outline-none transition hover:border-[var(--gs-border-strong)] focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]"
       >
-        <span className={value.trim() ? "truncate text-slate-900" : "truncate text-slate-400"}>{display}</span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition", open && "rotate-180")} strokeWidth={2} aria-hidden />
+        <span className={value.trim() ? "truncate text-[var(--gs-text)]" : "truncate text-[var(--gs-muted)]"}>{display}</span>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-[var(--gs-muted)] transition", open && "rotate-180")} strokeWidth={2} aria-hidden />
       </button>
       {open ? (
         <div
           role="listbox"
-          className="absolute left-0 right-0 z-[120] mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white py-2 shadow-xl ring-1 ring-slate-900/5"
+          className="absolute left-0 right-0 z-[120] mt-1 overflow-hidden rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-2 shadow-xl ring-1 ring-[var(--gs-border)]"
         >
-          <div className="border-b border-slate-100 px-2 pb-2">
+          <div className="border-b border-[var(--gs-border)] px-2 pb-2">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" strokeWidth={2} aria-hidden />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--gs-muted)]" strokeWidth={2} aria-hidden />
               <input
                 id={id}
                 type="search"
@@ -969,8 +1150,8 @@ function SearchableFieldPicker({
                     setOpen(false);
                   }
                 }}
-                placeholder={placeholder ?? "Search…"}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50/80 py-2 pl-8 pr-3 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                placeholder={placeholder ?? "Search..."}
+                className="w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 py-2 pl-8 pr-3 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
               />
             </div>
           </div>
@@ -980,7 +1161,8 @@ function SearchableFieldPicker({
                 <button
                   type="button"
                   role="option"
-                  className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+                  aria-selected={value === leadingOption.value}
+                  className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
                   onClick={() => {
                     onChange(leadingOption.value);
                     setOpen(false);
@@ -991,14 +1173,15 @@ function SearchableFieldPicker({
               </li>
             ) : null}
             {filtered.length === 0 && !canUseCustom && !showLeading ? (
-              <li className="px-3 py-2 text-xs text-slate-500">No matches</li>
+              <li className="px-3 py-2 text-xs text-[var(--gs-muted)]">No matches</li>
             ) : null}
             {filtered.map((opt) => (
-              <li key={opt}>
+              <li key={opt} className="flex items-stretch gap-1">
                 <button
                   type="button"
                   role="option"
-                  className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+                  aria-selected={value === opt}
+                  className="min-w-0 flex-1 rounded-lg px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
                   onClick={() => {
                     onChange(opt);
                     setOpen(false);
@@ -1006,6 +1189,43 @@ function SearchableFieldPicker({
                 >
                   {opt}
                 </button>
+                {canManageOption?.(opt) && onRenameOption && onDeleteOption ? (
+                  <div className="flex shrink-0 items-center gap-0.5 pr-1">
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
+                      aria-label={`Rename ${opt}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const n = window.prompt(`Rename "${opt}" to`, opt);
+                        if (n == null) return;
+                        const t = n.trim();
+                        if (!t || t === opt) return;
+                        onRenameOption(opt, t);
+                        if (value === opt) onChange(t);
+                        setOpen(false);
+                      }}
+                    >
+                      <Pencil className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 text-[var(--gs-muted)] hover:bg-red-50 hover:text-red-700"
+                      aria-label={`Delete ${opt}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!window.confirm(`Remove "${opt}" from the list? Items using it will be cleared.`)) return;
+                        onDeleteOption(opt);
+                        if (value === opt) onChange("");
+                        setOpen(false);
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                    </button>
+                  </div>
+                ) : null}
               </li>
             ))}
             {canUseCustom ? (
@@ -1013,13 +1233,14 @@ function SearchableFieldPicker({
                 <button
                   type="button"
                   role="option"
-                  className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-[var(--gs-accent)] hover:bg-orange-50"
+                  aria-selected={value === q.trim()}
+                  className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-[var(--gs-accent)] hover:bg-[var(--gs-accent-soft)]"
                   onClick={() => {
                     onChange(q.trim());
                     setOpen(false);
                   }}
                 >
-                  Use “{q.trim()}”
+                  Use &ldquo;{q.trim()}&rdquo;
                 </button>
               </li>
             ) : null}
@@ -1028,6 +1249,141 @@ function SearchableFieldPicker({
       ) : null}
     </div>
   );
+}
+
+/** Search + select for entity id + label (e.g. split parcel source). */
+function SearchableSplitSourcePicker({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  emptyLabel,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: readonly { value: string; label: string }[];
+  placeholder?: string;
+  emptyLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    if (!qq) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(qq));
+  }, [options, q]);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  useEffect(() => {
+    if (open) setQ("");
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+  const display = selected?.label || emptyLabel || placeholder || "Select...";
+
+  return (
+    <div className="relative" ref={rootRef}>
+      <label htmlFor={`${id}-trigger`} className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+        {label}
+      </label>
+      <button
+        type="button"
+        id={`${id}-trigger`}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((o) => !o)}
+        className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2.5 text-left text-sm outline-none transition hover:border-[var(--gs-border-strong)] focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]"
+      >
+        <span className={value.trim() ? "truncate text-[var(--gs-text)]" : "truncate text-[var(--gs-muted)]"}>{display}</span>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-[var(--gs-muted)] transition", open && "rotate-180")} strokeWidth={2} aria-hidden />
+      </button>
+      {open ? (
+        <div
+          role="listbox"
+          className="absolute left-0 right-0 z-[120] mt-1 overflow-hidden rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-2 shadow-xl ring-1 ring-[var(--gs-border)]"
+        >
+          <div className="border-b border-[var(--gs-border)] px-2 pb-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--gs-muted)]" strokeWidth={2} aria-hidden />
+              <input
+                id={id}
+                type="search"
+                name={`${id}-search`}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder={placeholder ?? "Search..."}
+                className="w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 py-2 pl-8 pr-3 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+              />
+            </div>
+          </div>
+          <ul className="max-h-48 overflow-y-auto px-1">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-xs text-[var(--gs-muted)]">No matches</li>
+            ) : (
+              filtered.map((opt) => (
+                <li key={opt.value}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={value === opt.value}
+                    className="w-full rounded-lg px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
+                    onClick={() => {
+                      onChange(opt.value);
+                      setOpen(false);
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function customInventoryTypeToAddDraft(t: CustomInventoryType): {
+  label: string;
+  uomTab: UomTab;
+  customUom: string;
+  specMode: AddTypeSpecMode;
+  standardFields: Record<BuiltinStandardFieldId, StandardFieldRule>;
+  builderFields: CustomFieldDef[];
+} {
+  const hasBuilder = Boolean(t.builderFields && t.builderFields.length > 0);
+  const specMode: AddTypeSpecMode = hasBuilder ? "builder" : t.fieldPreset === KIND_CUT ? "cut" : "rough";
+  return {
+    label: t.label,
+    uomTab: t.uomTab,
+    customUom: t.customUomLabel ?? "",
+    specMode,
+    standardFields: mergeStandardFields(t.standardFields),
+    builderFields: hasBuilder
+      ? t.builderFields!.map((f) => ({
+          ...f,
+          visible: f.visible !== false,
+          required: f.required !== false,
+        }))
+      : [{ id: newFieldId(), label: "Field 1", kind: "text", required: true, visible: true }],
+  };
 }
 
 function ItemRowActionMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
@@ -1047,7 +1403,7 @@ function ItemRowActionMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete:
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+        className="rounded-lg p-1.5 text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label="Row actions"
@@ -1057,12 +1413,12 @@ function ItemRowActionMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete:
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 min-w-[9rem] rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-900/5"
+          className="absolute right-0 top-full z-50 mt-1 min-w-[9rem] rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-lg ring-1 ring-[var(--gs-border)]"
         >
           <button
             type="button"
             role="menuitem"
-            className="flex w-full px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-orange-50 hover:text-[var(--gs-accent)]"
+            className="flex w-full px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
             onClick={() => {
               onEdit();
               setOpen(false);
@@ -1109,6 +1465,7 @@ const emptyItemForm = () => ({
   details: "",
   serviceUnit: "",
   revenueAccountId: "8",
+  linkedRoughLotCode: "",
 });
 
 type ItemFormState = ReturnType<typeof emptyItemForm>;
@@ -1141,6 +1498,7 @@ function normalizeItemForm(f: ItemFormState) {
     details: f.details.trim(),
     serviceUnit: f.serviceUnit.trim(),
     revenueAccountId: f.revenueAccountId.trim(),
+    linkedRoughLotCode: f.linkedRoughLotCode.trim(),
   };
 }
 
@@ -1175,7 +1533,7 @@ export function InventoryHub() {
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [itemForm, setItemForm] = useState(emptyItemForm);
-  /** Serialized `normalizeItemForm` when the modal opened — for dirty detection */
+  /** Serialized `normalizeItemForm` when the modal opened  for dirty detection */
   const [itemFormBaselineKey, setItemFormBaselineKey] = useState<string | null>(null);
   /** Shown after a new inventory item is saved (not edit or service). */
   const [newItemQrDataUrl, setNewItemQrDataUrl] = useState<string | null>(null);
@@ -1183,7 +1541,13 @@ export function InventoryHub() {
   const [customInventoryTypes, setCustomInventoryTypes] = useState<CustomInventoryType[]>([]);
   const [addTypeModalOpen, setAddTypeModalOpen] = useState(false);
   const [viewAllTypesOpen, setViewAllTypesOpen] = useState(false);
-  const [itemKindTab, setItemKindTab] = useState<ItemKindFilterTab>("all");
+  const [splitParcelOpen, setSplitParcelOpen] = useState(false);
+  const [splitSourceId, setSplitSourceId] = useState("");
+  const [splitRows, setSplitRows] = useState<SplitDraftRow[]>([]);
+  const [splitError, setSplitError] = useState<string | null>(null);
+  const [editingInventoryTypeId, setEditingInventoryTypeId] = useState<string | null>(null);
+  /** Empty set = no filter (all inventory kinds). Non-empty = item must match one of the keys. */
+  const [itemKindFilterKeys, setItemKindFilterKeys] = useState<Set<string>>(() => new Set());
   const [reportSubTab, setReportSubTab] = useState<ReportSubTab>("overview");
   const [auditDraft, setAuditDraft] = useState<Record<string, { physical: string; verified: boolean }>>({});
   /** Filter audit table by item #, name, or UOM */
@@ -1216,7 +1580,7 @@ export function InventoryHub() {
   }, []);
 
   useEffect(() => {
-    if (itemCatalogScope === "services") setItemKindTab("all");
+    if (itemCatalogScope === "services") setItemKindFilterKeys(new Set());
   }, [itemCatalogScope]);
 
   useEffect(() => {
@@ -1226,6 +1590,7 @@ export function InventoryHub() {
       loaded.map((r) => ({
         ...r,
         revenueAccountId: r.revenueAccountId ?? (r.entryType === "service" ? "8" : ""),
+        linkedRoughLotCode: r.linkedRoughLotCode ?? "",
       })) as ItemRow[],
     );
   }, []);
@@ -1234,23 +1599,246 @@ export function InventoryHub() {
     saveItemCatalog(rows as StoredItemRow[]);
   }, [rows]);
 
+  const [customLocations, setCustomLocations] = useState<string[]>([]);
+  const [customCustodians, setCustomCustodians] = useState<string[]>([]);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [hiddenLocationPresets, setHiddenLocationPresets] = useState<string[]>([]);
+  const [hiddenCustodianPresets, setHiddenCustodianPresets] = useState<string[]>([]);
+  const [hiddenCategoryPresets, setHiddenCategoryPresets] = useState<string[]>([]);
+
+  useEffect(() => {
+    setCustomLocations(loadCustomLocations());
+    setCustomCustodians(loadCustomCustodians());
+    setCustomCategories(loadCustomCategories());
+    setHiddenLocationPresets(loadHiddenLocationPresets());
+    setHiddenCustodianPresets(loadHiddenCustodianPresets());
+    setHiddenCategoryPresets(loadHiddenCategoryPresets());
+  }, []);
+
   const locationPickerOptions = useMemo(() => {
-    const set = new Set<string>(ALL_LOCATIONS as readonly string[]);
+    const set = new Set<string>();
+    for (const loc of ALL_LOCATIONS) {
+      if (!hiddenLocationPresets.includes(loc)) set.add(loc);
+    }
     rows.forEach((r) => {
       if (r.entryType !== "inventory") return;
-      if (r.location && r.location !== "—") set.add(r.location);
+      if (r.location && r.location !== "") set.add(r.location);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [rows]);
+  }, [rows, hiddenLocationPresets]);
 
   const custodianPickerOptions = useMemo(() => {
-    const set = new Set<string>(ALL_CUSTODIANS as readonly string[]);
+    const set = new Set<string>();
+    for (const c of ALL_CUSTODIANS) {
+      if (!hiddenCustodianPresets.includes(c)) set.add(c);
+    }
     rows.forEach((r) => {
       if (r.entryType !== "inventory") return;
-      if (r.custodian && r.custodian !== "—") set.add(r.custodian);
+      if (r.custodian && r.custodian !== "") set.add(r.custodian);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [rows]);
+  }, [rows, hiddenCustodianPresets]);
+
+  useEffect(() => {
+    persistCustomLocations(customLocations);
+  }, [customLocations]);
+
+  useEffect(() => {
+    persistCustomCustodians(customCustodians);
+  }, [customCustodians]);
+
+  useEffect(() => {
+    persistCustomCategories(customCategories);
+  }, [customCategories]);
+
+  useEffect(() => {
+    persistHiddenLocationPresets(hiddenLocationPresets);
+  }, [hiddenLocationPresets]);
+
+  useEffect(() => {
+    persistHiddenCustodianPresets(hiddenCustodianPresets);
+  }, [hiddenCustodianPresets]);
+
+  useEffect(() => {
+    persistHiddenCategoryPresets(hiddenCategoryPresets);
+  }, [hiddenCategoryPresets]);
+
+  const locationOptionsMerged = useMemo(() => {
+    const set = new Set<string>(locationPickerOptions);
+    customLocations.forEach((loc) => {
+      const t = loc.trim();
+      if (t) set.add(t);
+    });
+    const cur = itemForm.location.trim();
+    if (cur) set.add(cur);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [locationPickerOptions, customLocations, itemForm.location]);
+
+  const custodianOptionsMerged = useMemo(() => {
+    const set = new Set<string>(custodianPickerOptions);
+    customCustodians.forEach((name) => {
+      const t = name.trim();
+      if (t) set.add(t);
+    });
+    const cur = itemForm.custodian.trim();
+    if (cur) set.add(cur);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [custodianPickerOptions, customCustodians, itemForm.custodian]);
+
+  const categoryPickerOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of DEFAULT_CATEGORY_OPTIONS) {
+      if (!hiddenCategoryPresets.includes(c)) set.add(c);
+    }
+    rows.forEach((r) => {
+      if (r.entryType !== "inventory") return;
+      if (r.category && r.category !== "") set.add(r.category);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows, hiddenCategoryPresets]);
+
+  const categoryOptionsMerged = useMemo(() => {
+    const set = new Set<string>(categoryPickerOptions);
+    customCategories.forEach((c) => {
+      const t = c.trim();
+      if (t) set.add(t);
+    });
+    const cur = itemForm.category.trim();
+    if (cur) set.add(cur);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [categoryPickerOptions, customCategories, itemForm.category]);
+
+  const addCustomLocation = useCallback(() => {
+    const name = window.prompt("Enter new location name:");
+    if (name == null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCustomLocations((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+    setItemForm((s) => ({ ...s, location: trimmed }));
+  }, []);
+
+  const addCustomCustodian = useCallback(() => {
+    const name = window.prompt("Enter new custodian name:");
+    if (name == null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCustomCustodians((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+    setItemForm((s) => ({ ...s, custodian: trimmed }));
+  }, []);
+
+  const addCustomCategory = useCallback(() => {
+    const name = window.prompt("Enter new category name:");
+    if (name == null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCustomCategories((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+    setItemForm((s) => ({ ...s, category: trimmed }));
+  }, []);
+
+  const renameLocationOption = useCallback((from: string, to: string) => {
+    setRows((prev) =>
+      prev.map((r) => (r.entryType === "inventory" && r.location === from ? { ...r, location: to } : r)),
+    );
+    setCustomLocations((prev) => {
+      const i = prev.indexOf(from);
+      if (i >= 0) {
+        const next = [...prev];
+        next[i] = to;
+        return [...new Set(next.filter(Boolean))];
+      }
+      if ((ALL_LOCATIONS as readonly string[]).includes(from)) {
+        return prev.includes(to) ? prev : [...prev, to];
+      }
+      return prev;
+    });
+    setHiddenLocationPresets((prev) => (from && (ALL_LOCATIONS as readonly string[]).includes(from) && !prev.includes(from) ? [...prev, from] : prev));
+    setItemForm((s) => (s.location === from ? { ...s, location: to } : s));
+    setLocationFilter((f) => (f === from ? to : f));
+  }, []);
+
+  const deleteLocationOption = useCallback((name: string) => {
+    setRows((prev) =>
+      prev.map((r) => (r.entryType === "inventory" && r.location === name ? { ...r, location: "" } : r)),
+    );
+    setCustomLocations((prev) => prev.filter((x) => x !== name));
+    if ((ALL_LOCATIONS as readonly string[]).includes(name)) {
+      setHiddenLocationPresets((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    }
+    setItemForm((s) => (s.location === name ? { ...s, location: "" } : s));
+    setLocationFilter((f) => (f === name ? "All" : f));
+  }, []);
+
+  const renameCustodianOption = useCallback((from: string, to: string) => {
+    setRows((prev) =>
+      prev.map((r) => (r.entryType === "inventory" && r.custodian === from ? { ...r, custodian: to } : r)),
+    );
+    setCustomCustodians((prev) => {
+      const i = prev.indexOf(from);
+      if (i >= 0) {
+        const next = [...prev];
+        next[i] = to;
+        return [...new Set(next.filter(Boolean))];
+      }
+      if ((ALL_CUSTODIANS as readonly string[]).includes(from)) {
+        return prev.includes(to) ? prev : [...prev, to];
+      }
+      return prev;
+    });
+    setHiddenCustodianPresets((prev) =>
+      from && (ALL_CUSTODIANS as readonly string[]).includes(from) && !prev.includes(from) ? [...prev, from] : prev,
+    );
+    setItemForm((s) => (s.custodian === from ? { ...s, custodian: to } : s));
+  }, []);
+
+  const deleteCustodianOption = useCallback((name: string) => {
+    setRows((prev) =>
+      prev.map((r) => (r.entryType === "inventory" && r.custodian === name ? { ...r, custodian: "" } : r)),
+    );
+    setCustomCustodians((prev) => prev.filter((x) => x !== name));
+    if ((ALL_CUSTODIANS as readonly string[]).includes(name)) {
+      setHiddenCustodianPresets((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    }
+    setItemForm((s) => (s.custodian === name ? { ...s, custodian: "" } : s));
+  }, []);
+
+  const renameCategoryOption = useCallback((from: string, to: string) => {
+    setRows((prev) =>
+      prev.map((r) => (r.entryType === "inventory" && r.category === from ? { ...r, category: to } : r)),
+    );
+    setCustomCategories((prev) => {
+      const i = prev.indexOf(from);
+      if (i >= 0) {
+        const next = [...prev];
+        next[i] = to;
+        return [...new Set(next.filter(Boolean))];
+      }
+      if ((DEFAULT_CATEGORY_OPTIONS as readonly string[]).includes(from as (typeof DEFAULT_CATEGORY_OPTIONS)[number])) {
+        return prev.includes(to) ? prev : [...prev, to];
+      }
+      return prev;
+    });
+    setHiddenCategoryPresets((prev) =>
+      from && (DEFAULT_CATEGORY_OPTIONS as readonly string[]).includes(from as (typeof DEFAULT_CATEGORY_OPTIONS)[number]) && !prev.includes(from)
+        ? [...prev, from]
+        : prev,
+    );
+    setItemForm((s) => (s.category === from ? { ...s, category: to } : s));
+  }, []);
+
+  const deleteCategoryOption = useCallback((name: string) => {
+    setRows((prev) =>
+      prev.map((r) => (r.entryType === "inventory" && r.category === name ? { ...r, category: "" } : r)),
+    );
+    setCustomCategories((prev) => prev.filter((x) => x !== name));
+    if ((DEFAULT_CATEGORY_OPTIONS as readonly string[]).includes(name as (typeof DEFAULT_CATEGORY_OPTIONS)[number])) {
+      setHiddenCategoryPresets((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    }
+    setItemForm((s) => (s.category === name ? { ...s, category: "" } : s));
+  }, []);
+
+  const canManageLocationOption = useCallback((opt: string) => Boolean(opt.trim()), []);
+  const canManageCustodianOption = useCallback((opt: string) => Boolean(opt.trim()), []);
+  const canManageCategoryOption = useCallback((opt: string) => Boolean(opt.trim()), []);
 
   const typeFilterTabs = useMemo(
     () => [
@@ -1266,6 +1854,37 @@ export function InventoryHub() {
     () => rows.filter((r) => r.entryType === "inventory"),
     [rows],
   );
+
+  const splitParcelPickerOptions = useMemo(
+    () =>
+      inventoryStockRows.map((row) => ({
+        value: row.id,
+        label: `${row.itemName} | Lot: ${row.itemNo || "-"} | UOM: ${row.uom} | Pieces: ${row.pieces}`,
+      })),
+    [inventoryStockRows],
+  );
+
+  const splitSourceRow = useMemo(
+    () => inventoryStockRows.find((r) => r.id === splitSourceId) ?? null,
+    [inventoryStockRows, splitSourceId],
+  );
+
+  const splitTotals = useMemo(() => {
+    const toNum = (v: string) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    };
+    const uom = splitRows.reduce((sum, row) => sum + toNum(row.uom), 0);
+    const pieces = splitRows.reduce((sum, row) => sum + toNum(row.pieces), 0);
+    return { uom, pieces };
+  }, [splitRows]);
+
+  const splitLiveError = useMemo(() => {
+    if (!splitSourceRow) return null;
+    if (splitTotals.uom > splitSourceRow.uom) return "Split UOM exceeds available source UOM.";
+    if (splitTotals.pieces > splitSourceRow.pieces) return "Split pieces exceed available source pieces.";
+    return null;
+  }, [splitSourceRow, splitTotals]);
 
   const auditVisibleStockRows = useMemo(
     () => inventoryStockRows.filter((r) => !auditClosedItemIds.has(r.id)),
@@ -1290,45 +1909,45 @@ export function InventoryHub() {
     let lineCount = 0;
     for (const r of reportInventoryRows) {
       lineCount += 1;
-      totalUom += r.uom;
+      totalUom += inventoryPrimaryQty(r, customInventoryTypes);
       totalPieces += r.pieces;
-      totalValue += r.uom * r.rate;
+      totalValue += lineAmount(r, customInventoryTypes);
     }
     return { totalValue, totalUom, totalPieces, lineCount };
-  }, [reportInventoryRows]);
+  }, [reportInventoryRows, customInventoryTypes]);
 
   const reportQtyByMonth = useMemo(() => {
     const m = new Map<string, { uom: number; value: number }>();
     for (const r of reportInventoryRows) {
       const month = r.date.length >= 7 ? r.date.slice(0, 7) : r.date;
       const cur = m.get(month) ?? { uom: 0, value: 0 };
-      cur.uom += r.uom;
-      cur.value += r.uom * r.rate;
+      cur.uom += inventoryPrimaryQty(r, customInventoryTypes);
+      cur.value += lineAmount(r, customInventoryTypes);
       m.set(month, cur);
     }
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [reportInventoryRows]);
+  }, [reportInventoryRows, customInventoryTypes]);
 
   const reportByCustodian = useMemo(() => {
     const m = new Map<string, { qty: number; value: number; lines: number }>();
     for (const r of reportInventoryRows) {
-      const key = r.custodian && r.custodian !== "—" ? r.custodian : "—";
+      const key = r.custodian && r.custodian !== "" ? r.custodian : "";
       const cur = m.get(key) ?? { qty: 0, value: 0, lines: 0 };
-      cur.qty += r.uom;
-      cur.value += r.uom * r.rate;
+      cur.qty += inventoryPrimaryQty(r, customInventoryTypes);
+      cur.value += lineAmount(r, customInventoryTypes);
       cur.lines += 1;
       m.set(key, cur);
     }
     return Array.from(m.entries()).sort((a, b) => b[1].value - a[1].value);
-  }, [reportInventoryRows]);
+  }, [reportInventoryRows, customInventoryTypes]);
 
   const reportByType = useMemo(() => {
     const m = new Map<string, { qty: number; value: number; lines: number }>();
     for (const r of reportInventoryRows) {
       const label = kindLabel(r.itemKind, customInventoryTypes);
       const cur = m.get(label) ?? { qty: 0, value: 0, lines: 0 };
-      cur.qty += r.uom;
-      cur.value += r.uom * r.rate;
+      cur.qty += inventoryPrimaryQty(r, customInventoryTypes);
+      cur.value += lineAmount(r, customInventoryTypes);
       cur.lines += 1;
       m.set(label, cur);
     }
@@ -1344,21 +1963,21 @@ export function InventoryHub() {
   const reportByItemName = useMemo(() => {
     const m = new Map<string, { qty: number; value: number; lines: number; pieces: number }>();
     for (const r of reportInventoryRowsForItemName) {
-      const key = r.itemName.trim() || "—";
+      const key = r.itemName.trim() || "";
       const cur = m.get(key) ?? { qty: 0, value: 0, lines: 0, pieces: 0 };
-      cur.qty += r.uom;
-      cur.value += r.uom * r.rate;
+      cur.qty += inventoryPrimaryQty(r, customInventoryTypes);
+      cur.value += lineAmount(r, customInventoryTypes);
       cur.lines += 1;
       cur.pieces += r.pieces;
       m.set(key, cur);
     }
     return Array.from(m.entries()).sort((a, b) => b[1].value - a[1].value);
-  }, [reportInventoryRowsForItemName]);
+  }, [reportInventoryRowsForItemName, customInventoryTypes]);
 
   const reportLinesByCustodian = useMemo(() => {
     const m = new Map<string, ItemRow[]>();
     for (const r of reportInventoryRows) {
-      const key = r.custodian && r.custodian !== "—" ? r.custodian : "—";
+      const key = r.custodian && r.custodian !== "" ? r.custodian : "";
       if (!m.has(key)) m.set(key, []);
       m.get(key)!.push(r);
     }
@@ -1385,7 +2004,7 @@ export function InventoryHub() {
     const filtered = rows.filter((r) => {
       if (itemCatalogScope === "stock" && r.entryType !== "inventory") return false;
       if (itemCatalogScope === "services" && r.entryType !== "service") return false;
-      if (itemCatalogScope === "stock" && itemKindTab !== "all" && r.itemKind !== itemKindTab) return false;
+      if (itemCatalogScope === "stock" && itemKindFilterKeys.size > 0 && !itemKindFilterKeys.has(r.itemKind)) return false;
       if (itemCatalogScope === "stock" && locationFilter !== "All" && r.location !== locationFilter) return false;
       if (periodFrom && r.date < periodFrom) return false;
       if (periodTo && r.date > periodTo) return false;
@@ -1429,7 +2048,7 @@ export function InventoryHub() {
     dateSort,
     customInventoryTypes,
     itemCatalogScope,
-    itemKindTab,
+    itemKindFilterKeys,
   ]);
 
   const formAmountPreview = useMemo(() => {
@@ -1439,10 +2058,18 @@ export function InventoryHub() {
       return rate;
     }
     const u = Number(itemForm.uom);
+    const p = Number(itemForm.pieces);
     const rate = Number(itemForm.rate);
-    if (!Number.isFinite(u) || !Number.isFinite(rate) || u < 0 || rate < 0) return null;
-    return u * rate;
-  }, [itemForm.entryType, itemForm.uom, itemForm.rate]);
+    if (!Number.isFinite(rate) || rate < 0) return null;
+    const amt = inventoryStockAmount(
+      itemForm.itemTypeKey,
+      Number.isFinite(u) ? u : 0,
+      Number.isFinite(p) ? p : 0,
+      rate,
+      customInventoryTypes,
+    );
+    return amt;
+  }, [itemForm.entryType, itemForm.uom, itemForm.pieces, itemForm.rate, itemForm.itemTypeKey, customInventoryTypes]);
 
   const activeUiMode = useMemo(
     () => getInventoryTypeUiMode(itemForm.itemTypeKey, customInventoryTypes),
@@ -1473,6 +2100,7 @@ export function InventoryHub() {
   const forceCloseItemModal = useCallback(() => {
     setDiscardConfirmOpen(false);
     setAddTypeModalOpen(false);
+    setEditingInventoryTypeId(null);
     setItemModalOpen(false);
     setEditingItemId(null);
     setItemForm(emptyItemForm());
@@ -1502,6 +2130,154 @@ export function InventoryHub() {
     setItemModalOpen(true);
   }
 
+  function openEditInventoryType(t: CustomInventoryType) {
+    setAddTypeDraft(customInventoryTypeToAddDraft(t));
+    setEditingInventoryTypeId(t.id);
+    setAddTypeModalOpen(true);
+    setViewAllTypesOpen(false);
+  }
+
+  function deleteInventoryType(typeId: string) {
+    if (!window.confirm("Delete this inventory type? Items using it will switch to Rough.")) return;
+    setCustomInventoryTypes((prev) => prev.filter((x) => x.id !== typeId));
+    setRows((prev) =>
+      prev.map((r) => (r.itemKind === typeId ? { ...r, itemKind: KIND_ROUGH, customFieldValuesJson: "{}" } : r)),
+    );
+    setItemForm((s) => (s.itemTypeKey === typeId ? { ...s, itemTypeKey: KIND_ROUGH, customFields: {} } : s));
+  }
+
+  function openSplitParcel() {
+    setSplitSourceId("");
+    setSplitRows([
+      {
+        id: crypto.randomUUID(),
+        itemName: "",
+        uom: "",
+        pieces: "",
+        rate: "",
+      },
+    ]);
+    setSplitError(null);
+    setSplitParcelOpen(true);
+  }
+
+  function addSplitRow() {
+    setSplitError(null);
+    setSplitRows((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        itemName: "",
+        uom: "",
+        pieces: "",
+        rate: "",
+      },
+    ]);
+  }
+
+  function removeSplitRow(id: string) {
+    setSplitError(null);
+    setSplitRows((prev) => (prev.length <= 1 ? prev : prev.filter((row) => row.id !== id)));
+  }
+
+  function updateSplitRow(id: string, key: keyof Omit<SplitDraftRow, "id">, value: string) {
+    setSplitError(null);
+    setSplitRows((prev) => prev.map((row) => (row.id === id ? { ...row, [key]: value } : row)));
+  }
+
+  function splitValidationMessage(): string | null {
+    if (!splitSourceRow) return "Select a parcel / lot to split.";
+    if (!splitRows.length) return "Add at least one split row.";
+
+    let hasSplitValue = false;
+    for (const [index, row] of splitRows.entries()) {
+      const uom = Number(row.uom);
+      const pieces = Number(row.pieces);
+      const hasUom = Number.isFinite(uom) && uom > 0;
+      const hasPieces = Number.isFinite(pieces) && pieces > 0;
+      if (hasUom || hasPieces) hasSplitValue = true;
+      if (row.itemName.trim() === "") return `Enter new item name in row ${index + 1}.`;
+      if (row.uom.trim() !== "" && (!Number.isFinite(uom) || uom < 0)) return `Invalid UOM in row ${index + 1}.`;
+      if (row.pieces.trim() !== "" && (!Number.isFinite(pieces) || pieces < 0)) return `Invalid pieces in row ${index + 1}.`;
+      if (row.rate.trim() !== "") {
+        const rate = Number(row.rate);
+        if (!Number.isFinite(rate) || rate < 0) return `Invalid rate in row ${index + 1}.`;
+      }
+    }
+
+    if (!hasSplitValue) return "Enter UOM or pieces in at least one split row.";
+    if (splitTotals.uom > splitSourceRow.uom) return "Split UOM exceeds available source UOM.";
+    if (splitTotals.pieces > splitSourceRow.pieces) return "Split pieces exceed available source pieces.";
+    return null;
+  }
+
+  function submitSplitParcel() {
+    const validation = splitValidationMessage();
+    if (validation) {
+      setSplitError(validation);
+      return;
+    }
+    if (!splitSourceRow) return;
+
+    const now = Date.now();
+    const existingNos = new Set(rows.map((r) => r.itemNo.trim()).filter((s) => s !== ""));
+    const sourceBaseNo = splitSourceRow.itemNo.trim() || `LOT-${now}`;
+    let splitSeq = 1;
+    const nextItemNo = () => {
+      while (existingNos.has(`${sourceBaseNo}-S${splitSeq}`)) splitSeq += 1;
+      const next = `${sourceBaseNo}-S${splitSeq}`;
+      existingNos.add(next);
+      splitSeq += 1;
+      return next;
+    };
+
+    const newRows: ItemRow[] = splitRows
+      .map((row, index) => {
+        const uom = Number(row.uom);
+        const pieces = Number(row.pieces);
+        const parsedUom = Number.isFinite(uom) && uom > 0 ? uom : 0;
+        const parsedPieces = Number.isFinite(pieces) && pieces > 0 ? Math.floor(pieces) : 0;
+        if (parsedUom <= 0 && parsedPieces <= 0) return null;
+        const rate = Number(row.rate);
+        const parsedRate = Number.isFinite(rate) && rate >= 0 ? rate : splitSourceRow.rate;
+        return {
+          ...splitSourceRow,
+          id: `split-${now}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+          itemNo: nextItemNo(),
+          itemName: row.itemName.trim(),
+          uom: parsedUom,
+          pieces: parsedPieces,
+          rate: parsedRate,
+          details: `Split from ${splitSourceRow.itemNo || splitSourceRow.itemName}${splitSourceRow.details ? ` | ${splitSourceRow.details}` : ""}`,
+        } satisfies ItemRow;
+      })
+      .filter((row): row is ItemRow => row !== null);
+
+    const remainingUom = Math.max(0, splitSourceRow.uom - splitTotals.uom);
+    const remainingPieces = Math.max(0, splitSourceRow.pieces - splitTotals.pieces);
+    const sourceMarked = remainingUom === 0 && remainingPieces === 0 ? "Consumed by split" : "Split";
+
+    setRows((prev) =>
+      [...
+        newRows,
+        ...prev.map((r) =>
+          r.id !== splitSourceRow.id
+            ? r
+            : {
+                ...r,
+                uom: remainingUom,
+                pieces: remainingPieces,
+                details: `${sourceMarked}: ${newRows.length} child parcel(s).${r.details ? ` | ${r.details}` : ""}`,
+              },
+        ),
+      ],
+    );
+
+    setSplitParcelOpen(false);
+    setSplitError(null);
+    window.alert(`Parcel split complete. Created ${newRows.length} new parcel(s).`);
+  }
+
   function openEditItemModal(row: ItemRow) {
     let customFields: Record<string, string> = parseCustomFieldValues(row.customFieldValuesJson);
     const ct = customInventoryTypes.find((t) => t.id === row.itemKind);
@@ -1522,20 +2298,21 @@ export function InventoryHub() {
       itemName: row.itemName,
       category: row.category,
       type: row.type,
-      grade: row.grade === "—" ? "" : row.grade,
-      dimLength: row.dimLength === "—" ? "" : row.dimLength,
-      dimWidth: row.dimWidth === "—" ? "" : row.dimWidth,
-      dimHeight: row.dimHeight === "—" ? "" : row.dimHeight,
+      grade: row.grade === "" ? "" : row.grade,
+      dimLength: row.dimLength === "" ? "" : row.dimLength,
+      dimWidth: row.dimWidth === "" ? "" : row.dimWidth,
+      dimHeight: row.dimHeight === "" ? "" : row.dimHeight,
       customFields,
       pieces: String(row.pieces),
       rate: String(row.rate),
-      location: row.location === "—" ? "" : row.location,
-      custodian: row.custodian === "—" ? "" : row.custodian,
+      location: row.location === "" ? "" : row.location,
+      custodian: row.custodian === "" ? "" : row.custodian,
       uom: String(row.uom),
       date: row.date,
-      details: row.details === "—" ? "" : row.details,
-      serviceUnit: row.serviceUnit === "—" ? "" : row.serviceUnit,
+      details: row.details === "" ? "" : row.details,
+      serviceUnit: row.serviceUnit === "" ? "" : row.serviceUnit,
       revenueAccountId: row.revenueAccountId ?? (row.entryType === "service" ? "8" : ""),
+      linkedRoughLotCode: row.linkedRoughLotCode ?? "",
     };
     setEditingItemId(row.id);
     setDiscardConfirmOpen(false);
@@ -1553,6 +2330,7 @@ export function InventoryHub() {
       e.preventDefault();
       if (addTypeModalOpen) {
         setAddTypeModalOpen(false);
+        setEditingInventoryTypeId(null);
         return;
       }
       if (discardConfirmOpen) {
@@ -1573,6 +2351,18 @@ export function InventoryHub() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [viewAllTypesOpen]);
+
+  useEffect(() => {
+    if (!addTypeModalOpen || itemModalOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setAddTypeModalOpen(false);
+      setEditingInventoryTypeId(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [addTypeModalOpen, itemModalOpen]);
 
   function deleteItem(id: string) {
     if (!window.confirm("Delete this item? This cannot be undone in the demo.")) return;
@@ -1624,19 +2414,20 @@ export function InventoryHub() {
         itemKind: KIND_ROUGH,
         category: "Services",
         type: "Service",
-        grade: "—",
-        dimLength: "—",
-        dimWidth: "—",
-        dimHeight: "—",
+        grade: "",
+        dimLength: "",
+        dimWidth: "",
+        dimHeight: "",
         uom: 1,
         pieces: 1,
         rate,
-        location: "—",
-        custodian: "—",
-        details: itemForm.details.trim() || "—",
+        location: "",
+        custodian: "",
+        details: itemForm.details.trim() || "",
         customFieldValuesJson: "{}",
-        serviceUnit: itemForm.serviceUnit.trim() || "—",
+        serviceUnit: itemForm.serviceUnit.trim() || "",
         revenueAccountId: itemForm.revenueAccountId.trim(),
+        linkedRoughLotCode: "",
       };
       if (editingItemId) {
         setRows((prev) => prev.map((r) => (r.id === editingItemId ? rowPayload : r)));
@@ -1669,7 +2460,6 @@ export function InventoryHub() {
     const rPieces = resolveStandardFieldRule("pieces", customStd);
     const rRate = resolveStandardFieldRule("rate", customStd);
     const rCat = resolveStandardFieldRule("category", customStd);
-    const rLine = resolveStandardFieldRule("lineType", customStd);
     const rLoc = resolveStandardFieldRule("location", customStd);
     const rCust = resolveStandardFieldRule("custodian", customStd);
     const rDet = resolveStandardFieldRule("details", customStd);
@@ -1733,7 +2523,7 @@ export function InventoryHub() {
       for (const f of fields) {
         if (f.required === false) continue;
         if (!itemForm.customFields[f.id]?.trim()) {
-          window.alert(`Enter a value for “${f.label}”.`);
+          window.alert(`Enter a value for "${f.label}".`);
           return;
         }
       }
@@ -1747,20 +2537,22 @@ export function InventoryHub() {
       itemName: itemForm.itemName.trim(),
       itemKind: itemForm.itemTypeKey,
       category: rCat.enabled ? itemForm.category : "Faceted",
-      type: rLine.enabled ? itemForm.type : "Product",
-      grade: mode === "rough" ? itemForm.grade.trim() || "—" : "—",
-      dimLength: mode === "cut" ? itemForm.dimLength.trim() : "—",
-      dimWidth: mode === "cut" ? itemForm.dimWidth.trim() : "—",
-      dimHeight: mode === "cut" ? itemForm.dimHeight.trim() : "—",
+      type: "Product",
+      grade: mode === "rough" ? itemForm.grade.trim() || "" : "",
+      dimLength: mode === "cut" ? itemForm.dimLength.trim() : "",
+      dimWidth: mode === "cut" ? itemForm.dimWidth.trim() : "",
+      dimHeight: mode === "cut" ? itemForm.dimHeight.trim() : "",
       uom: effUom,
       pieces: Math.floor(effPieces),
       rate: effRate,
-      location: rLoc.enabled ? itemForm.location.trim() || "—" : "—",
-      custodian: rCust.enabled ? itemForm.custodian.trim() || "—" : "—",
-      details: rDet.enabled ? itemForm.details.trim() || "—" : "—",
+      location: rLoc.enabled ? itemForm.location.trim() || "" : "",
+      custodian: rCust.enabled ? itemForm.custodian.trim() || "" : "",
+      details: rDet.enabled ? itemForm.details.trim() || "" : "",
       customFieldValuesJson: mode === "builder" ? JSON.stringify(itemForm.customFields) : "{}",
-      serviceUnit: "—",
+      serviceUnit: "",
       revenueAccountId: "",
+      linkedRoughLotCode:
+        itemForm.itemTypeKey === KIND_ROUGH ? itemForm.linkedRoughLotCode.trim() : "",
     };
     if (editingItemId) {
       setRows((prev) => prev.map((r) => (r.id === editingItemId ? rowPayload : r)));
@@ -1839,7 +2631,7 @@ export function InventoryHub() {
         }
         window.alert(
           idsToClose.length === 0
-            ? "Audit saved (demo). No lines were marked Verified — nothing was removed from the audit list. Tick Verified for rows to complete, then Save and Close again."
+            ? "Audit saved (demo). No lines were marked Verified  nothing was removed from the audit list. Tick Verified for rows to complete, then Save and Close again."
             : `Audit saved (demo). ${idsToClose.length} verified line(s) removed from this audit list. Wire save to your API for production.`,
         );
       } else {
@@ -1851,90 +2643,99 @@ export function InventoryHub() {
 
   return (
     <div className="w-full space-y-6">
-      <div className="flex flex-wrap gap-1 rounded-2xl border border-[var(--gs-border)] bg-white p-2 shadow-sm sm:p-3">
-        {(
-          [
-            ["items", "Items", null],
-            ["stock", "Stock transactions", null],
-            ["reports", "Inventory reports", null],
-            ["audit", "Audit / Stock count", ClipboardCheck],
-          ] as const
-        ).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
-              tab === id ? "bg-[var(--gs-navy)] text-white" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            {Icon ? <Icon className="h-3.5 w-3.5 shrink-0 opacity-90" strokeWidth={2} aria-hidden /> : null}
-            {label}
-          </button>
-        ))}
-      </div>
+      {tab !== "items" ? (
+        <div className="flex flex-wrap gap-1 rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-2 shadow-sm sm:p-3">
+          {(
+            [
+              ["items", "Items", null],
+              ["stock", "Stock transactions", null],
+              ["reports", "Inventory reports", null],
+              ["audit", "Audit / Stock count", ClipboardCheck],
+            ] as const
+          ).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
+                tab === id ? "bg-[var(--gs-accent)] text-white" : "text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
+              }`}
+            >
+              {Icon ? <Icon className="h-3.5 w-3.5 shrink-0 opacity-90" strokeWidth={2} aria-hidden /> : null}
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {tab === "items" && (
-        <section className="w-full rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">
-                <span className="sr-only">Period filter</span>
-                <div className="inline-flex h-8 max-w-full flex-nowrap items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/90 px-2 py-0.5">
-                  <label
-                    htmlFor="items-period-from"
-                    className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-slate-500"
-                  >
-                    From
-                  </label>
-                  <input
-                    id="items-period-from"
-                    type="date"
-                    value={periodFrom}
-                    onChange={(e) => setPeriodFrom(e.target.value)}
-                    className="h-7 w-[8.75rem] shrink-0 rounded-md border border-slate-200 bg-white px-1.5 text-xs outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
-                  />
-                  <label
-                    htmlFor="items-period-to"
-                    className="ml-0.5 shrink-0 text-[10px] font-bold uppercase tracking-wide text-slate-500"
-                  >
-                    To
-                  </label>
-                  <input
-                    id="items-period-to"
-                    type="date"
-                    value={periodTo}
-                    onChange={(e) => setPeriodTo(e.target.value)}
-                    className="h-7 w-[8.75rem] shrink-0 rounded-md border border-slate-200 bg-white px-1.5 text-xs outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
-                  />
+        <section className="w-full rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+          <div className="border-b border-[var(--gs-border)] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-bold text-[var(--gs-text)]">Items</h2>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(
+                    [
+                      ["stock", "Stock transactions", null],
+                      ["reports", "Inventory reports", null],
+                      ["audit", "Audit / Stock count", ClipboardCheck],
+                    ] as const
+                  ).map(([id, label, Icon]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setTab(id)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)] sm:text-sm"
+                    >
+                      {Icon ? <Icon className="h-3.5 w-3.5 shrink-0 opacity-90" strokeWidth={2} aria-hidden /> : null}
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                {(periodFrom || periodTo) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPeriodFrom("");
-                      setPeriodTo("");
-                    }}
-                    className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 transition hover:bg-slate-50"
-                  >
-                    Clear period
-                  </button>
-                )}
               </div>
               <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                <div className="inline-flex rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setItemCatalogScope("stock")}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                      itemCatalogScope === "stock"
+                        ? "bg-[var(--gs-accent)] text-white shadow-sm"
+                        : "text-[var(--gs-muted)] hover:bg-[var(--gs-card)]",
+                    )}
+                  >
+                    Stock items
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setItemCatalogScope("services")}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                      itemCatalogScope === "services"
+                        ? "bg-[var(--gs-accent)] text-white shadow-sm"
+                        : "text-[var(--gs-muted)] hover:bg-[var(--gs-card)]",
+                    )}
+                  >
+                    Service catalog
+                  </button>
+                </div>
                 <ItemsImportExportMenu
                   rows={rows.filter((r) => r.entryType === "inventory")}
+                  customTypes={customInventoryTypes}
                   onImportFiles={handleImportFiles}
                 />
-                <button
-                  type="button"
-                  onClick={() => setViewAllTypesOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  title="Built-in and custom type definitions"
-                >
-                  <Layers className="h-3.5 w-3.5 text-slate-600" strokeWidth={2} aria-hidden />
-                  Type reference
-                </button>
+                {itemCatalogScope === "stock" ? (
+                  <button
+                    type="button"
+                    onClick={openSplitParcel}
+                    className="inline-flex items-center gap-1 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
+                  >
+                    <Table className="h-3.5 w-3.5 text-[var(--gs-muted)]" strokeWidth={2} aria-hidden />
+                    Split Parcel
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={openNewItemModal}
@@ -1945,94 +2746,90 @@ export function InventoryHub() {
                 </button>
               </div>
             </div>
-          </div>
-          <div className="flex flex-col gap-3 p-5 pt-4 sm:flex-row sm:flex-wrap sm:items-end">
-            <div className="inline-flex w-full max-w-md rounded-xl border border-slate-200 bg-slate-50/80 p-1 sm:w-auto">
-              <button
-                type="button"
-                onClick={() => setItemCatalogScope("stock")}
-                className={cn(
-                  "flex-1 rounded-lg px-4 py-2 text-xs font-semibold transition sm:flex-none",
-                  itemCatalogScope === "stock"
-                    ? "bg-[var(--gs-accent)] text-white shadow-sm"
-                    : "text-slate-600 hover:bg-white",
-                )}
-              >
-                Stock items
-              </button>
-              <button
-                type="button"
-                onClick={() => setItemCatalogScope("services")}
-                className={cn(
-                  "flex-1 rounded-lg px-4 py-2 text-xs font-semibold transition sm:flex-none",
-                  itemCatalogScope === "services"
-                    ? "bg-[var(--gs-accent)] text-white shadow-sm"
-                    : "text-slate-600 hover:bg-white",
-                )}
-              >
-                Service catalog
-              </button>
-            </div>
-            <input
-              value={itemSearch}
-              onChange={(e) => setItemSearch(e.target.value)}
-              placeholder={
-                itemCatalogScope === "services"
-                  ? "Search service name, description…"
-                  : "Search item #, name, location…"
-              }
-              className="w-full max-w-md rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-            />
-            {itemCatalogScope === "stock" ? (
-              <div className="min-w-[12rem] max-w-full">
-                <SearchableFieldPicker
-                  id="items-filter-loc"
-                  label="Location"
-                  value={locationFilter}
-                  onChange={setLocationFilter}
-                  options={locationPickerOptions}
-                  placeholder="Search locations…"
-                  leadingOption={{ value: "All", label: "All locations" }}
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+              {itemCatalogScope === "stock" ? (
+                <ItemKindMultiSelect
+                  id="items-kind-filter"
+                  label="Item types"
+                  options={typeFilterTabs.filter((x) => x.key !== "all")}
+                  selectedKeys={itemKindFilterKeys}
+                  onChange={setItemKindFilterKeys}
                 />
-              </div>
-            ) : null}
-          </div>
-          {itemCatalogScope === "stock" ? (
-            <div className="border-b border-slate-100 px-3 pb-3 sm:px-5">
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-slate-500">Item type</span>
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <div
-                    className="-mx-0.5 flex min-w-0 flex-1 flex-nowrap gap-1 overflow-x-auto pb-0.5"
-                    role="tablist"
-                    aria-label="Filter by inventory type"
-                  >
-                    {typeFilterTabs.map(({ key, label }) => (
-                      <button
-                        key={key}
-                        type="button"
-                        role="tab"
-                        aria-selected={itemKindTab === key}
-                        onClick={() => setItemKindTab(key)}
-                        className={cn(
-                          "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition sm:text-xs",
-                          itemKindTab === key
-                            ? "border-[var(--gs-navy)] bg-[var(--gs-navy)] text-white shadow-sm"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                        )}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+              ) : null}
+              <input
+                value={itemSearch}
+                onChange={(e) => setItemSearch(e.target.value)}
+                placeholder={
+                  itemCatalogScope === "services"
+                    ? "Search service name, description..."
+                    : "Search item #, name, location..."
+                }
+                className="w-full flex-1 max-w-2xl rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+              />
+              {itemCatalogScope === "stock" ? (
+                <div className="min-w-[12rem] max-w-full">
+                  <SearchableFieldPicker
+                    id="items-filter-loc"
+                    label="Location"
+                    value={locationFilter}
+                    onChange={setLocationFilter}
+                    options={locationOptionsMerged}
+                    placeholder="Search locations..."
+                    leadingOption={{ value: "All", label: "All locations" }}
+                    canManageOption={canManageLocationOption}
+                    onRenameOption={renameLocationOption}
+                    onDeleteOption={deleteLocationOption}
+                  />
                 </div>
-              </div>
+              ) : null}
+              {itemCatalogScope === "stock" ? (
+                <div className="inline-flex h-10 max-w-full flex-nowrap items-center gap-1.5 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/90 px-2 py-0.5">
+                  <label
+                    htmlFor="items-period-from"
+                    className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]"
+                  >
+                    From
+                  </label>
+                  <input
+                    id="items-period-from"
+                    type="date"
+                    value={periodFrom}
+                    onChange={(e) => setPeriodFrom(e.target.value)}
+                    className="h-8 w-[8.75rem] shrink-0 rounded-md border border-[var(--gs-border)] bg-[var(--gs-card)] px-1.5 text-xs outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                  />
+                  <label
+                    htmlFor="items-period-to"
+                    className="ml-0.5 shrink-0 text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]"
+                  >
+                    To
+                  </label>
+                  <input
+                    id="items-period-to"
+                    type="date"
+                    value={periodTo}
+                    onChange={(e) => setPeriodTo(e.target.value)}
+                    className="h-8 w-[8.75rem] shrink-0 rounded-md border border-[var(--gs-border)] bg-[var(--gs-card)] px-1.5 text-xs outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                  />
+                  {(periodFrom || periodTo) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPeriodFrom("");
+                        setPeriodTo("");
+                      }}
+                      className="shrink-0 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)]"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              ) : null}
             </div>
-          ) : null}
+          </div>
           <div className="w-full overflow-x-hidden px-3 pb-5 sm:px-5">
             {itemCatalogScope === "services" ? (
             <table className="w-full table-fixed border-collapse text-left text-[11px] sm:text-sm">
-              <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-slate-600 sm:text-xs">
+              <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)] sm:text-xs">
                 <tr>
                   <th className="min-w-[10rem] px-4 py-3">Service name</th>
                   <th className="min-w-[12rem] px-4 py-3">Description</th>
@@ -2042,20 +2839,20 @@ export function InventoryHub() {
                   <th className="w-12 px-2 py-3 text-right" aria-label="Actions" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--gs-border)]">
                 {items.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-medium text-slate-900">{r.itemName}</td>
-                    <td className="max-w-[20rem] px-4 py-3 text-slate-600">
+                  <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
+                    <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{r.itemName}</td>
+                    <td className="max-w-[20rem] px-4 py-3 text-[var(--gs-muted)]">
                       <span className="line-clamp-2 text-xs leading-snug" title={r.details}>
                         {r.details}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{r.serviceUnit !== "—" ? r.serviceUnit : "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-[var(--gs-muted)]">{r.serviceUnit !== "" ? r.serviceUnit : ""}</td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {r.rate.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-600">{revenueAccountLabel(r.revenueAccountId)}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--gs-muted)]">{revenueAccountLabel(r.revenueAccountId)}</td>
                     <td className="px-2 py-2 text-right">
                       <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => deleteItem(r.id)} />
                     </td>
@@ -2065,18 +2862,21 @@ export function InventoryHub() {
             </table>
             ) : (
             <table className="w-full table-fixed border-collapse text-left text-[11px] sm:text-sm">
-              <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-slate-600 sm:text-xs">
+              <colgroup>
+                {Array.from({ length: 12 }, (_, i) => (
+                  <col key={i} style={{ width: `${100 / 12}%` }} />
+                ))}
+              </colgroup>
+              <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)] sm:text-xs">
                 <tr>
-                  <th className="w-12 px-2 py-2 text-center" aria-label="Image">
-                    Img
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle">
+                    <span className="block truncate">Item #</span>
                   </th>
-                  <th className="whitespace-nowrap px-2 py-2">Line</th>
-                  <th className="whitespace-nowrap px-1.5 py-2 sm:px-2">Item #</th>
-                  <th className="whitespace-nowrap px-1 py-2 sm:px-1.5">
-                    <div className="flex items-center gap-1">
-                      <span>Date</span>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle">
+                    <div className="flex min-w-0 max-w-full items-center gap-0.5">
+                      <span className="min-w-0 truncate">Date</span>
                       <div
-                        className="inline-flex shrink-0 flex-col rounded border border-slate-300/90 bg-white p-px shadow-sm"
+                        className="inline-flex shrink-0 flex-col rounded border border-[var(--gs-border-strong)]/90 bg-[var(--gs-card)] p-px shadow-sm"
                         role="group"
                         aria-label="Sort by date"
                       >
@@ -2085,8 +2885,8 @@ export function InventoryHub() {
                           title="Oldest first"
                           onClick={() => setDateSort("asc")}
                           className={cn(
-                            "rounded-t p-px leading-none text-slate-500 transition hover:bg-slate-100 hover:text-slate-900",
-                            dateSort === "asc" && "bg-orange-50 text-[var(--gs-accent)]",
+                            "m-0 rounded-t p-0 leading-none text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]",
+                            dateSort === "asc" && "bg-[var(--gs-accent-soft)] text-[var(--gs-accent)]",
                           )}
                           aria-pressed={dateSort === "asc"}
                         >
@@ -2097,8 +2897,8 @@ export function InventoryHub() {
                           title="Newest first"
                           onClick={() => setDateSort("desc")}
                           className={cn(
-                            "rounded-b p-px leading-none text-slate-500 transition hover:bg-slate-100 hover:text-slate-900",
-                            dateSort === "desc" && "bg-orange-50 text-[var(--gs-accent)]",
+                            "m-0 rounded-b p-0 leading-none text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]",
+                            dateSort === "desc" && "bg-[var(--gs-accent-soft)] text-[var(--gs-accent)]",
                           )}
                           aria-pressed={dateSort === "desc"}
                         >
@@ -2107,65 +2907,94 @@ export function InventoryHub() {
                       </div>
                     </div>
                   </th>
-                  <th className="min-w-[10rem] px-4 py-3">Item Name</th>
-                  <th className="px-4 py-3">Item kind</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="min-w-[8rem] px-4 py-3">Grade / Dims / Attributes</th>
-                  <th className="px-4 py-3">UOM</th>
-                  <th className="px-4 py-3 text-right">Pieces</th>
-                  <th className="px-4 py-3 text-right">Rate</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
-                  <th className="min-w-[7rem] px-4 py-3">Location</th>
-                  <th className="min-w-[7rem] px-4 py-3">Custodian</th>
-                  <th className="min-w-[12rem] px-4 py-3">Details</th>
-                  <th className="w-12 px-2 py-3 text-right" aria-label="Actions" />
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle leading-tight">
+                    <span className="line-clamp-2 break-words">Item Name</span>
+                  </th>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle leading-tight">
+                    <span className="line-clamp-2 break-words">Category</span>
+                  </th>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-center align-middle leading-tight">
+                    <span className="line-clamp-2 break-words">Grade / Dims / Attr.</span>
+                  </th>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-center align-middle tabular-nums">
+                    <span className="block truncate">UOM</span>
+                  </th>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-right align-middle tabular-nums">
+                    <span className="block truncate">Pieces</span>
+                  </th>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-right align-middle tabular-nums">
+                    <span className="block truncate">Rate</span>
+                  </th>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-right align-middle tabular-nums">
+                    <span className="block truncate">Amount</span>
+                  </th>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle leading-tight">
+                    <span className="line-clamp-2 break-words">Location</span>
+                  </th>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle leading-tight">
+                    <span className="line-clamp-2 break-words">Custodian</span>
+                  </th>
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-center align-middle" aria-label="Actions" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--gs-border)]">
                 {items.map((r) => {
-                  const amt = itemAmount(r);
+                  const amt = lineAmount(r, customInventoryTypes);
+                  const specText = formatSpecCell(r, customInventoryTypes);
                   return (
-                    <tr key={r.id} className="hover:bg-slate-50/80">
-                      <td className="px-2 py-2 text-center align-middle">
-                        {r.imageDataUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- row thumbnail from stored data URL
-                          <img src={r.imageDataUrl} alt="" className="mx-auto h-9 w-9 rounded-md border border-slate-200 object-cover" />
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
+                    <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
+                      <td className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle font-mono text-[var(--gs-text)]">
+                        {r.itemNo}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-3 text-[10px] font-semibold uppercase text-slate-600">Inv.</td>
-                      <td className="whitespace-nowrap px-4 py-3 font-mono text-slate-800">{r.itemNo}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">{r.date}</td>
-                      <td className="px-4 py-3 font-medium text-slate-900">{r.itemName}</td>
-                      <td className="px-4 py-3 text-slate-600">{kindLabel(r.itemKind, customInventoryTypes)}</td>
-                      <td className="px-4 py-3 text-slate-600">{r.category}</td>
-                      <td className="px-4 py-3 text-slate-600">{r.type}</td>
-                      <td className="max-w-[14rem] px-4 py-3 text-xs text-slate-600">
-                        <span className="line-clamp-2" title={formatSpecCell(r, customInventoryTypes)}>
-                          {formatSpecCell(r, customInventoryTypes)}
-                        </span>
+                      <td className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle text-[var(--gs-muted)]">
+                        {r.date}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                      <td
+                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle font-medium text-[var(--gs-text)]"
+                        title={r.itemName}
+                      >
+                        {r.itemName}
+                      </td>
+                      <td
+                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle text-[var(--gs-muted)]"
+                        title={r.category}
+                      >
+                        {r.category}
+                      </td>
+                      <td
+                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 text-center align-middle text-xs text-[var(--gs-muted)]"
+                        title={specText}
+                      >
+                        {specText}
+                      </td>
+                      <td className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 text-center align-middle tabular-nums text-[var(--gs-muted)]">
                         {r.uom.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-slate-600">{r.pieces}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">
+                      <td className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 text-right align-middle tabular-nums text-[var(--gs-muted)]">
+                        {r.pieces}
+                      </td>
+                      <td className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 text-right align-middle tabular-nums">
                         {r.rate.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-slate-800">
+                      <td className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 text-right align-middle tabular-nums text-[var(--gs-text)]">
                         {amt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{r.location}</td>
-                      <td className="px-4 py-3 text-slate-600">{r.custodian}</td>
-                      <td className="max-w-[14rem] px-4 py-3 text-slate-600">
-                        <span className="line-clamp-2 text-xs leading-snug" title={r.details}>
-                          {r.details}
-                        </span>
+                      <td
+                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle text-[var(--gs-muted)]"
+                        title={r.location}
+                      >
+                        {r.location}
                       </td>
-                      <td className="px-2 py-2 text-right">
-                        <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => deleteItem(r.id)} />
+                      <td
+                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle text-[var(--gs-muted)]"
+                        title={r.custodian}
+                      >
+                        {r.custodian}
+                      </td>
+                      <td className="min-w-0 max-w-0 px-2 py-2.5 text-center align-middle">
+                        <div className="flex min-w-0 justify-center overflow-hidden">
+                          <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => deleteItem(r.id)} />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -2177,13 +3006,602 @@ export function InventoryHub() {
         </section>
       )}
 
+      {splitParcelOpen ? (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-3"
+          role="presentation"
+          onClick={() => setSplitParcelOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="split-parcel-title"
+            className="w-full max-w-5xl rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[var(--gs-border)] px-4 py-3">
+              <h3 id="split-parcel-title" className="text-base font-bold text-[var(--gs-text)]">
+                Split Parcel
+              </h3>
+              <button
+                type="button"
+                onClick={() => setSplitParcelOpen(false)}
+                className="rounded-lg p-1.5 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
+                aria-label="Close split parcel dialog"
+              >
+                <X className="h-4 w-4" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <div className="space-y-4 px-4 py-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <SearchableSplitSourcePicker
+                    id="split-parcel-source"
+                    label="Select Parcel / Lot"
+                    value={splitSourceId}
+                    onChange={(v) => {
+                      setSplitError(null);
+                      setSplitSourceId(v);
+                    }}
+                    options={splitParcelPickerOptions}
+                    placeholder="Search by name, lot, UOM..."
+                    emptyLabel="Select item..."
+                  />
+                </div>
+                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 p-3 text-xs text-[var(--gs-muted)]">
+                  <p>
+                    <span className="font-semibold text-[var(--gs-text)]">Total UOM / Weight:</span>{" "}
+                    {splitSourceRow ? splitSourceRow.uom : "-"}
+                  </p>
+                  <p className="mt-1">
+                    <span className="font-semibold text-[var(--gs-text)]">Total Pieces:</span>{" "}
+                    {splitSourceRow ? splitSourceRow.pieces : "-"}
+                  </p>
+                  <p className="mt-1">
+                    <span className="font-semibold text-[var(--gs-text)]">Selected Lot:</span>{" "}
+                    {splitSourceRow ? splitSourceRow.itemNo || "-" : "-"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-[var(--gs-border)]">
+                <table className="w-full min-w-[42rem] text-xs">
+                  <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                    <tr>
+                      <th className="px-2 py-2 text-left">New Item Name</th>
+                      <th className="px-2 py-2 text-right">UOM / Weight</th>
+                      <th className="px-2 py-2 text-right">Pieces</th>
+                      <th className="px-2 py-2 text-right">Rate (optional)</th>
+                      <th className="w-14 px-2 py-2 text-right"> </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--gs-border)]">
+                    {splitRows.map((row) => (
+                      <tr key={row.id}>
+                        <td className="px-2 py-1.5">
+                          <input
+                            value={row.itemName}
+                            onChange={(e) => updateSplitRow(row.id, "itemName", e.target.value)}
+                            className="h-9 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                            placeholder="Parcel name"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            value={row.uom}
+                            onChange={(e) => updateSplitRow(row.id, "uom", e.target.value)}
+                            className="h-9 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 text-right text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            value={row.pieces}
+                            onChange={(e) => updateSplitRow(row.id, "pieces", e.target.value)}
+                            className="h-9 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 text-right text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            value={row.rate}
+                            onChange={(e) => updateSplitRow(row.id, "rate", e.target.value)}
+                            className="h-9 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 text-right text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                            placeholder={splitSourceRow ? String(splitSourceRow.rate) : "0"}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => removeSplitRow(row.id)}
+                            className="rounded-md px-2 py-1 text-[11px] font-semibold text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={addSplitRow}
+                  className="inline-flex items-center gap-1 rounded-full border border-[var(--gs-border)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+                >
+                  <Plus className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+                  Add Row
+                </button>
+                <div className="text-xs text-[var(--gs-muted)]">
+                  Split totals  UOM:{" "}
+                  <span className="font-semibold text-[var(--gs-text)]">{splitTotals.uom.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+                  {" | "}Pieces: <span className="font-semibold text-[var(--gs-text)]">{splitTotals.pieces}</span>
+                </div>
+              </div>
+
+              {splitLiveError || splitError ? (
+                <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300">
+                  {splitLiveError ?? splitError}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-[var(--gs-border)] px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setSplitParcelOpen(false)}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitSplitParcel}
+                className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)]"
+              >
+                Split
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {addTypeModalOpen ? (
+        <div
+          className="fixed inset-0 z-[125] flex items-center justify-center bg-black/55 p-4"
+          role="presentation"
+          onClick={() => {
+            setAddTypeModalOpen(false);
+            setEditingInventoryTypeId(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-type-title"
+            className="max-h-[min(92vh,44rem)] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h4 id="add-type-title" className="text-base font-bold text-[var(--gs-text)]">
+                {editingInventoryTypeId ? "Edit inventory type" : "New inventory type"}
+              </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddTypeModalOpen(false);
+                  setEditingInventoryTypeId(null);
+                }}
+                className="rounded-lg p-1.5 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <p className="mt-1 text-sm text-[var(--gs-muted)]">
+              Configure which fields appear on <strong className="text-[var(--gs-text)]">New item</strong>, optional Rough/Cut-style attributes, and extra custom columns. Built-in Rough/Cut types are unchanged.
+            </p>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label htmlFor="add-type-name" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                  Type name *
+                </label>
+                <input
+                  id="add-type-name"
+                  value={addTypeDraft.label}
+                  onChange={(e) => setAddTypeDraft((d) => ({ ...d, label: e.target.value }))}
+                  className="mt-1.5 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  placeholder="e.g. Polished"
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Attribute style</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(
+                    [
+                      ["rough", "Rough (grade)"],
+                      ["cut", "Cut (dimensions)"],
+                      ["builder", "Custom fields"],
+                    ] as const
+                  ).map(([id, lab]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setAddTypeDraft((d) => ({ ...d, specMode: id }))}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                        addTypeDraft.specMode === id
+                          ? "border-[var(--gs-accent)] bg-[var(--gs-accent-soft)] text-[var(--gs-accent)]"
+                          : "border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]",
+                      )}
+                    >
+                      {lab}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px] text-[var(--gs-muted)]">
+                  Rough/Cut mirror the built-in controls. Custom fields uses the attribute list below (at least one required).
+                </p>
+              </div>
+              <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 p-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Standard New Item fields</p>
+                <p className="mt-1 text-[11px] text-[var(--gs-muted)]">
+                  Item #, date, item name, and inventory type selector are always shown. Toggle the rest.
+                </p>
+                <div className="mt-3 space-y-2">
+                  {INVENTORY_STANDARD_FIELD_CATALOG.map((row) => {
+                    const rule = addTypeDraft.standardFields[row.id];
+                    return (
+                      <div
+                        key={row.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-[var(--gs-text)]">{row.label}</p>
+                          <p className="text-[11px] text-[var(--gs-muted)]">{row.description}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-[var(--gs-text)]">
+                            <input
+                              type="checkbox"
+                              className="rounded border-[var(--gs-border-strong)]"
+                              checked={rule.enabled}
+                              onChange={(e) => {
+                                const en = e.target.checked;
+                                setAddTypeDraft((d) => ({
+                                  ...d,
+                                  standardFields: {
+                                    ...d.standardFields,
+                                    [row.id]: { enabled: en, required: en && row.defaultRule.required },
+                                  },
+                                }));
+                              }}
+                            />
+                            Show
+                          </label>
+                          <label
+                            className={cn(
+                              "flex cursor-pointer items-center gap-1.5 text-xs font-medium text-[var(--gs-text)]",
+                              !rule.enabled && "pointer-events-none opacity-40",
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              className="rounded border-[var(--gs-border-strong)]"
+                              disabled={!rule.enabled}
+                              checked={rule.required}
+                              onChange={(e) => {
+                                const rq = e.target.checked;
+                                setAddTypeDraft((d) => ({
+                                  ...d,
+                                  standardFields: {
+                                    ...d.standardFields,
+                                    [row.id]: { enabled: d.standardFields[row.id].enabled, required: rq },
+                                  },
+                                }));
+                              }}
+                            />
+                            Required
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">UOM</p>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  {(
+                    [
+                      ["kg", "Kg"],
+                      ["liter", "Liter"],
+                      ["piece", "Piece"],
+                      ["custom", "Custom"],
+                    ] as const
+                  ).map(([id, lab]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setAddTypeDraft((d) => ({ ...d, uomTab: id }))}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                        addTypeDraft.uomTab === id
+                          ? "border-[var(--gs-accent)] bg-[var(--gs-accent-soft)] text-[var(--gs-accent)]"
+                          : "border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]",
+                      )}
+                    >
+                      {lab}
+                    </button>
+                  ))}
+                </div>
+                {addTypeDraft.uomTab === "custom" ? (
+                  <input
+                    value={addTypeDraft.customUom}
+                    onChange={(e) => setAddTypeDraft((d) => ({ ...d, customUom: e.target.value }))}
+                    className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                    placeholder="Custom UOM label (e.g. ct)"
+                    autoComplete="off"
+                  />
+                ) : null}
+              </div>
+              {addTypeDraft.specMode === "builder" ? (
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Custom attribute fields</p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAddTypeDraft((d) => ({
+                        ...d,
+                        builderFields: [
+                          ...d.builderFields,
+                          {
+                            id: newFieldId(),
+                            label: `Field ${d.builderFields.length + 1}`,
+                            kind: "text",
+                            required: true,
+                            visible: true,
+                          },
+                        ],
+                      }))
+                    }
+                    className="inline-flex items-center gap-1 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-2.5 py-1 text-[11px] font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+                  >
+                    <Plus className="h-3 w-3" strokeWidth={2.5} aria-hidden />
+                    Add field
+                  </button>
+                </div>
+                <div className="mt-2 space-y-2">
+                  {addTypeDraft.builderFields.map((field, idx) => (
+                    <div
+                      key={field.id}
+                      className="flex flex-col gap-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-3 sm:flex-row sm:flex-wrap sm:items-end"
+                    >
+                      <div className="min-w-[8rem] flex-1">
+                        <label className="block text-[10px] font-semibold text-[var(--gs-muted)]">Label *</label>
+                        <input
+                          value={field.label}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setAddTypeDraft((d) => ({
+                              ...d,
+                              builderFields: d.builderFields.map((x) => (x.id === field.id ? { ...x, label: v } : x)),
+                            }));
+                          }}
+                          className="mt-1 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 py-1.5 text-sm"
+                          placeholder="Field name"
+                        />
+                      </div>
+                      <div className="w-full min-w-[7rem] sm:w-36">
+                        <label className="block text-[10px] font-semibold text-[var(--gs-muted)]">Type</label>
+                        <select
+                          value={field.kind}
+                          onChange={(e) => {
+                            const kind = e.target.value as CustomFieldDef["kind"];
+                            setAddTypeDraft((d) => ({
+                              ...d,
+                              builderFields: d.builderFields.map((x) =>
+                                x.id === field.id ? { ...x, kind, options: kind === "dropdown" ? x.options ?? ["A", "B"] : undefined } : x,
+                              ),
+                            }));
+                          }}
+                          className="mt-1 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 py-1.5 text-sm"
+                        >
+                          <option value="text">Text</option>
+                          <option value="number">Number</option>
+                          <option value="dropdown">Dropdown</option>
+                        </select>
+                      </div>
+                      {field.kind === "dropdown" ? (
+                        <div className="min-w-[10rem] flex-1">
+                          <label className="block text-[10px] font-semibold text-[var(--gs-muted)]">Options (comma-separated) *</label>
+                          <input
+                            value={(field.options ?? []).join(", ")}
+                            onChange={(e) => {
+                              const opts = e.target.value
+                                .split(",")
+                                .map((s) => s.trim())
+                                .filter(Boolean);
+                              setAddTypeDraft((d) => ({
+                                ...d,
+                                builderFields: d.builderFields.map((x) => (x.id === field.id ? { ...x, options: opts } : x)),
+                              }));
+                            }}
+                            className="mt-1 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 py-1.5 text-sm"
+                            placeholder="Option A, Option B"
+                          />
+                        </div>
+                      ) : null}
+                      <label className="flex items-center gap-1.5 self-center text-[10px] font-semibold text-[var(--gs-muted)]">
+                        <input
+                          type="checkbox"
+                          className="rounded border-[var(--gs-border-strong)]"
+                          checked={field.visible !== false}
+                          onChange={(e) =>
+                            setAddTypeDraft((d) => ({
+                              ...d,
+                              builderFields: d.builderFields.map((x) =>
+                                x.id === field.id ? { ...x, visible: e.target.checked } : x,
+                              ),
+                            }))
+                          }
+                        />
+                        Show
+                      </label>
+                      <label className="flex items-center gap-1.5 self-center text-[10px] font-semibold text-[var(--gs-muted)]">
+                        <input
+                          type="checkbox"
+                          className="rounded border-[var(--gs-border-strong)]"
+                          checked={field.required !== false}
+                          onChange={(e) =>
+                            setAddTypeDraft((d) => ({
+                              ...d,
+                              builderFields: d.builderFields.map((x) =>
+                                x.id === field.id ? { ...x, required: e.target.checked } : x,
+                              ),
+                            }))
+                          }
+                        />
+                        Required
+                      </label>
+                      <button
+                        type="button"
+                        disabled={addTypeDraft.builderFields.length <= 1}
+                        onClick={() =>
+                          setAddTypeDraft((d) => ({
+                            ...d,
+                            builderFields: d.builderFields.filter((x) => x.id !== field.id),
+                          }))
+                        }
+                        className="self-end rounded-lg p-2 text-[var(--gs-muted)] hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
+                        aria-label={`Remove field ${idx + 1}`}
+                      >
+                        <Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              ) : (
+                <p className="rounded-xl border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-3 text-sm text-[var(--gs-muted)]">
+                  Attribute fields follow <strong className="text-[var(--gs-text)]">Rough</strong> or <strong className="text-[var(--gs-text)]">Cut</strong> layouts. Choose{" "}
+                  <strong>Custom fields</strong> to add named columns (text, number, dropdown).
+                </p>
+              )}
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddTypeModalOpen(false);
+                  setEditingInventoryTypeId(null);
+                }}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const label = addTypeDraft.label.trim();
+                  if (!label) {
+                    window.alert("Enter a type name.");
+                    return;
+                  }
+                  if (addTypeDraft.uomTab === "custom" && !addTypeDraft.customUom.trim()) {
+                    window.alert("Enter a custom UOM label.");
+                    return;
+                  }
+                  const mergedStd = mergeStandardFields(addTypeDraft.standardFields);
+                  if (addTypeDraft.specMode !== "builder") {
+                    if (!Object.values(mergedStd).some((r) => r.enabled)) {
+                      window.alert("Enable at least one standard field, or switch to Custom fields.");
+                      return;
+                    }
+                  }
+                  const cleaned: CustomFieldDef[] =
+                    addTypeDraft.specMode === "builder"
+                      ? addTypeDraft.builderFields.map((f) => ({
+                          id: f.id,
+                          label: f.label.trim(),
+                          kind: f.kind,
+                          options: f.kind === "dropdown" ? (f.options ?? []).filter(Boolean) : undefined,
+                          required: f.required !== false,
+                          visible: f.visible !== false,
+                        }))
+                      : [];
+                  if (addTypeDraft.specMode === "builder") {
+                    if (cleaned.length < 1) {
+                      window.alert("Add at least one custom attribute field.");
+                      return;
+                    }
+                    for (const f of cleaned) {
+                      if (!f.label) {
+                        window.alert("Each field needs a label.");
+                        return;
+                      }
+                      if (f.kind === "dropdown" && (!f.options || f.options.length < 1)) {
+                        window.alert(`Add at least one option for dropdown "${f.label || "field"}".`);
+                        return;
+                      }
+                    }
+                  }
+                  const id = editingInventoryTypeId ?? `ctype-${Date.now()}`;
+                  const fieldPreset =
+                    addTypeDraft.specMode === "rough"
+                      ? KIND_ROUGH
+                      : addTypeDraft.specMode === "cut"
+                        ? KIND_CUT
+                        : undefined;
+                  const nextType: CustomInventoryType = {
+                    id,
+                    label,
+                    uomTab: addTypeDraft.uomTab,
+                    customUomLabel: addTypeDraft.uomTab === "custom" ? addTypeDraft.customUom.trim() : undefined,
+                    fieldPreset,
+                    builderFields: cleaned,
+                    standardFields: mergedStd,
+                  };
+                  if (editingInventoryTypeId) {
+                    setCustomInventoryTypes((prev) => prev.map((x) => (x.id === editingInventoryTypeId ? nextType : x)));
+                  } else {
+                    setCustomInventoryTypes((prev) => [...prev, nextType]);
+                    setItemForm((s) => {
+                      const cf: Record<string, string> = {};
+                      for (const f of cleaned) cf[f.id] = "";
+                      return { ...s, itemTypeKey: id, customFields: cf };
+                    });
+                  }
+                  setAddTypeModalOpen(false);
+                  setEditingInventoryTypeId(null);
+                  setAddTypeDraft({
+                    label: "",
+                    uomTab: "kg",
+                    customUom: "",
+                    specMode: "builder",
+                    standardFields: defaultStandardFieldRules(),
+                    builderFields: [{ id: newFieldId(), label: "Field 1", kind: "text", required: true, visible: true }],
+                  });
+                }}
+                className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]"
+              >
+                Save type
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {itemModalOpen ? (
         <div
-          className="fixed inset-0 z-[100] flex items-stretch justify-center bg-slate-900/45 p-0 sm:p-3"
+          className="fixed inset-0 z-[100] flex items-stretch justify-center bg-black/50 p-0 sm:p-3"
           role="presentation"
           onClick={() => {
             if (addTypeModalOpen) {
               setAddTypeModalOpen(false);
+              setEditingInventoryTypeId(null);
               return;
             }
             if (discardConfirmOpen) {
@@ -2197,12 +3615,12 @@ export function InventoryHub() {
             role="dialog"
             aria-labelledby="item-modal-title"
             aria-modal={!discardConfirmOpen}
-            className="flex h-full w-full max-h-[100dvh] flex-col overflow-hidden rounded-none border-0 bg-white shadow-2xl sm:max-h-[min(100dvh,52rem)] sm:max-w-[min(96rem,calc(100vw-1.5rem))] sm:rounded-2xl sm:border sm:border-slate-200"
+            className="flex h-full w-full max-h-[100dvh] flex-col overflow-hidden rounded-none border-0 bg-[var(--gs-card)] shadow-2xl sm:max-h-[min(100dvh,52rem)] sm:max-w-[min(96rem,calc(100vw-1.5rem))] sm:rounded-2xl sm:border sm:border-[var(--gs-border)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <header className="sticky top-0 z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/90 sm:px-6">
+            <header className="sticky top-0 z-20 flex shrink-0 flex-wrap items-center gap-3 border-b border-[var(--gs-border)] bg-[var(--gs-card)]/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-[var(--gs-card)]/90 sm:px-6">
               <div className="min-w-0 flex-1">
-                <h3 id="item-modal-title" className="text-lg font-bold text-[var(--gs-navy)]">
+                <h3 id="item-modal-title" className="text-lg font-bold text-[var(--gs-text)]">
                   {itemForm.entryType === "service"
                     ? editingItemId
                       ? "Edit service"
@@ -2212,16 +3630,16 @@ export function InventoryHub() {
                       : "New item"}
                 </h3>
                 {editingItemId ? (
-                  <p className="mt-0.5 text-sm text-[var(--gs-muted)]">Update fields below — demo only until API is wired.</p>
+                  <p className="mt-0.5 text-sm text-[var(--gs-muted)]">Update fields below  demo only until API is wired.</p>
                 ) : (
-                  <p className="mt-0.5 text-xs text-slate-500">Full-width form — sections follow ERP-style grouping.</p>
+                  <p className="mt-0.5 text-xs text-[var(--gs-muted)]">Full-width form  sections follow ERP-style grouping.</p>
                 )}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={requestCloseItemModal}
-                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
                 >
                   Cancel
                 </button>
@@ -2245,7 +3663,7 @@ export function InventoryHub() {
                 <button
                   type="button"
                   onClick={requestCloseItemModal}
-                  className="shrink-0 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                  className="shrink-0 rounded-lg p-2 text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
                   aria-label="Close"
                 >
                   <X className="h-5 w-5" strokeWidth={2} aria-hidden />
@@ -2261,20 +3679,16 @@ export function InventoryHub() {
               <div className="space-y-8 px-4 py-5 sm:px-6">
               {itemForm.entryType === "service" ? (
                 <div className="grid gap-6 lg:grid-cols-2">
-                  <FormSection
-                    title="Service"
-                    subtitle="Not stock-tracked — posts to revenue when used on invoices or journals"
-                  >
+                  <FormSection title="Service">
                     <LineTypeToggle
                       value={itemForm.entryType}
                       onChange={(next) =>
                         setItemForm((s) => ({
                           ...s,
                           entryType: next,
-                          ...(next === "service" ? { imageDataUrl: null } : {}),
+                          ...(next === "service" ? { imageDataUrl: null, linkedRoughLotCode: "" } : {}),
                         }))
                       }
-                      hint="Switch to Inventory for stock, photos, and locations."
                     />
                     <div>
                       <label htmlFor="ni-svc-name" className={FIELD_LABEL}>
@@ -2299,7 +3713,7 @@ export function InventoryHub() {
                         onChange={(e) => setItemForm((s) => ({ ...s, details: e.target.value }))}
                         rows={6}
                         className={cn(FIELD_INPUT, "min-h-[8rem] resize-y")}
-                        placeholder="Scope, deliverables, billing notes…"
+                        placeholder="Scope, deliverables, billing notes..."
                       />
                     </div>
                   </FormSection>
@@ -2315,14 +3729,14 @@ export function InventoryHub() {
                         className={FIELD_INPUT}
                         required
                       >
-                        <option value="">Select income account…</option>
+                        <option value="">Select income account...</option>
                         {DEMO_REVENUE_ACCOUNTS.map((a) => (
                           <option key={a.id} value={a.id}>
-                            {a.code} — {a.name}
+                            {a.code}  {a.name}
                           </option>
                         ))}
                       </select>
-                      <p className="mt-1 text-[11px] text-slate-500">
+                      <p className="mt-1 text-[11px] text-[var(--gs-muted)]">
                         Used when posting invoice lines and revenue journal entries (demo links to Accounting → COA).
                       </p>
                     </div>
@@ -2361,17 +3775,16 @@ export function InventoryHub() {
               ) : (
                 <>
                   <div className="grid gap-6 lg:grid-cols-3">
-                    <FormSection title="Basic info" subtitle="Line type, identifiers, optional photo, and display name">
+                    <FormSection title="Basic info">
                       <LineTypeToggle
                         value={itemForm.entryType}
                         onChange={(next) =>
                           setItemForm((s) => ({
                             ...s,
                             entryType: next,
-                            ...(next === "service" ? { imageDataUrl: null } : {}),
+                            ...(next === "service" ? { imageDataUrl: null, linkedRoughLotCode: "" } : {}),
                           }))
                         }
-                        hint="Inventory tracks stock quantities and locations; service lines bill by rate only."
                       />
                       <ItemImageDropzone
                         value={itemForm.imageDataUrl}
@@ -2419,7 +3832,7 @@ export function InventoryHub() {
                         />
                       </div>
                     </FormSection>
-                    <FormSection title="Type & UOM" subtitle="Classification, attributes, and stock quantities">
+                    <FormSection title="Type & UOM">
               <div>
                 <label htmlFor="ni-inv-kind" className={FIELD_LABEL}>
                   Inventory item type
@@ -2430,13 +3843,14 @@ export function InventoryHub() {
                   onChange={(e) => {
                     const v = e.target.value;
                     if (v === ADD_NEW_TYPE_VALUE) {
+                      setEditingInventoryTypeId(null);
                       setAddTypeDraft({
                         label: "",
                         uomTab: "kg",
                         customUom: "",
                         specMode: "builder",
                         standardFields: defaultStandardFieldRules(),
-                        builderFields: [{ id: newFieldId(), label: "Field 1", kind: "text", required: true }],
+                        builderFields: [{ id: newFieldId(), label: "Field 1", kind: "text", required: true, visible: true }],
                       });
                       setAddTypeModalOpen(true);
                       return;
@@ -2447,7 +3861,12 @@ export function InventoryHub() {
                       if (ct?.builderFields?.length) {
                         for (const f of ct.builderFields) customFields[f.id] = s.customFields[f.id] ?? "";
                       }
-                      return { ...s, itemTypeKey: v as ItemKindKey, customFields };
+                      return {
+                        ...s,
+                        itemTypeKey: v as ItemKindKey,
+                        customFields,
+                        linkedRoughLotCode: v === KIND_ROUGH ? s.linkedRoughLotCode : "",
+                      };
                     });
                   }}
                   className={FIELD_INPUT}
@@ -2461,65 +3880,61 @@ export function InventoryHub() {
                   ))}
                   <option value={ADD_NEW_TYPE_VALUE}>+ Add New Type</option>
                 </select>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Rough keeps the standard grade field. Cut uses dimensions. Custom types use the field layout you defined.
-                </p>
+                {itemForm.itemTypeKey === KIND_ROUGH ? (
+                  <div className="mt-4">
+                    <label htmlFor="ni-rough-lot" className={FIELD_LABEL}>
+                      Select Rough Lot
+                    </label>
+                    <select
+                      id="ni-rough-lot"
+                      value={itemForm.linkedRoughLotCode}
+                      onChange={(e) => setItemForm((s) => ({ ...s, linkedRoughLotCode: e.target.value }))}
+                      className={FIELD_INPUT}
+                    >
+                      <option value="">Select lot…</option>
+                      {ROUGH_LOTS_SEED.map((lot) => (
+                        <option key={lot.code} value={lot.code}>
+                          {lot.code} — {lot.supplier}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
               </div>
-              {stdRule("category").enabled || stdRule("lineType").enabled ? (
-              <div
-                className={cn(
-                  "grid gap-4",
-                  stdRule("category").enabled && stdRule("lineType").enabled ? "sm:grid-cols-2" : "grid-cols-1",
-                )}
-              >
-                {stdRule("category").enabled ? (
+              {stdRule("category").enabled ? (
                 <div>
-                  <label htmlFor="ni-cat" className={FIELD_LABEL}>
-                    Category{stdRule("category").required ? " *" : ""}
-                  </label>
-                  <select
+                  <SearchableFieldPicker
                     id="ni-cat"
+                    label={`Category${stdRule("category").required ? " *" : ""}`}
                     value={itemForm.category}
-                    onChange={(e) => setItemForm((s) => ({ ...s, category: e.target.value }))}
-                    className={FIELD_INPUT}
-                    required={stdRule("category").required}
+                    onChange={(v) => setItemForm((s) => ({ ...s, category: v }))}
+                    options={categoryOptionsMerged}
+                    placeholder="Search categories..."
+                    emptyLabel="Select category…"
+                    canManageOption={canManageCategoryOption}
+                    onRenameOption={renameCategoryOption}
+                    onDeleteOption={deleteCategoryOption}
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomCategory}
+                    className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-2 text-xs font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)]"
                   >
-                    <option value="Faceted">Faceted</option>
-                    <option value="Services">Services</option>
-                    <option value="Rough">Rough</option>
-                  </select>
+                    <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                    Add new category
+                  </button>
                 </div>
-                ) : null}
-                {stdRule("lineType").enabled ? (
-                <div>
-                  <label htmlFor="ni-type" className={FIELD_LABEL}>
-                    Line type{stdRule("lineType").required ? " *" : ""}
-                  </label>
-                  <select
-                    id="ni-type"
-                    value={itemForm.type}
-                    onChange={(e) => setItemForm((s) => ({ ...s, type: e.target.value as ItemRow["type"] }))}
-                    className={FIELD_INPUT}
-                    required={stdRule("lineType").required}
-                  >
-                    <option value="Product">Product</option>
-                    <option value="Service">Service</option>
-                    <option value="Raw">Raw</option>
-                  </select>
-                </div>
-                ) : null}
-              </div>
               ) : null}
               {activeUiMode === "rough" ? (
                 <div>
-                  <label htmlFor="ni-grade" className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <label htmlFor="ni-grade" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                     Grade
                   </label>
                   <select
                     id="ni-grade"
                     value={itemForm.grade}
                     onChange={(e) => setItemForm((s) => ({ ...s, grade: e.target.value }))}
-                    className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                    className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                   >
                     {GRADE_OPTIONS.map((g) => (
                       <option key={g} value={g}>
@@ -2530,10 +3945,10 @@ export function InventoryHub() {
                 </div>
               ) : activeUiMode === "cut" ? (
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Dimensions</p>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Dimensions</p>
                   <div className="mt-2 grid gap-4 sm:grid-cols-3">
                     <div>
-                      <label htmlFor="ni-dim-l" className="block text-[10px] font-semibold text-slate-500">
+                      <label htmlFor="ni-dim-l" className="block text-[10px] font-semibold text-[var(--gs-muted)]">
                         Length *
                       </label>
                       <input
@@ -2542,12 +3957,12 @@ export function InventoryHub() {
                         inputMode="decimal"
                         value={itemForm.dimLength}
                         onChange={(e) => setItemForm((s) => ({ ...s, dimLength: e.target.value }))}
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                        className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                         placeholder="e.g. 4.2"
                       />
                     </div>
                     <div>
-                      <label htmlFor="ni-dim-w" className="block text-[10px] font-semibold text-slate-500">
+                      <label htmlFor="ni-dim-w" className="block text-[10px] font-semibold text-[var(--gs-muted)]">
                         Width *
                       </label>
                       <input
@@ -2556,12 +3971,12 @@ export function InventoryHub() {
                         inputMode="decimal"
                         value={itemForm.dimWidth}
                         onChange={(e) => setItemForm((s) => ({ ...s, dimWidth: e.target.value }))}
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                        className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                         placeholder="e.g. 3.1"
                       />
                     </div>
                     <div>
-                      <label htmlFor="ni-dim-h" className="block text-[10px] font-semibold text-slate-500">
+                      <label htmlFor="ni-dim-h" className="block text-[10px] font-semibold text-[var(--gs-muted)]">
                         Height / Thickness *
                       </label>
                       <input
@@ -2570,19 +3985,19 @@ export function InventoryHub() {
                         inputMode="decimal"
                         value={itemForm.dimHeight}
                         onChange={(e) => setItemForm((s) => ({ ...s, dimHeight: e.target.value }))}
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                        className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                         placeholder="e.g. 2.0"
                       />
                     </div>
                   </div>
                 </div>
               ) : activeUiMode === "builder" && activeCustomTypeDef?.builderFields?.length ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Type-specific fields</p>
+                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Type-specific fields</p>
                   <div className="mt-3 space-y-3">
-                    {activeCustomTypeDef.builderFields.map((f) => (
+                    {activeCustomTypeDef.builderFields.filter((f) => f.visible !== false).map((f) => (
                       <div key={f.id}>
-                        <label htmlFor={`ni-cf-${f.id}`} className="block text-[11px] font-semibold text-slate-600">
+                        <label htmlFor={`ni-cf-${f.id}`} className="block text-[11px] font-semibold text-[var(--gs-muted)]">
                           {f.label}
                           {f.required !== false ? " *" : ""}
                         </label>
@@ -2596,7 +4011,7 @@ export function InventoryHub() {
                                 customFields: { ...s.customFields, [f.id]: e.target.value },
                               }))
                             }
-                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                            className="mt-1 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                           />
                         ) : null}
                         {f.kind === "number" ? (
@@ -2611,7 +4026,7 @@ export function InventoryHub() {
                                 customFields: { ...s.customFields, [f.id]: e.target.value },
                               }))
                             }
-                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                            className="mt-1 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                           />
                         ) : null}
                         {f.kind === "dropdown" ? (
@@ -2624,9 +4039,9 @@ export function InventoryHub() {
                                 customFields: { ...s.customFields, [f.id]: e.target.value },
                               }))
                             }
-                            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                            className="mt-1 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                           >
-                            <option value="">Select…</option>
+                            <option value="">Select...</option>
                             {(f.options ?? []).map((opt) => (
                               <option key={opt} value={opt}>
                                 {opt}
@@ -2707,19 +4122,19 @@ export function InventoryHub() {
                       ) : null}
                       <div>
                         <label className={FIELD_LABEL}>Amount</label>
-                        <div className="mt-1.5 flex h-10 items-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 text-sm font-semibold tabular-nums text-slate-800">
+                        <div className="mt-1.5 flex h-10 items-center rounded-lg border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)] px-3 text-sm font-semibold tabular-nums text-[var(--gs-text)]">
                           {formAmountPreview !== null
                             ? formAmountPreview.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-                            : "—"}
+                            : ""}
                         </div>
                       </div>
                       {newItemQrDataUrl ? (
-                        <div className="mt-4 border-t border-slate-100 pt-4" aria-live="polite">
-                          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">QR Code</p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            Item saved — placeholder image until your API returns a real QR.
+                        <div className="mt-4 border-t border-[var(--gs-border)] pt-4" aria-live="polite">
+                          <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">QR Code</p>
+                          <p className="mt-1 text-[11px] text-[var(--gs-muted)]">
+                            Item saved  placeholder image until your API returns a real QR.
                           </p>
-                          <div className="mt-3 inline-flex rounded-xl border border-slate-200 bg-slate-50/90 p-2.5 shadow-sm">
+                          <div className="mt-3 inline-flex rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/90 p-2.5 shadow-sm">
                             <img
                               src={newItemQrDataUrl}
                               alt=""
@@ -2732,7 +4147,7 @@ export function InventoryHub() {
                             <button
                               type="button"
                               onClick={downloadNewItemQr}
-                              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                              className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
                             >
                               Download QR Code
                             </button>
@@ -2749,24 +4164,52 @@ export function InventoryHub() {
                       )}
                     >
                       {stdRule("location").enabled ? (
-                        <AutocompleteTextField
-                          id="ni-loc"
-                          label={`Location${stdRule("location").required ? " *" : ""}`}
-                          value={itemForm.location}
-                          onChange={(v) => setItemForm((s) => ({ ...s, location: v }))}
-                          options={locationPickerOptions}
-                          placeholder="Warehouse, vault, bin…"
-                        />
+                        <div>
+                          <SearchableFieldPicker
+                            id="ni-loc"
+                            label={`Location${stdRule("location").required ? " *" : ""}`}
+                            value={itemForm.location}
+                            onChange={(v) => setItemForm((s) => ({ ...s, location: v }))}
+                            options={locationOptionsMerged}
+                            placeholder="Search locations..."
+                            emptyLabel="Select location…"
+                            canManageOption={canManageLocationOption}
+                            onRenameOption={renameLocationOption}
+                            onDeleteOption={deleteLocationOption}
+                          />
+                          <button
+                            type="button"
+                            onClick={addCustomLocation}
+                            className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-2 text-xs font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)] sm:w-auto"
+                          >
+                            <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                            Add new location
+                          </button>
+                        </div>
                       ) : null}
                       {stdRule("custodian").enabled ? (
-                        <AutocompleteTextField
-                          id="ni-cust"
-                          label={`Custodian${stdRule("custodian").required ? " *" : ""}`}
-                          value={itemForm.custodian}
-                          onChange={(v) => setItemForm((s) => ({ ...s, custodian: v }))}
-                          options={custodianPickerOptions}
-                          placeholder="Staff or team name…"
-                        />
+                        <div>
+                          <SearchableFieldPicker
+                            id="ni-cust"
+                            label={`Custodian${stdRule("custodian").required ? " *" : ""}`}
+                            value={itemForm.custodian}
+                            onChange={(v) => setItemForm((s) => ({ ...s, custodian: v }))}
+                            options={custodianOptionsMerged}
+                            placeholder="Search custodians..."
+                            emptyLabel="Select custodian…"
+                            canManageOption={canManageCustodianOption}
+                            onRenameOption={renameCustodianOption}
+                            onDeleteOption={deleteCustodianOption}
+                          />
+                          <button
+                            type="button"
+                            onClick={addCustomCustodian}
+                            className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-2 text-xs font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)] sm:w-auto"
+                          >
+                            <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                            Add new custodian
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                     {stdRule("details").enabled ? (
@@ -2780,7 +4223,7 @@ export function InventoryHub() {
                           onChange={(e) => setItemForm((s) => ({ ...s, details: e.target.value }))}
                           rows={4}
                           className={cn(FIELD_INPUT, "min-h-[5rem] resize-y")}
-                          placeholder="Treatment, batch reference, handling notes…"
+                          placeholder="Treatment, batch reference, handling notes..."
                           required={stdRule("details").required}
                         />
                       </div>
@@ -2791,401 +4234,9 @@ export function InventoryHub() {
               </div>
             </form>
           </div>
-          {addTypeModalOpen ? (
-            <div
-              className="fixed inset-0 z-[125] flex items-center justify-center bg-slate-900/55 p-4"
-              role="presentation"
-              onClick={() => setAddTypeModalOpen(false)}
-            >
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="add-type-title"
-                className="max-h-[min(92vh,44rem)] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h4 id="add-type-title" className="text-base font-bold text-[var(--gs-navy)]">
-                    New inventory type
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={() => setAddTypeModalOpen(false)}
-                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
-                    aria-label="Close"
-                  >
-                    <X className="h-5 w-5" strokeWidth={2} aria-hidden />
-                  </button>
-                </div>
-                <p className="mt-1 text-sm text-slate-600">
-                  Configure which fields appear on <strong className="text-slate-800">New item</strong>, optional Rough/Cut-style attributes, and extra custom columns. Built-in Rough/Cut types are unchanged.
-                </p>
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <label htmlFor="add-type-name" className="block text-xs font-bold uppercase tracking-wide text-slate-500">
-                      Type name *
-                    </label>
-                    <input
-                      id="add-type-name"
-                      value={addTypeDraft.label}
-                      onChange={(e) => setAddTypeDraft((d) => ({ ...d, label: e.target.value }))}
-                      className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-                      placeholder="e.g. Polished"
-                      autoComplete="off"
-                    />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Attribute style</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {(
-                        [
-                          ["rough", "Rough (grade)"],
-                          ["cut", "Cut (dimensions)"],
-                          ["builder", "Custom fields"],
-                        ] as const
-                      ).map(([id, lab]) => (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => setAddTypeDraft((d) => ({ ...d, specMode: id }))}
-                          className={cn(
-                            "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                            addTypeDraft.specMode === id
-                              ? "border-[var(--gs-accent)] bg-orange-50 text-[var(--gs-accent)]"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                          )}
-                        >
-                          {lab}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Rough/Cut mirror the built-in controls. Custom fields uses the attribute list below (at least one required).
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Standard New Item fields</p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Item #, date, item name, and inventory type selector are always shown. Toggle the rest.
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      {INVENTORY_STANDARD_FIELD_CATALOG.map((row) => {
-                        const rule = addTypeDraft.standardFields[row.id];
-                        return (
-                          <div
-                            key={row.id}
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-semibold text-slate-800">{row.label}</p>
-                              <p className="text-[11px] text-slate-500">{row.description}</p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-slate-700">
-                                <input
-                                  type="checkbox"
-                                  className="rounded border-slate-300"
-                                  checked={rule.enabled}
-                                  onChange={(e) => {
-                                    const en = e.target.checked;
-                                    setAddTypeDraft((d) => ({
-                                      ...d,
-                                      standardFields: {
-                                        ...d.standardFields,
-                                        [row.id]: { enabled: en, required: en && row.defaultRule.required },
-                                      },
-                                    }));
-                                  }}
-                                />
-                                Show
-                              </label>
-                              <label
-                                className={cn(
-                                  "flex cursor-pointer items-center gap-1.5 text-xs font-medium text-slate-700",
-                                  !rule.enabled && "pointer-events-none opacity-40",
-                                )}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="rounded border-slate-300"
-                                  disabled={!rule.enabled}
-                                  checked={rule.required}
-                                  onChange={(e) => {
-                                    const rq = e.target.checked;
-                                    setAddTypeDraft((d) => ({
-                                      ...d,
-                                      standardFields: {
-                                        ...d.standardFields,
-                                        [row.id]: { enabled: d.standardFields[row.id].enabled, required: rq },
-                                      },
-                                    }));
-                                  }}
-                                />
-                                Required
-                              </label>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">UOM</p>
-                    <div className="mt-1.5 flex flex-wrap gap-2">
-                      {(
-                        [
-                          ["kg", "Kg"],
-                          ["liter", "Liter"],
-                          ["piece", "Piece"],
-                          ["custom", "Custom"],
-                        ] as const
-                      ).map(([id, lab]) => (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => setAddTypeDraft((d) => ({ ...d, uomTab: id }))}
-                          className={cn(
-                            "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                            addTypeDraft.uomTab === id
-                              ? "border-[var(--gs-accent)] bg-orange-50 text-[var(--gs-accent)]"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                          )}
-                        >
-                          {lab}
-                        </button>
-                      ))}
-                    </div>
-                    {addTypeDraft.uomTab === "custom" ? (
-                      <input
-                        value={addTypeDraft.customUom}
-                        onChange={(e) => setAddTypeDraft((d) => ({ ...d, customUom: e.target.value }))}
-                        className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-                        placeholder="Custom UOM label (e.g. ct)"
-                        autoComplete="off"
-                      />
-                    ) : null}
-                  </div>
-                  {addTypeDraft.specMode === "builder" ? (
-                  <div>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Custom attribute fields</p>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAddTypeDraft((d) => ({
-                            ...d,
-                            builderFields: [
-                              ...d.builderFields,
-                              { id: newFieldId(), label: `Field ${d.builderFields.length + 1}`, kind: "text", required: true },
-                            ],
-                          }))
-                        }
-                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                      >
-                        <Plus className="h-3 w-3" strokeWidth={2.5} aria-hidden />
-                        Add field
-                      </button>
-                    </div>
-                    <div className="mt-2 space-y-2">
-                      {addTypeDraft.builderFields.map((field, idx) => (
-                        <div
-                          key={field.id}
-                          className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-3 sm:flex-row sm:flex-wrap sm:items-end"
-                        >
-                          <div className="min-w-[8rem] flex-1">
-                            <label className="block text-[10px] font-semibold text-slate-500">Label *</label>
-                            <input
-                              value={field.label}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setAddTypeDraft((d) => ({
-                                  ...d,
-                                  builderFields: d.builderFields.map((x) => (x.id === field.id ? { ...x, label: v } : x)),
-                                }));
-                              }}
-                              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
-                              placeholder="Field name"
-                            />
-                          </div>
-                          <div className="w-full min-w-[7rem] sm:w-36">
-                            <label className="block text-[10px] font-semibold text-slate-500">Type</label>
-                            <select
-                              value={field.kind}
-                              onChange={(e) => {
-                                const kind = e.target.value as CustomFieldDef["kind"];
-                                setAddTypeDraft((d) => ({
-                                  ...d,
-                                  builderFields: d.builderFields.map((x) =>
-                                    x.id === field.id ? { ...x, kind, options: kind === "dropdown" ? x.options ?? ["A", "B"] : undefined } : x,
-                                  ),
-                                }));
-                              }}
-                              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
-                            >
-                              <option value="text">Text</option>
-                              <option value="number">Number</option>
-                              <option value="dropdown">Dropdown</option>
-                            </select>
-                          </div>
-                          {field.kind === "dropdown" ? (
-                            <div className="min-w-[10rem] flex-1">
-                              <label className="block text-[10px] font-semibold text-slate-500">Options (comma-separated) *</label>
-                              <input
-                                value={(field.options ?? []).join(", ")}
-                                onChange={(e) => {
-                                  const opts = e.target.value
-                                    .split(",")
-                                    .map((s) => s.trim())
-                                    .filter(Boolean);
-                                  setAddTypeDraft((d) => ({
-                                    ...d,
-                                    builderFields: d.builderFields.map((x) => (x.id === field.id ? { ...x, options: opts } : x)),
-                                  }));
-                                }}
-                                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
-                                placeholder="Option A, Option B"
-                              />
-                            </div>
-                          ) : null}
-                          <label className="flex items-center gap-1.5 self-center text-[10px] font-semibold text-slate-600">
-                            <input
-                              type="checkbox"
-                              className="rounded border-slate-300"
-                              checked={field.required !== false}
-                              onChange={(e) =>
-                                setAddTypeDraft((d) => ({
-                                  ...d,
-                                  builderFields: d.builderFields.map((x) =>
-                                    x.id === field.id ? { ...x, required: e.target.checked } : x,
-                                  ),
-                                }))
-                              }
-                            />
-                            Required
-                          </label>
-                          <button
-                            type="button"
-                            disabled={addTypeDraft.builderFields.length <= 1}
-                            onClick={() =>
-                              setAddTypeDraft((d) => ({
-                                ...d,
-                                builderFields: d.builderFields.filter((x) => x.id !== field.id),
-                              }))
-                            }
-                            className="self-end rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
-                            aria-label={`Remove field ${idx + 1}`}
-                          >
-                            <Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  ) : (
-                    <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-3 text-sm text-slate-600">
-                      Attribute fields follow <strong className="text-slate-800">Rough</strong> or <strong className="text-slate-800">Cut</strong> layouts. Choose{" "}
-                      <strong>Custom fields</strong> to add named columns (text, number, dropdown).
-                    </p>
-                  )}
-                </div>
-                <div className="mt-6 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setAddTypeModalOpen(false)}
-                    className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const label = addTypeDraft.label.trim();
-                      if (!label) {
-                        window.alert("Enter a type name.");
-                        return;
-                      }
-                      if (addTypeDraft.uomTab === "custom" && !addTypeDraft.customUom.trim()) {
-                        window.alert("Enter a custom UOM label.");
-                        return;
-                      }
-                      const mergedStd = mergeStandardFields(addTypeDraft.standardFields);
-                      if (addTypeDraft.specMode !== "builder") {
-                        if (!Object.values(mergedStd).some((r) => r.enabled)) {
-                          window.alert("Enable at least one standard field, or switch to Custom fields.");
-                          return;
-                        }
-                      }
-                      const cleaned: CustomFieldDef[] =
-                        addTypeDraft.specMode === "builder"
-                          ? addTypeDraft.builderFields.map((f) => ({
-                              id: f.id,
-                              label: f.label.trim(),
-                              kind: f.kind,
-                              options: f.kind === "dropdown" ? (f.options ?? []).filter(Boolean) : undefined,
-                              required: f.required !== false,
-                            }))
-                          : [];
-                      if (addTypeDraft.specMode === "builder") {
-                        if (cleaned.length < 1) {
-                          window.alert("Add at least one custom attribute field.");
-                          return;
-                        }
-                        for (const f of cleaned) {
-                          if (!f.label) {
-                            window.alert("Each field needs a label.");
-                            return;
-                          }
-                          if (f.kind === "dropdown" && (!f.options || f.options.length < 1)) {
-                            window.alert(`Add at least one option for dropdown “${f.label || "field"}”.`);
-                            return;
-                          }
-                        }
-                      }
-                      const id = `ctype-${Date.now()}`;
-                      const fieldPreset =
-                        addTypeDraft.specMode === "rough"
-                          ? KIND_ROUGH
-                          : addTypeDraft.specMode === "cut"
-                            ? KIND_CUT
-                            : undefined;
-                      setCustomInventoryTypes((prev) => [
-                        ...prev,
-                        {
-                          id,
-                          label,
-                          uomTab: addTypeDraft.uomTab,
-                          customUomLabel: addTypeDraft.uomTab === "custom" ? addTypeDraft.customUom.trim() : undefined,
-                          fieldPreset,
-                          builderFields: cleaned,
-                          standardFields: mergedStd,
-                        },
-                      ]);
-                      setItemForm((s) => {
-                        const cf: Record<string, string> = {};
-                        for (const f of cleaned) cf[f.id] = "";
-                        return { ...s, itemTypeKey: id, customFields: cf };
-                      });
-                      setAddTypeModalOpen(false);
-                      setAddTypeDraft({
-                        label: "",
-                        uomTab: "kg",
-                        customUom: "",
-                        specMode: "builder",
-                        standardFields: defaultStandardFieldRules(),
-                        builderFields: [{ id: newFieldId(), label: "Field 1", kind: "text", required: true }],
-                      });
-                    }}
-                    className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]"
-                  >
-                    Save type
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
           {discardConfirmOpen ? (
             <div
-              className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/50 p-4"
+              className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
               role="presentation"
               onClick={() => setDiscardConfirmOpen(false)}
             >
@@ -3193,28 +4244,28 @@ export function InventoryHub() {
                 role="alertdialog"
                 aria-modal="true"
                 aria-labelledby="item-discard-title"
-                className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+                className="w-full max-w-md rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <h4 id="item-discard-title" className="pr-2 text-base font-bold text-slate-900">
+                  <h4 id="item-discard-title" className="pr-2 text-base font-bold text-[var(--gs-text)]">
                     Discard changes?
                   </h4>
                   <button
                     type="button"
                     onClick={() => setDiscardConfirmOpen(false)}
-                    className="shrink-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                    className="shrink-0 rounded-lg p-1.5 text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
                     aria-label="Back to form"
                   >
                     <X className="h-5 w-5" strokeWidth={2} aria-hidden />
                   </button>
                 </div>
-                <p className="mt-2 text-sm text-slate-600">You have unsaved changes. Close without saving?</p>
+                <p className="mt-2 text-sm text-[var(--gs-muted)]">You have unsaved changes. Close without saving?</p>
                 <div className="mt-5 flex flex-wrap justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => setDiscardConfirmOpen(false)}
-                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                    className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
                   >
                     Keep editing
                   </button>
@@ -3244,27 +4295,27 @@ export function InventoryHub() {
               key={c.title}
               type="button"
               onClick={() => (c.href.startsWith("/") ? router.push(c.href) : undefined)}
-              className="rounded-2xl border border-[var(--gs-border)] bg-white p-5 text-left shadow-sm transition hover:border-[var(--gs-accent)]"
+              className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 text-left shadow-sm transition hover:border-[var(--gs-accent)]"
             >
-              <p className="font-bold text-[var(--gs-navy)]">{c.title}</p>
+              <p className="font-bold text-[var(--gs-text)]">{c.title}</p>
               <p className="mt-2 text-sm text-[var(--gs-muted)]">{c.desc}</p>
             </button>
           ))}
-          <div className="sm:col-span-2 lg:col-span-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-5">
-            <p className="text-sm font-semibold text-slate-800">Gemstone inventory</p>
+          <div className="sm:col-span-2 lg:col-span-4 rounded-2xl border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-5">
+            <p className="text-sm font-semibold text-[var(--gs-text)]">Gemstone inventory</p>
             <p className="mt-1 text-sm text-[var(--gs-muted)]">
-              Track rough stock and graded inventory in lots and stock lines. Service catalog entries are not stock-tracked — use Stock / Services → Service catalog for billable services.
+              Track rough stock and graded inventory in lots and stock lines. Service catalog entries are not stock-tracked  use Stock / Services → Service catalog for billable services.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link
                 href="/lots"
-                className="rounded-full bg-[var(--gs-navy)] px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)]"
               >
                 Open lots
               </Link>
               <Link
                 href="/inventory?tab=items"
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
               >
                 Open stock
               </Link>
@@ -3274,13 +4325,13 @@ export function InventoryHub() {
       )}
 
       {tab === "reports" && (
-        <section className="rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-6 pb-4">
-            <h2 className="text-lg font-bold text-[var(--gs-navy)]">Inventory reports</h2>
+        <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+          <div className="border-b border-[var(--gs-border)] p-6 pb-4">
+            <h2 className="text-lg font-bold text-[var(--gs-text)]">Inventory reports</h2>
             <p className="mt-1 text-sm text-[var(--gs-muted)]">
               Live aggregates from your current stock lines (same data as Stock / Services → Stock items).
             </p>
-            <div className="mt-4 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1">
+            <div className="mt-4 flex flex-wrap gap-1 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-1">
               {(
                 [
                   ["overview", "Overview / Summary"],
@@ -3297,8 +4348,8 @@ export function InventoryHub() {
                   className={cn(
                     "rounded-lg px-3 py-1.5 text-xs font-semibold transition sm:text-sm",
                     reportSubTab === id
-                      ? "bg-[var(--gs-navy)] text-white shadow-sm"
-                      : "text-slate-600 hover:bg-white",
+                      ? "bg-[var(--gs-accent)] text-white shadow-sm"
+                      : "text-[var(--gs-muted)] hover:bg-[var(--gs-card)]",
                   )}
                 >
                   {label}
@@ -3309,25 +4360,25 @@ export function InventoryHub() {
           <div className="p-6 pt-4">
             {reportSubTab === "overview" ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Stock lines</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{reportOverview.lineCount}</p>
+                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Stock lines</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">{reportOverview.lineCount}</p>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Total UOM qty</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Total UOM qty</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
                     {reportOverview.totalUom.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </p>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Total pieces</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Total pieces</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
                     {reportOverview.totalPieces.toLocaleString()}
                   </p>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Stock value (UOM × rate)</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Stock value (UOM × rate)</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
                     {reportOverview.totalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                   </p>
                 </div>
@@ -3335,35 +4386,35 @@ export function InventoryHub() {
             ) : null}
             {reportSubTab === "analysis" ? (
               <div className="space-y-4">
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Value & quantity by month (by line date)</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Trend reflects when lines were dated — useful for spotting intake concentration vs current stock mix.
+                <div className="rounded-xl border border-[var(--gs-border)] p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Value & quantity by month (by line date)</p>
+                  <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                    Trend reflects when lines were dated  useful for spotting intake concentration vs current stock mix.
                   </p>
                   <div className="mt-4 overflow-x-auto">
                     <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
-                      <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                      <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                         <tr>
                           <th className="px-3 py-2">Month</th>
                           <th className="px-3 py-2 text-right">UOM qty</th>
                           <th className="px-3 py-2 text-right">Value</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-[var(--gs-border)]">
                         {reportQtyByMonth.length === 0 ? (
                           <tr>
-                            <td colSpan={3} className="px-3 py-4 text-sm text-slate-500">
+                            <td colSpan={3} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
                               No inventory lines yet.
                             </td>
                           </tr>
                         ) : (
                           reportQtyByMonth.map(([month, v]) => (
-                            <tr key={month} className="hover:bg-slate-50/80">
-                              <td className="px-3 py-2 font-medium tabular-nums text-slate-900">{month}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                            <tr key={month} className="hover:bg-[var(--gs-hover)]/80">
+                              <td className="px-3 py-2 font-medium tabular-nums text-[var(--gs-text)]">{month}</td>
+                              <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
                                 {v.uom.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                               </td>
-                              <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                              <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
                                 {v.value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                               </td>
                             </tr>
@@ -3378,7 +4429,7 @@ export function InventoryHub() {
             {reportSubTab === "itemname" ? (
               <div className="space-y-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Filter by type</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Filter by type</p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     <button
                       type="button"
@@ -3386,8 +4437,8 @@ export function InventoryHub() {
                       className={cn(
                         "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition sm:text-xs",
                         reportItemNameKinds.size === 0
-                          ? "border-[var(--gs-navy)] bg-[var(--gs-navy)] text-white shadow-sm"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                          ? "border-[var(--gs-accent)] bg-[var(--gs-accent)] text-white shadow-sm"
+                          : "border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]",
                       )}
                     >
                       All types
@@ -3405,8 +4456,8 @@ export function InventoryHub() {
                             className={cn(
                               "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition sm:text-xs",
                               on
-                                ? "border-[var(--gs-navy)] bg-[var(--gs-navy)] text-white shadow-sm"
-                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                                ? "border-[var(--gs-accent)] bg-[var(--gs-accent)] text-white shadow-sm"
+                                : "border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]",
                             )}
                           >
                             {label}
@@ -3417,7 +4468,7 @@ export function InventoryHub() {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
-                    <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                    <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                       <tr>
                         <th className="px-3 py-2">Item name</th>
                         <th className="px-3 py-2 text-right">Lines</th>
@@ -3426,27 +4477,27 @@ export function InventoryHub() {
                         <th className="px-3 py-2 text-right">Value</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-[var(--gs-border)]">
                       {reportByItemName.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="px-3 py-4 text-sm text-slate-500">
+                          <td colSpan={5} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
                             No inventory lines yet.
                           </td>
                         </tr>
                       ) : (
                         reportByItemName.map(([name, v]) => (
-                          <tr key={name} className="hover:bg-slate-50/80">
-                            <td className="max-w-[20rem] px-3 py-2 font-medium text-slate-900" title={name}>
+                          <tr key={name} className="hover:bg-[var(--gs-hover)]/80">
+                            <td className="max-w-[20rem] px-3 py-2 font-medium text-[var(--gs-text)]" title={name}>
                               <span className="line-clamp-2">{name}</span>
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-700">{v.lines}</td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                            <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">{v.lines}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
                               {v.pieces.toLocaleString()}
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                            <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
                               {v.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                            <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
                               {v.value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                             </td>
                           </tr>
@@ -3460,7 +4511,7 @@ export function InventoryHub() {
             {reportSubTab === "custodian" ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
-                  <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                  <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                     <tr>
                       <th className="w-8 px-1 py-2" aria-hidden />
                       <th className="px-3 py-2">Custodian</th>
@@ -3469,10 +4520,10 @@ export function InventoryHub() {
                       <th className="px-3 py-2 text-right">Value</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-[var(--gs-border)]">
                     {reportByCustodian.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-3 py-4 text-sm text-slate-500">
+                        <td colSpan={5} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
                           No inventory lines yet.
                         </td>
                       </tr>
@@ -3485,38 +4536,38 @@ export function InventoryHub() {
                             <tr
                               className={cn(
                                 "cursor-pointer transition-colors",
-                                open ? "bg-slate-50" : "hover:bg-slate-50/80",
+                                open ? "bg-[var(--gs-hover)]" : "hover:bg-[var(--gs-hover)]/80",
                               )}
                               onClick={() =>
                                 setCustodianReportExpanded((prev) => (prev === name ? null : name))
                               }
                             >
-                              <td className="px-1 py-2 text-slate-400">
+                              <td className="px-1 py-2 text-[var(--gs-muted)]">
                                 {open ? (
                                   <ChevronDown className="h-4 w-4" strokeWidth={2} aria-hidden />
                                 ) : (
                                   <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
                                 )}
                               </td>
-                              <td className="px-3 py-2 font-medium text-slate-900">{name}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-slate-700">{v.lines}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                              <td className="px-3 py-2 font-medium text-[var(--gs-text)]">{name}</td>
+                              <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">{v.lines}</td>
+                              <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
                                 {v.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                               </td>
-                              <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                              <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
                                 {v.value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                               </td>
                             </tr>
                             {open ? (
-                              <tr className="bg-slate-50/90">
+                              <tr className="bg-[var(--gs-hover)]/90">
                                 <td colSpan={5} className="p-0">
-                                  <div className="border-t border-slate-100 px-3 py-3 sm:px-4">
-                                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                                      Stock lines — {name}
+                                  <div className="border-t border-[var(--gs-border)] px-3 py-3 sm:px-4">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                                      Stock lines  {name}
                                     </p>
-                                    <div className="mt-2 overflow-x-auto rounded-lg border border-slate-100 bg-white">
+                                    <div className="mt-2 overflow-x-auto rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)]">
                                       <table className="w-full min-w-[36rem] border-collapse text-left text-xs">
-                                        <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                                        <thead className="bg-[var(--gs-hover)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                                           <tr>
                                             <th className="px-2 py-1.5">Item #</th>
                                             <th className="px-2 py-1.5">Name</th>
@@ -3526,22 +4577,24 @@ export function InventoryHub() {
                                             <th className="px-2 py-1.5 text-right">Value</th>
                                           </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-100">
+                                        <tbody className="divide-y divide-[var(--gs-border)]">
                                           {detailLines.map((r) => (
-                                            <tr key={r.id} className="hover:bg-slate-50/80">
-                                              <td className="whitespace-nowrap px-2 py-1.5 font-mono text-slate-800">
+                                            <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
+                                              <td className="whitespace-nowrap px-2 py-1.5 font-mono text-[var(--gs-text)]">
                                                 {r.itemNo}
                                               </td>
-                                              <td className="max-w-[14rem] px-2 py-1.5 text-slate-900">{r.itemName}</td>
-                                              <td className="whitespace-nowrap px-2 py-1.5 text-slate-600">
+                                              <td className="max-w-[14rem] px-2 py-1.5 text-[var(--gs-text)]">{r.itemName}</td>
+                                              <td className="whitespace-nowrap px-2 py-1.5 text-[var(--gs-muted)]">
                                                 {kindLabel(r.itemKind, customInventoryTypes)}
                                               </td>
-                                              <td className="max-w-[10rem] px-2 py-1.5 text-slate-600">{r.location}</td>
-                                              <td className="px-2 py-1.5 text-right tabular-nums text-slate-800">
-                                                {r.uom.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                                              <td className="max-w-[10rem] px-2 py-1.5 text-[var(--gs-muted)]">{r.location}</td>
+                                              <td className="px-2 py-1.5 text-right tabular-nums text-[var(--gs-text)]">
+                                                {inventoryPrimaryQty(r, customInventoryTypes).toLocaleString(undefined, {
+                                                  maximumFractionDigits: 4,
+                                                })}
                                               </td>
-                                              <td className="px-2 py-1.5 text-right tabular-nums text-slate-800">
-                                                {(r.uom * r.rate).toLocaleString(undefined, {
+                                              <td className="px-2 py-1.5 text-right tabular-nums text-[var(--gs-text)]">
+                                                {lineAmount(r, customInventoryTypes).toLocaleString(undefined, {
                                                   minimumFractionDigits: 0,
                                                   maximumFractionDigits: 2,
                                                 })}
@@ -3566,7 +4619,7 @@ export function InventoryHub() {
             {reportSubTab === "typewise" ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
-                  <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                  <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                     <tr>
                       <th className="px-3 py-2">Type</th>
                       <th className="px-3 py-2 text-right">Lines</th>
@@ -3574,22 +4627,22 @@ export function InventoryHub() {
                       <th className="px-3 py-2 text-right">Value</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-[var(--gs-border)]">
                     {reportByType.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-3 py-4 text-sm text-slate-500">
+                        <td colSpan={4} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
                           No inventory lines yet.
                         </td>
                       </tr>
                     ) : (
                       reportByType.map(([label, v]) => (
-                        <tr key={label} className="hover:bg-slate-50/80">
-                          <td className="px-3 py-2 font-medium text-slate-900">{label}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-700">{v.lines}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                        <tr key={label} className="hover:bg-[var(--gs-hover)]/80">
+                          <td className="px-3 py-2 font-medium text-[var(--gs-text)]">{label}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">{v.lines}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
                             {v.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                           </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
                             {v.value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
@@ -3599,7 +4652,7 @@ export function InventoryHub() {
                 </table>
               </div>
             ) : null}
-            <p className="mt-6 text-xs text-slate-500">
+            <p className="mt-6 text-xs text-[var(--gs-muted)]">
               Align with accounting periods via{" "}
               <Link href="/reports?tab=hub" className="font-semibold text-[var(--gs-accent)] hover:underline">
                 Reports → hub
@@ -3611,13 +4664,13 @@ export function InventoryHub() {
       )}
 
       {tab === "audit" && (
-        <section className="rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-6">
-            <h2 className="text-lg font-bold text-[var(--gs-navy)]">Audit / Stock count</h2>
+        <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+          <div className="border-b border-[var(--gs-border)] p-6">
+            <h2 className="text-lg font-bold text-[var(--gs-text)]">Audit / Stock count</h2>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <div className="relative min-w-[12rem] flex-1">
                 <Search
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--gs-muted)]"
                   strokeWidth={2}
                   aria-hidden
                 />
@@ -3625,8 +4678,8 @@ export function InventoryHub() {
                   id="audit-search"
                   value={auditSearch}
                   onChange={(e) => setAuditSearch(e.target.value)}
-                  placeholder="Search item #, name, or UOM…"
-                  className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  placeholder="Search item #, name, or UOM..."
+                  className="w-full rounded-xl border border-[var(--gs-border)] py-2 pl-9 pr-3 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                   aria-label="Search stock lines for audit"
                 />
               </div>
@@ -3639,7 +4692,7 @@ export function InventoryHub() {
           </div>
           <div className="overflow-x-auto px-3 pb-6 sm:px-5">
             <table className="w-full min-w-[52rem] table-fixed border-collapse text-left text-[11px] sm:text-sm">
-              <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-slate-600 sm:text-xs">
+              <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)] sm:text-xs">
                 <tr>
                   <th className="min-w-[8rem] px-2 py-2">Item #</th>
                   <th className="min-w-[10rem] px-2 py-2">Name</th>
@@ -3650,22 +4703,22 @@ export function InventoryHub() {
                   <th className="px-2 py-2 text-center">Verified</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--gs-border)]">
                 {inventoryStockRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
-                      No stock lines — add stock under Stock / Services → Stock items.
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--gs-muted)]">
+                      No stock lines  add stock under Stock / Services → Stock items.
                     </td>
                   </tr>
                 ) : auditVisibleStockRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--gs-muted)]">
                       All stock lines have been completed for this audit.
                     </td>
                   </tr>
                 ) : auditFilteredStockRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--gs-muted)]">
                       No lines match your search.
                     </td>
                   </tr>
@@ -3677,11 +4730,11 @@ export function InventoryHub() {
                     const variance =
                       physNum !== null && Number.isFinite(physNum) ? physNum - r.uom : null;
                     return (
-                      <tr key={r.id} className="hover:bg-slate-50/80">
-                        <td className="px-2 py-2 font-mono text-xs text-slate-800">{r.itemNo}</td>
-                        <td className="px-2 py-2 font-medium text-slate-900">{r.itemName}</td>
-                        <td className="px-2 py-2 text-slate-600">{r.custodian}</td>
-                        <td className="px-2 py-2 text-right tabular-nums text-slate-800">
+                      <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
+                        <td className="px-2 py-2 font-mono text-xs text-[var(--gs-text)]">{r.itemNo}</td>
+                        <td className="px-2 py-2 font-medium text-[var(--gs-text)]">{r.itemName}</td>
+                        <td className="px-2 py-2 text-[var(--gs-muted)]">{r.custodian}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-[var(--gs-text)]">
                           {r.uom.toLocaleString(undefined, { maximumFractionDigits: 4 })}
                         </td>
                         <td className="px-2 py-2 text-right">
@@ -3696,14 +4749,14 @@ export function InventoryHub() {
                                 [r.id]: { ...d, physical: e.target.value },
                               }))
                             }
-                            className="w-full min-w-[5rem] rounded-lg border border-slate-200 px-2 py-1 text-right text-xs tabular-nums outline-none focus:border-[var(--gs-accent)] sm:text-sm"
-                            placeholder="—"
+                            className="w-full min-w-[5rem] rounded-lg border border-[var(--gs-border)] px-2 py-1 text-right text-xs tabular-nums outline-none focus:border-[var(--gs-accent)] sm:text-sm"
+                            placeholder=""
                             aria-label={`Physical count for ${r.itemNo}`}
                           />
                         </td>
-                        <td className="px-2 py-2 text-right tabular-nums text-slate-800">
+                        <td className="px-2 py-2 text-right tabular-nums text-[var(--gs-text)]">
                           {variance === null ? (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-[var(--gs-muted)]"></span>
                           ) : (
                             <span
                               className={
@@ -3729,7 +4782,7 @@ export function InventoryHub() {
                                 [r.id]: { ...d, verified: e.target.checked },
                               }))
                             }
-                            className="h-4 w-4 rounded border-slate-300 text-[var(--gs-navy)]"
+                            className="h-4 w-4 rounded border-[var(--gs-border-strong)] text-[var(--gs-text)]"
                             aria-label={`Verified / available for ${r.itemNo}`}
                           />
                         </td>
@@ -3741,18 +4794,18 @@ export function InventoryHub() {
             </table>
           </div>
           {auditRecords.length > 0 ? (
-            <div className="border-t border-slate-100 p-6">
-              <h3 className="text-sm font-bold text-[var(--gs-navy)]">Saved audit records</h3>
+            <div className="border-t border-[var(--gs-border)] p-6">
+              <h3 className="text-sm font-bold text-[var(--gs-text)]">Saved audit records</h3>
               <ul className="mt-3 max-h-60 space-y-2 overflow-y-auto text-sm">
                 {auditRecords.map((rec) => (
                   <li
                     key={rec.id}
-                    className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2"
+                    className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-2"
                   >
-                    <span className="font-medium text-slate-800">
+                    <span className="font-medium text-[var(--gs-text)]">
                       {new Date(rec.createdAt).toLocaleString()}
                     </span>
-                    <span className="text-xs text-slate-600">
+                    <span className="text-xs text-[var(--gs-muted)]">
                       {rec.lines.length} lines
                       {rec.note ? ` · ${rec.note}` : ""}
                     </span>
@@ -3766,7 +4819,7 @@ export function InventoryHub() {
 
       {viewAllTypesOpen ? (
         <div
-          className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 pt-12"
+          className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-12"
           role="presentation"
           onClick={() => setViewAllTypesOpen(false)}
         >
@@ -3774,20 +4827,20 @@ export function InventoryHub() {
             role="dialog"
             aria-labelledby="view-types-title"
             aria-modal="true"
-            className="my-8 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+            className="my-8 w-full max-w-2xl rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-2">
               <div>
-                <h2 id="view-types-title" className="text-lg font-bold text-[var(--gs-navy)]">
+                <h2 id="view-types-title" className="text-lg font-bold text-[var(--gs-text)]">
                   Type reference
                 </h2>
-                <p className="mt-1 text-sm text-slate-600">Built-in and custom inventory item types and their configurations (UOM, fields, structure).</p>
+                <p className="mt-1 text-sm text-[var(--gs-muted)]">Built-in and custom inventory item types and their configurations (UOM, fields, structure).</p>
               </div>
               <button
                 type="button"
                 onClick={() => setViewAllTypesOpen(false)}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                className="rounded-lg p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" strokeWidth={2} aria-hidden />
@@ -3795,30 +4848,50 @@ export function InventoryHub() {
             </div>
             <div className="mt-6 space-y-6">
               <section>
-                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Built-in</h3>
+                <h3 className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Built-in</h3>
                 <ul className="mt-2 space-y-3">
-                  <li className="rounded-xl border border-slate-200 p-4">
-                    <p className="font-semibold text-slate-900">Rough</p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Structure: grade (fixed list), UOM quantity, pieces, rate, amount (UOM × rate), category, product type, location, custodian, details. The Rough grade control is not modified by custom types.
+                  <li className="rounded-xl border border-[var(--gs-border)] p-4">
+                    <p className="font-semibold text-[var(--gs-text)]">Rough</p>
+                    <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                      Structure: grade (fixed list), UOM quantity, pieces, rate, amount (UOM × rate), category, location, custodian, details. The Rough grade control is not modified by custom types.
                     </p>
                   </li>
-                  <li className="rounded-xl border border-slate-200 p-4">
-                    <p className="font-semibold text-slate-900">Cut</p>
-                    <p className="mt-1 text-sm text-slate-600">
+                  <li className="rounded-xl border border-[var(--gs-border)] p-4">
+                    <p className="font-semibold text-[var(--gs-text)]">Cut</p>
+                    <p className="mt-1 text-sm text-[var(--gs-muted)]">
                       Structure: length, width, height/thickness, UOM quantity, pieces, rate, amount, plus common fields.
                     </p>
                   </li>
                 </ul>
               </section>
               <section>
-                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Other types</h3>
+                <h3 className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Other types</h3>
                 {customInventoryTypes.length > 0 ? (
                   <ul className="mt-2 space-y-3">
                     {customInventoryTypes.map((t) => (
-                      <li key={t.id} className="rounded-xl border border-slate-200 p-4">
-                        <p className="font-semibold text-slate-900">{t.label}</p>
-                        <p className="mt-1 text-sm text-slate-600">
+                      <li key={t.id} className="rounded-xl border border-[var(--gs-border)] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className="font-semibold text-[var(--gs-text)]">{t.label}</p>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditInventoryType(t)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-[var(--gs-border)] px-2 py-1 text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+                            >
+                              <Pencil className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteInventoryType(t.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-[var(--gs-border)] px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                        <p className="mt-1 text-sm text-[var(--gs-muted)]">
                           UOM:{" "}
                           {t.uomTab === "custom" && t.customUomLabel
                             ? t.customUomLabel
@@ -3828,10 +4901,10 @@ export function InventoryHub() {
                                 ? "Liter (L)"
                                 : t.uomTab === "piece"
                                   ? "Piece (pc)"
-                                  : "—"}
+                                  : ""}
                         </p>
                         {t.builderFields && t.builderFields.length > 0 ? (
-                          <ul className="mt-2 list-inside list-disc text-sm text-slate-600">
+                          <ul className="mt-2 list-inside list-disc text-sm text-[var(--gs-muted)]">
                             {t.builderFields.map((f) => (
                               <li key={f.id}>
                                 {f.label} ({f.kind}
@@ -3840,17 +4913,17 @@ export function InventoryHub() {
                             ))}
                           </ul>
                         ) : t.fieldPreset ? (
-                          <p className="mt-2 text-sm text-slate-600">
+                          <p className="mt-2 text-sm text-[var(--gs-muted)]">
                             Legacy layout: mirrors <strong>{t.fieldPreset === KIND_CUT ? "Cut (dimensions)" : "Rough (grade)"}</strong>.
                           </p>
                         ) : (
-                          <p className="mt-2 text-sm text-slate-500">No fields defined.</p>
+                          <p className="mt-2 text-sm text-[var(--gs-muted)]">No fields defined.</p>
                         )}
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-2 text-sm text-slate-500">No custom types yet. Use New item → + Add New Type.</p>
+                  <p className="mt-2 text-sm text-[var(--gs-muted)]">No custom types yet. Use New item → + Add New Type.</p>
                 )}
               </section>
             </div>

@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "dev:turbo": "next dev --turbopack",
+    "build": "node --max-old-space-size=8192 node_modules/next/dist/bin/next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit --pretty",
+    "check": "npm run lint && npm run typecheck"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.2",

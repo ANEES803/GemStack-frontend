@@ -126,7 +126,7 @@ export function TrialBalanceTable({
         <button
           type="button"
           onClick={() => onSort(key)}
-          className="inline-flex items-center gap-1 font-bold text-slate-600 hover:text-[var(--gs-navy)]"
+          className="inline-flex items-center gap-1 font-bold text-[var(--gs-muted)] hover:text-[var(--gs-text)]"
         >
           {label}
           {sortIndicator(active, sortDir)}
@@ -140,31 +140,31 @@ export function TrialBalanceTable({
       <tr
         key={r.id}
         onClick={() => onRowClick(r)}
-        className={`cursor-pointer border-b border-slate-100 transition-colors hover:bg-orange-50/60 ${zebraIdx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}`}
+        className={`cursor-pointer border-b border-[var(--gs-border)] transition-colors hover:bg-[var(--gs-accent-soft)]/60 ${zebraIdx % 2 === 1 ? "bg-[var(--gs-hover)]/70" : "bg-[var(--gs-card)]"}`}
       >
-        {visibleColumns.code && <td className={`${cell} font-mono text-sm font-semibold text-slate-900`}>{r.code}</td>}
-        {visibleColumns.name && <td className={`${cell} font-medium text-slate-900`}>{r.name}</td>}
+        {visibleColumns.code && <td className={`${cell} font-mono text-sm font-semibold text-[var(--gs-text)]`}>{r.code}</td>}
+        {visibleColumns.name && <td className={`${cell} font-medium text-[var(--gs-text)]`}>{r.name}</td>}
         {visibleColumns.type && (
           <td className={`${cell}`}>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200/80">
+            <span className="rounded-full bg-[var(--gs-hover)] px-2 py-0.5 text-xs font-semibold text-[var(--gs-text)] ring-1 ring-[var(--gs-border)]/80">
               {r.type}
             </span>
           </td>
         )}
         {visibleColumns.debit && (
-          <td className={`${cell} text-right font-mono text-sm text-emerald-900`}>{r.debit > 0 ? formatMoney(r.debit, displayCurrency) : "—"}</td>
+          <td className={`${cell} text-right font-mono text-sm text-[var(--gs-text)]`}>{r.debit > 0 ? formatMoney(r.debit, displayCurrency) : ""}</td>
         )}
         {visibleColumns.credit && (
-          <td className={`${cell} text-right font-mono text-sm text-rose-900`}>{r.credit > 0 ? formatMoney(r.credit, displayCurrency) : "—"}</td>
+          <td className={`${cell} text-right font-mono text-sm text-rose-900`}>{r.credit > 0 ? formatMoney(r.credit, displayCurrency) : ""}</td>
         )}
         {showComparison && visibleColumns.priorDebit && (
-          <td className={`${cell} text-right font-mono text-xs text-slate-600`}>
-            {r.priorDebit > 0 ? formatMoney(r.priorDebit, displayCurrency) : "—"}
+          <td className={`${cell} text-right font-mono text-xs text-[var(--gs-muted)]`}>
+            {r.priorDebit > 0 ? formatMoney(r.priorDebit, displayCurrency) : ""}
           </td>
         )}
         {showComparison && visibleColumns.priorCredit && (
-          <td className={`${cell} text-right font-mono text-xs text-slate-600`}>
-            {r.priorCredit > 0 ? formatMoney(r.priorCredit, displayCurrency) : "—"}
+          <td className={`${cell} text-right font-mono text-xs text-[var(--gs-muted)]`}>
+            {r.priorCredit > 0 ? formatMoney(r.priorCredit, displayCurrency) : ""}
           </td>
         )}
       </tr>
@@ -180,7 +180,7 @@ export function TrialBalanceTable({
           <button
             type="button"
             onClick={expandAll}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
           >
             <ChevronsDownUp className="h-4 w-4" aria-hidden />
             Expand all
@@ -188,7 +188,7 @@ export function TrialBalanceTable({
           <button
             type="button"
             onClick={collapseAll}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
           >
             <ChevronsUpDown className="h-4 w-4" aria-hidden />
             Collapse all
@@ -196,7 +196,7 @@ export function TrialBalanceTable({
           <button
             type="button"
             onClick={onDownload}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
           >
             <Download className="h-4 w-4" aria-hidden />
             Download report
@@ -204,33 +204,33 @@ export function TrialBalanceTable({
           <button
             type="button"
             onClick={onEmail}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
           >
             <Mail className="h-4 w-4" aria-hidden />
             Email report
           </button>
         </div>
         <div className="relative max-w-md flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--gs-muted)]" aria-hidden />
           <input
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
               onPageChange(1);
             }}
-            placeholder="Search account code or name…"
-            className="w-full rounded-full border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none ring-slate-900/5 placeholder:text-slate-400 focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-orange-100"
+            placeholder="Search account code or name..."
+            className="w-full rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] py-2.5 pl-10 pr-4 text-sm outline-none ring-[var(--gs-border)] placeholder:text-[var(--gs-muted)] focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
           />
         </div>
       </div>
 
-      <div className="rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-[var(--gs-border)] p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="relative">
             <button
               type="button"
               onClick={() => setColMenuOpen((o) => !o)}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             >
               <Columns3 className="h-4 w-4" aria-hidden />
               Columns
@@ -239,7 +239,7 @@ export function TrialBalanceTable({
             {colMenuOpen ? (
               <>
                 <button type="button" className="fixed inset-0 z-10 cursor-default" aria-label="Close menu" onClick={() => setColMenuOpen(false)} />
-                <div className="absolute left-0 z-20 mt-2 min-w-[220px] rounded-xl border border-slate-200 bg-white py-2 shadow-xl ring-1 ring-slate-900/5">
+                <div className="absolute left-0 z-20 mt-2 min-w-[220px] rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-2 shadow-xl ring-1 ring-[var(--gs-border)]">
                   {(Object.keys(TB_COLUMN_LABELS) as TbColumnId[])
                     .filter((c) => {
                       if (c === "priorDebit" || c === "priorCredit") return showComparison;
@@ -248,17 +248,17 @@ export function TrialBalanceTable({
                     .map((id) => (
                       <label
                         key={id}
-                        className={`flex items-center gap-2 px-4 py-2 text-sm ${id === "name" ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-slate-50"}`}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm ${id === "name" ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-[var(--gs-hover)]"}`}
                       >
                         <input
                           type="checkbox"
                           checked={visibleColumns[id]}
                           disabled={id === "name"}
                           onChange={() => onToggleColumn(id)}
-                          className="rounded border-slate-300"
+                          className="rounded border-[var(--gs-border-strong)]"
                         />
                         {TB_COLUMN_LABELS[id]}
-                        {id === "name" ? <span className="text-[10px] text-slate-400">(required)</span> : null}
+                        {id === "name" ? <span className="text-[10px] text-[var(--gs-muted)]">(required)</span> : null}
                       </label>
                     ))}
                 </div>
@@ -273,7 +273,7 @@ export function TrialBalanceTable({
 
         <div className="max-h-[min(520px,62vh)] overflow-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="sticky top-0 z-[1] border-b border-slate-200 bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600 shadow-sm">
+            <thead className="sticky top-0 z-[1] border-b border-[var(--gs-border)] bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)] shadow-sm">
               <tr>
                 {headerButton(TB_COLUMN_LABELS.code, "code", "code")}
                 {headerButton(TB_COLUMN_LABELS.name, "name", "name")}
@@ -291,16 +291,16 @@ export function TrialBalanceTable({
                   const open = expandedTypes.has(type);
                   return (
                     <Fragment key={type}>
-                      <tr className="bg-slate-100/90">
+                      <tr className="bg-[var(--gs-hover)]/90">
                         <td colSpan={tableColCount} className="px-3 py-2">
                           <button
                             type="button"
                             onClick={() => toggleType(type)}
-                            className="flex w-full items-center gap-2 text-left text-xs font-bold uppercase tracking-wide text-[var(--gs-navy)]"
+                            className="flex w-full items-center gap-2 text-left text-xs font-bold uppercase tracking-wide text-[var(--gs-text)]"
                           >
                             {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             {type}s
-                            <span className="ml-auto font-mono text-[10px] font-semibold text-slate-500">{list.length}</span>
+                            <span className="ml-auto font-mono text-[10px] font-semibold text-[var(--gs-muted)]">{list.length}</span>
                           </button>
                         </td>
                       </tr>
@@ -311,29 +311,29 @@ export function TrialBalanceTable({
               })()}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-slate-300 bg-slate-50/95 font-bold">
-                <td colSpan={labelColSpan} className={`${cell} text-slate-800`}>
+              <tr className="border-t-2 border-[var(--gs-border-strong)] bg-[var(--gs-hover)]/95 font-bold">
+                <td colSpan={labelColSpan} className={`${cell} text-[var(--gs-text)]`}>
                   Report totals
                 </td>
                 {visibleColumns.debit && (
-                  <td className={`${cell} text-right font-mono text-emerald-900`}>{formatMoney(footerTotals.debit, displayCurrency)}</td>
+                  <td className={`${cell} text-right font-mono text-[var(--gs-text)]`}>{formatMoney(footerTotals.debit, displayCurrency)}</td>
                 )}
                 {visibleColumns.credit && (
                   <td className={`${cell} text-right font-mono text-rose-900`}>{formatMoney(footerTotals.credit, displayCurrency)}</td>
                 )}
-                {showComparison && visibleColumns.priorDebit && <td className={`${cell} text-right text-xs text-slate-400`}>—</td>}
-                {showComparison && visibleColumns.priorCredit && <td className={`${cell} text-right text-xs text-slate-400`}>—</td>}
+                {showComparison && visibleColumns.priorDebit && <td className={`${cell} text-right text-xs text-[var(--gs-muted)]`}></td>}
+                {showComparison && visibleColumns.priorCredit && <td className={`${cell} text-right text-xs text-[var(--gs-muted)]`}></td>}
               </tr>
-              <tr className={`border-t border-slate-200 ${diffBad ? "bg-red-50/90" : "bg-white"}`}>
+              <tr className={`border-t border-[var(--gs-border)] ${diffBad ? "bg-red-50/90" : "bg-[var(--gs-card)]"}`}>
                 <td
                   colSpan={labelColSpan}
-                  className={`${cell} text-sm ${diffBad ? "font-bold text-red-800" : "text-slate-600"}`}
+                  className={`${cell} text-sm ${diffBad ? "font-bold text-red-800" : "text-[var(--gs-muted)]"}`}
                 >
-                  Difference (debit − credit)
+                  Difference (debit → credit)
                 </td>
                 <td
                   colSpan={Math.max(1, moneyColCount)}
-                  className={`${cell} text-right font-mono text-sm ${diffBad ? "font-bold text-red-700" : "text-slate-800"}`}
+                  className={`${cell} text-right font-mono text-sm ${diffBad ? "font-bold text-red-700" : "text-[var(--gs-text)]"}`}
                 >
                   {formatMoney(footerTotals.difference, displayCurrency)}
                 </td>
@@ -342,12 +342,12 @@ export function TrialBalanceTable({
           </table>
         </div>
 
-        <div className="flex flex-wrap gap-2 border-t border-slate-100 p-4">
+        <div className="flex flex-wrap gap-2 border-t border-[var(--gs-border)] p-4">
           <button
             type="button"
             disabled={page <= 1}
             onClick={() => onPageChange(page - 1)}
-            className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 disabled:opacity-40 hover:bg-slate-50"
+            className="rounded-full border border-[var(--gs-border)] px-3 py-1.5 text-sm font-semibold text-[var(--gs-text)] disabled:opacity-40 hover:bg-[var(--gs-hover)]"
           >
             Previous
           </button>
@@ -355,7 +355,7 @@ export function TrialBalanceTable({
             type="button"
             disabled={page >= totalPages}
             onClick={() => onPageChange(page + 1)}
-            className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 disabled:opacity-40 hover:bg-slate-50"
+            className="rounded-full border border-[var(--gs-border)] px-3 py-1.5 text-sm font-semibold text-[var(--gs-text)] disabled:opacity-40 hover:bg-[var(--gs-hover)]"
           >
             Next
           </button>

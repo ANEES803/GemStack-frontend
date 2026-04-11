@@ -72,7 +72,7 @@ export function LedgerTable({
     if (groupBy === "none") return null;
     const m = new Map<string, LedgerRowView[]>();
     for (const r of pageRows) {
-      const key = groupBy === "account" ? `${r.accountCode} — ${r.accountName}` : groupBy === "date" ? r.date : r.transactionType;
+      const key = groupBy === "account" ? `${r.accountCode}  ${r.accountName}` : groupBy === "date" ? r.date : r.transactionType;
       if (!m.has(key)) m.set(key, []);
       m.get(key)!.push(r);
     }
@@ -88,35 +88,35 @@ export function LedgerTable({
       <tr
         key={r.id}
         onClick={() => onRowClick(r)}
-        className={`cursor-pointer border-b border-slate-100 transition-colors hover:bg-orange-50/60 ${idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}`}
+        className={`cursor-pointer border-b border-[var(--gs-border)] transition-colors hover:bg-[var(--gs-accent-soft)]/60 ${idx % 2 === 1 ? "bg-[var(--gs-hover)]/70" : "bg-[var(--gs-card)]"}`}
       >
-        {visibleColumns.date && <td className={`${cell} whitespace-nowrap text-slate-700`}>{r.date}</td>}
+        {visibleColumns.date && <td className={`${cell} whitespace-nowrap text-[var(--gs-text)]`}>{r.date}</td>}
         {visibleColumns.journalNo && (
-          <td className={`${cell} font-mono text-sm font-semibold text-slate-900`}>{r.journalNo}</td>
+          <td className={`${cell} font-mono text-sm font-semibold text-[var(--gs-text)]`}>{r.journalNo}</td>
         )}
         {visibleColumns.transactionType && (
           <td className={`${cell}`}>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200/80">
+            <span className="rounded-full bg-[var(--gs-hover)] px-2 py-0.5 text-xs font-semibold text-[var(--gs-text)] ring-1 ring-[var(--gs-border)]/80">
               {r.transactionType}
             </span>
           </td>
         )}
         {visibleColumns.account && (
           <td className={`${cell}`}>
-            <span className="font-mono text-xs text-slate-500">{r.accountCode}</span>
-            <div className="text-sm font-medium text-slate-900">{r.accountName}</div>
+            <span className="font-mono text-xs text-[var(--gs-muted)]">{r.accountCode}</span>
+            <div className="text-sm font-medium text-[var(--gs-text)]">{r.accountName}</div>
           </td>
         )}
-        {visibleColumns.description && <td className={`${cell} max-w-[220px] truncate text-slate-700`}>{r.description}</td>}
-        {visibleColumns.reference && <td className={`${cell} font-mono text-xs text-slate-600`}>{r.reference}</td>}
+        {visibleColumns.description && <td className={`${cell} max-w-[220px] truncate text-[var(--gs-text)]`}>{r.description}</td>}
+        {visibleColumns.reference && <td className={`${cell} font-mono text-xs text-[var(--gs-muted)]`}>{r.reference}</td>}
         {visibleColumns.debit && (
-          <td className={`${cell} text-right font-mono text-sm text-emerald-800`}>{r.debit > 0 ? formatMoney(r.debit, cur) : "—"}</td>
+          <td className={`${cell} text-right font-mono text-sm text-[var(--gs-text)]`}>{r.debit > 0 ? formatMoney(r.debit, cur) : ""}</td>
         )}
         {visibleColumns.credit && (
-          <td className={`${cell} text-right font-mono text-sm text-rose-800`}>{r.credit > 0 ? formatMoney(r.credit, cur) : "—"}</td>
+          <td className={`${cell} text-right font-mono text-sm text-rose-800`}>{r.credit > 0 ? formatMoney(r.credit, cur) : ""}</td>
         )}
         {showRunningBalance && visibleColumns.runningBalance && (
-          <td className={`${cell} text-right font-mono text-sm font-semibold text-slate-900`}>{formatMoney(r.runningBalance, cur)}</td>
+          <td className={`${cell} text-right font-mono text-sm font-semibold text-[var(--gs-text)]`}>{formatMoney(r.runningBalance, cur)}</td>
         )}
       </tr>
     );
@@ -131,7 +131,7 @@ export function LedgerTable({
         <button
           type="button"
           onClick={() => onSort(id)}
-          className="inline-flex items-center gap-1 font-bold text-slate-600 hover:text-[var(--gs-navy)]"
+          className="inline-flex items-center gap-1 font-bold text-[var(--gs-muted)] hover:text-[var(--gs-text)]"
         >
           {label}
           {sortIndicator(active, sortDir)}
@@ -141,14 +141,14 @@ export function LedgerTable({
   }
 
   return (
-    <div className="rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+    <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-[var(--gs-border)] p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="relative">
           <button
             ref={colBtnRef}
             type="button"
             onClick={() => setColMenuOpen((o) => !o)}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
           >
             <Columns3 className="h-4 w-4" aria-hidden />
             Columns
@@ -157,19 +157,19 @@ export function LedgerTable({
           {colMenuOpen ? (
             <>
               <button type="button" className="fixed inset-0 z-10 cursor-default" aria-label="Close menu" onClick={() => setColMenuOpen(false)} />
-              <div className="absolute left-0 z-20 mt-2 min-w-[220px] rounded-xl border border-slate-200 bg-white py-2 shadow-xl ring-1 ring-slate-900/5">
+              <div className="absolute left-0 z-20 mt-2 min-w-[220px] rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-2 shadow-xl ring-1 ring-[var(--gs-border)]">
                 {(Object.keys(COLUMN_LABELS) as ColumnId[])
                   .filter((c) => c !== "runningBalance" || showRunningBalance)
                   .map((id) => (
                     <label
                       key={id}
-                      className="flex cursor-pointer items-center gap-2 px-4 py-2 text-sm hover:bg-slate-50"
+                      className="flex cursor-pointer items-center gap-2 px-4 py-2 text-sm hover:bg-[var(--gs-hover)]"
                     >
                       <input
                         type="checkbox"
                         checked={visibleColumns[id]}
                         onChange={() => onToggleColumn(id)}
-                        className="rounded border-slate-300"
+                        className="rounded border-[var(--gs-border-strong)]"
                       />
                       {COLUMN_LABELS[id]}
                     </label>
@@ -185,7 +185,7 @@ export function LedgerTable({
 
       <div className="max-h-[min(560px,65vh)] overflow-auto">
         {groupBy !== "none" && grouped ? (
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-[var(--gs-border)]">
             {grouped.map(([gKey, gRows]) => {
               const open = expandedGroups.has(gKey);
               return (
@@ -193,15 +193,15 @@ export function LedgerTable({
                   <button
                     type="button"
                     onClick={() => onToggleGroup(gKey)}
-                    className="flex w-full items-center gap-2 bg-slate-50/90 px-4 py-2.5 text-left text-sm font-bold text-[var(--gs-navy)] hover:bg-slate-100/90"
+                    className="flex w-full items-center gap-2 bg-[var(--gs-hover)]/90 px-4 py-2.5 text-left text-sm font-bold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]/90"
                   >
                     {open ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
                     {gKey}
-                    <span className="ml-auto text-xs font-semibold text-slate-500">{gRows.length}</span>
+                    <span className="ml-auto text-xs font-semibold text-[var(--gs-muted)]">{gRows.length}</span>
                   </button>
                   {open ? (
                     <table className="w-full min-w-[900px] text-left text-sm">
-                      <thead className="sticky top-0 z-[1] border-b border-slate-200 bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600 shadow-sm">
+                      <thead className="sticky top-0 z-[1] border-b border-[var(--gs-border)] bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)] shadow-sm">
                         <tr>
                           {headerCell("date", COLUMN_LABELS.date)}
                           {headerCell("journalNo", COLUMN_LABELS.journalNo)}
@@ -216,7 +216,7 @@ export function LedgerTable({
                               <button
                                 type="button"
                                 onClick={() => onSort("runningBalance")}
-                                className="inline-flex items-center gap-1 font-bold text-slate-600 hover:text-[var(--gs-navy)]"
+                                className="inline-flex items-center gap-1 font-bold text-[var(--gs-muted)] hover:text-[var(--gs-text)]"
                               >
                                 {COLUMN_LABELS.runningBalance}
                                 {sortIndicator(sortKey === "runningBalance", sortDir)}
@@ -234,7 +234,7 @@ export function LedgerTable({
           </div>
         ) : (
           <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="sticky top-0 z-[1] border-b border-slate-200 bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600 shadow-sm">
+            <thead className="sticky top-0 z-[1] border-b border-[var(--gs-border)] bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)] shadow-sm">
               <tr>
                 {headerCell("date", COLUMN_LABELS.date)}
                 {headerCell("journalNo", COLUMN_LABELS.journalNo)}
@@ -249,7 +249,7 @@ export function LedgerTable({
                     <button
                       type="button"
                       onClick={() => onSort("runningBalance")}
-                      className="inline-flex items-center gap-1 font-bold text-slate-600 hover:text-[var(--gs-navy)]"
+                      className="inline-flex items-center gap-1 font-bold text-[var(--gs-muted)] hover:text-[var(--gs-text)]"
                     >
                       {COLUMN_LABELS.runningBalance}
                       {sortIndicator(sortKey === "runningBalance", sortDir)}
@@ -263,13 +263,13 @@ export function LedgerTable({
         )}
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-t border-[var(--gs-border)] p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             disabled={page <= 1}
             onClick={() => onPageChange(page - 1)}
-            className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 disabled:opacity-40 hover:bg-slate-50"
+            className="rounded-full border border-[var(--gs-border)] px-3 py-1.5 text-sm font-semibold text-[var(--gs-text)] disabled:opacity-40 hover:bg-[var(--gs-hover)]"
           >
             Previous
           </button>
@@ -277,12 +277,12 @@ export function LedgerTable({
             type="button"
             disabled={page >= totalPages}
             onClick={() => onPageChange(page + 1)}
-            className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 disabled:opacity-40 hover:bg-slate-50"
+            className="rounded-full border border-[var(--gs-border)] px-3 py-1.5 text-sm font-semibold text-[var(--gs-text)] disabled:opacity-40 hover:bg-[var(--gs-hover)]"
           >
             Next
           </button>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--gs-muted)]">
           <ChevronsUpDown className="h-3.5 w-3.5" aria-hidden />
           Sort: {COLUMN_LABELS[sortKey]} ({sortDir})
         </div>
@@ -314,16 +314,16 @@ export function LedgerTableToolbar({
         <button
           type="button"
           onClick={onNewJournal}
-          className="rounded-full bg-[var(--gs-navy)] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+          className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[var(--gs-accent-hover)]"
         >
           New journal entry
         </button>
-        <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm">
-          <span className="pl-2 text-xs font-bold uppercase text-slate-500">Group</span>
+        <div className="flex items-center gap-2 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 py-1 shadow-sm">
+          <span className="pl-2 text-xs font-bold uppercase text-[var(--gs-muted)]">Group</span>
           <select
             value={groupBy}
             onChange={(e) => onGroupByChange(e.target.value as GroupByMode)}
-            className="rounded-lg border-0 bg-transparent py-1 pr-2 text-sm font-semibold text-slate-800 outline-none"
+            className="rounded-lg border-0 bg-transparent py-1 pr-2 text-sm font-semibold text-[var(--gs-text)] outline-none"
           >
             <option value="none">None</option>
             <option value="account">Account</option>
@@ -334,7 +334,7 @@ export function LedgerTableToolbar({
         <button
           type="button"
           onClick={onExpandAll}
-          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
         >
           <ChevronsDownUp className="h-4 w-4" aria-hidden />
           Expand all
@@ -342,7 +342,7 @@ export function LedgerTableToolbar({
         <button
           type="button"
           onClick={onCollapseAll}
-          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
         >
           <ChevronsUpDown className="h-4 w-4" aria-hidden />
           Collapse all
@@ -352,14 +352,14 @@ export function LedgerTableToolbar({
         <button
           type="button"
           onClick={onDownload}
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+          className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
         >
           Download ledger
         </button>
         <button
           type="button"
           onClick={onEmail}
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+          className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
         >
           Email report
         </button>

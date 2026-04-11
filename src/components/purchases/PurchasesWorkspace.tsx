@@ -47,7 +47,7 @@ export function PurchasesWorkspace() {
         Front-end shells for the purchase cycle (requisition → RFQ → PO → GRN → bill → return) and vendor payments. Connect API when ready.
       </p>
 
-      <div className="flex flex-col gap-2 rounded-2xl border border-[var(--gs-border)] bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-3">
+      <div className="flex flex-col gap-2 rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-3">
         <div className="flex flex-wrap gap-1">
           {(
             [
@@ -61,7 +61,7 @@ export function PurchasesWorkspace() {
               type="button"
               onClick={() => setTab(id)}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
-                tab === id ? "bg-[var(--gs-navy)] text-white" : "text-slate-600 hover:bg-slate-100"
+                tab === id ? "bg-[var(--gs-accent)] text-white" : "text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
               }`}
             >
               {label}
@@ -72,11 +72,11 @@ export function PurchasesWorkspace() {
       </div>
 
       {tab === "flow" && (
-        <section className="rounded-2xl border border-[var(--gs-border)] bg-white p-5 shadow-sm sm:p-6">
+        <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-[var(--gs-navy)]">Purchase transactions</h2>
-              <p className="mt-1 text-sm text-[var(--gs-muted)]">Follow the standard procurement path — each step opens a drawer in a full implementation.</p>
+              <h2 className="text-lg font-bold text-[var(--gs-text)]">Purchase transactions</h2>
+              <p className="mt-1 text-sm text-[var(--gs-muted)]">Follow the standard procurement path  each step opens a drawer in a full implementation.</p>
             </div>
             <button
               type="button"
@@ -92,9 +92,9 @@ export function PurchasesWorkspace() {
                 key={s.id}
                 type="button"
                 onClick={() => window.alert(`Demo: open ${s.label}`)}
-                className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50/60 p-4 text-left transition hover:border-[var(--gs-accent)] hover:bg-white"
+                className="flex flex-col rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 p-4 text-left transition hover:border-[var(--gs-accent)] hover:bg-[var(--gs-card)]"
               >
-                <span className="font-bold text-[var(--gs-navy)]">{s.label}</span>
+                <span className="font-bold text-[var(--gs-text)]">{s.label}</span>
                 <span className="mt-1 text-sm text-[var(--gs-muted)]">{s.desc}</span>
                 <span className="mt-3 text-xs font-semibold text-[var(--gs-accent)]">Open →</span>
               </button>
@@ -104,28 +104,28 @@ export function PurchasesWorkspace() {
       )}
 
       {tab === "payments" && (
-        <section className="rounded-2xl border border-[var(--gs-border)] bg-white p-5 shadow-sm sm:p-6">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Vendor payments</h2>
+        <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm sm:p-6">
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Vendor payments</h2>
           <p className="mt-1 text-sm text-[var(--gs-muted)]">Allocate to open bills and record bank / cash disbursements.</p>
           <div className="mt-6 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+              <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                 <tr>
                   <th className="px-4 py-3">Vendor</th>
                   <th className="px-4 py-3 text-right">Open AP</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--gs-border)]">
                 {DEMO_VENDORS.map((v) => (
-                  <tr key={v.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-medium text-slate-900">{v.name}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-800">{formatMoney(v.balance, "PKR")}</td>
+                  <tr key={v.id} className="hover:bg-[var(--gs-hover)]/80">
+                    <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{v.name}</td>
+                    <td className="px-4 py-3 text-right font-mono text-[var(--gs-text)]">{formatMoney(v.balance, "PKR")}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
                         onClick={() => window.alert(`Demo: pay ${v.name}`)}
-                        className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        className="rounded-full border border-[var(--gs-border)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
                       >
                         Record payment
                       </button>
@@ -139,10 +139,10 @@ export function PurchasesWorkspace() {
       )}
 
       {tab === "vendors" && (
-        <section className="rounded-2xl border border-[var(--gs-border)] bg-white p-5 shadow-sm sm:p-6">
+        <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-[var(--gs-navy)]">Vendor list</h2>
+              <h2 className="text-lg font-bold text-[var(--gs-text)]">Vendor list</h2>
               <p className="mt-1 text-sm text-[var(--gs-muted)]">Search, export, and open vendor profiles.</p>
             </div>
             <button
@@ -157,25 +157,25 @@ export function PurchasesWorkspace() {
             <input
               value={vendorSearch}
               onChange={(e) => setVendorSearch(e.target.value)}
-              placeholder="Search vendor name or email…"
-              className="w-full max-w-md rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+              placeholder="Search vendor name or email..."
+              className="w-full max-w-md rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
             />
           </div>
           <div className="mt-6 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+              <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                 <tr>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3 text-right">Balance</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--gs-border)]">
                 {vendors.map((v) => (
-                  <tr key={v.id} className="cursor-pointer hover:bg-slate-50/80" onClick={() => window.alert(`Demo: vendor ${v.name}`)}>
-                    <td className="px-4 py-3 font-medium text-slate-900">{v.name}</td>
-                    <td className="px-4 py-3 text-slate-600">{v.email}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-800">{formatMoney(v.balance, "PKR")}</td>
+                  <tr key={v.id} className="cursor-pointer hover:bg-[var(--gs-hover)]/80" onClick={() => window.alert(`Demo: vendor ${v.name}`)}>
+                    <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{v.name}</td>
+                    <td className="px-4 py-3 text-[var(--gs-muted)]">{v.email}</td>
+                    <td className="px-4 py-3 text-right font-mono text-[var(--gs-text)]">{formatMoney(v.balance, "PKR")}</td>
                   </tr>
                 ))}
               </tbody>

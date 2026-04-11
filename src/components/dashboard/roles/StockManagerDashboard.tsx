@@ -75,7 +75,7 @@ export function StockManagerDashboard() {
         </Link>
         <Link
           href="/inventory?tab=items"
-          className="rounded-full bg-[var(--gs-navy)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+          className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
         >
           Items
         </Link>
@@ -85,7 +85,7 @@ export function StockManagerDashboard() {
         <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[560px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-[var(--gs-border)]/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">
                 <th className="px-6 py-3.5">When</th>
                 <th className="px-6 py-3.5">Lot</th>
                 <th className="px-6 py-3.5">From</th>
@@ -94,14 +94,14 @@ export function StockManagerDashboard() {
                 <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--gs-border)]">
               {movements.map((row) => (
-                <tr key={row.lot + row.when} className="hover:bg-slate-50/80">
-                  <td className="px-6 py-3.5 text-slate-600">{row.when}</td>
-                  <td className="px-6 py-3.5 font-mono text-xs font-semibold text-slate-900">{row.lot}</td>
-                  <td className="px-6 py-3.5 text-slate-700">{row.from}</td>
-                  <td className="px-6 py-3.5 text-slate-700">{row.to}</td>
-                  <td className="px-6 py-3.5 text-right font-medium text-slate-900">{row.ct}</td>
+                <tr key={row.lot + row.when} className="hover:bg-[var(--gs-hover)]/80">
+                  <td className="px-6 py-3.5 text-[var(--gs-muted)]">{row.when}</td>
+                  <td className="px-6 py-3.5 font-mono text-xs font-semibold text-[var(--gs-text)]">{row.lot}</td>
+                  <td className="px-6 py-3.5 text-[var(--gs-text)]">{row.from}</td>
+                  <td className="px-6 py-3.5 text-[var(--gs-text)]">{row.to}</td>
+                  <td className="px-6 py-3.5 text-right font-medium text-[var(--gs-text)]">{row.ct}</td>
                   <td className="px-6 py-3.5 text-right">
                     <RowActionsMenu items={["View transfer", "Reassign", "Flag"]} />
                   </td>

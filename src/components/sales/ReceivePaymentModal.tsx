@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 
 import { AppDialog } from "@/components/ui/AppDialog";
 
-export const PAYMENT_OPTIONS = ["Bank transfer", "Cash", "PayPal", "Credit / debit card", "Wire (SWIFT)", "Other"] as const;
+export const PAYMENT_OPTIONS = ["Cash", "Bank Transfer", "Direct to Bank Account", "Cheque", "Online"] as const;
+
+const COMPANY_BANK_ACCOUNTS = [
+  { id: "hbl-main", bankName: "HBL", accountTitle: "GemStack Trading Co.", accountNumber: "PK12-HABB-0011223344" },
+  { id: "ubl-op", bankName: "UBL", accountTitle: "GemStack Operating", accountNumber: "PK34-UNIL-5566778899" },
+  { id: "mcb-tax", bankName: "MCB", accountTitle: "GemStack Tax", accountNumber: "PK78-MCBA-1100220033" },
+];
 
 export type ReceivePaymentInitial = {
   invoiceId?: string;
@@ -20,9 +26,23 @@ type Props = {
   onClose: () => void;
   initial?: ReceivePaymentInitial;
   title?: string;
+  amountDue?: number;
+  onSubmitPayment?: (payload: {
+    amount: number;
+    method: string;
+    depositTo: string;
+    date: string;
+  }) => void;
 };
 
-export function ReceivePaymentModal({ open, onClose, initial, title = "Receive payment" }: Props) {
+export function ReceivePaymentModal({
+  open,
+  onClose,
+  initial,
+  title = "Receive payment",
+  amountDue,
+  onSubmitPayment,
+}: Props) {
   const [invoiceId, setInvoiceId] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [email, setEmail] = useState("");
@@ -30,6 +50,12 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
   const [detail, setDetail] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<(typeof PAYMENT_OPTIONS)[number]>("Bank transfer");
+  const [depositTo, setDepositTo] = useState("Operating bank");
+  const [date, setDate] = useState("");
+  const [bankAccountId, setBankAccountId] = useState("");
+  const [referenceNo, setReferenceNo] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -38,20 +64,57 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
     setEmail(initial?.email ?? "");
     setPhone(initial?.phone ?? "");
     setDetail(initial?.detail ?? "");
-    setAmount(initial?.amount ?? "");
-    setMethod("Bank transfer");
-  }, [open, initial]);
+    setAmount(initial?.amount ?? String(amountDue ?? ""));
+    setMethod("Cash");
+    setDepositTo("Operating bank");
+    setDate(new Date().toISOString().slice(0, 10));
+    setBankAccountId("");
+    setReferenceNo("");
+    setReceiptFile(null);
+    setReceiptPreviewUrl(null);
+  }, [open, initial, amountDue]);
+
+  useEffect(() => {
+    return () => {
+      if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+    };
+  }, [receiptPreviewUrl]);
+
+  const requiresBank = method === "Bank Transfer" || method === "Direct to Bank Account";
+  const amountNum = Number(amount || 0);
 
   function submit() {
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      window.alert("Amount must be greater than 0.");
+      return;
+    }
+    if (typeof amountDue === "number" && amountNum > amountDue) {
+      window.alert(`Amount cannot exceed total due (${amountDue.toFixed(2)}).`);
+      return;
+    }
+    if (requiresBank && !bankAccountId) {
+      window.alert("Please select a company bank account.");
+      return;
+    }
+    if (!date) {
+      window.alert("Date is required.");
+      return;
+    }
+    onSubmitPayment?.({
+      amount: amountNum,
+      method,
+      depositTo,
+      date,
+    });
     window.alert(
-      `Demo: Record payment\nMethod: ${method}\nInvoice: ${invoiceId || "—"}\nCustomer: ${customerName || "—"}\nAmount: ${amount || "—"}\nConnect API to post.`,
+      `Demo: Record payment\nMethod: ${method}\nInvoice: ${invoiceId || ""}\nCustomer: ${customerName || ""}\nAmount: ${amount || ""}\nConnect API to post.`,
     );
     onClose();
   }
 
-  const fieldLabel = "mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-500";
+  const fieldLabel = "mb-1 block text-[11px] font-bold uppercase tracking-wide text-[var(--gs-muted)]";
   const inputClass =
-    "w-full min-h-[42px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/20";
+    "w-full min-h-[42px] rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm text-[var(--gs-text)] shadow-sm outline-none transition placeholder:text-[var(--gs-muted)] focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/20";
 
   return (
     <AppDialog
@@ -66,14 +129,14 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
           <button
             type="button"
             onClick={onClose}
-            className="w-full rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto"
+            className="w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-5 py-2.5 text-sm font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)] sm:w-auto"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={submit}
-            className="w-full rounded-lg bg-[var(--gs-navy)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 sm:w-auto"
+            className="w-full rounded-lg bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)] sm:w-auto"
           >
             Record payment
           </button>
@@ -81,9 +144,9 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
       }
     >
       <div className="space-y-4 sm:space-y-5">
-        <fieldset className="rounded-xl border border-slate-200/90 bg-slate-50/60 p-3 shadow-sm sm:p-3.5">
+        <fieldset className="rounded-xl border border-[var(--gs-border)]/90 bg-[var(--gs-hover)]/60 p-3 shadow-sm sm:p-3.5">
           <legend className="sr-only">Payment method</legend>
-          <p id="receive-payment-method-label" className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+          <p id="receive-payment-method-label" className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
             Payment method *
           </p>
           <div
@@ -98,8 +161,8 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
                   key={opt}
                   className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 shadow-sm transition sm:px-2.5 sm:py-2 ${
                     selected
-                      ? "border-[var(--gs-accent)] bg-white ring-1 ring-[var(--gs-accent)]/30"
-                      : "border-slate-200/90 bg-white hover:border-slate-300"
+                      ? "border-[var(--gs-accent)] bg-[var(--gs-card)] ring-1 ring-[var(--gs-accent)]/30"
+                      : "border-[var(--gs-border)]/90 bg-[var(--gs-card)] hover:border-[var(--gs-border-strong)]"
                   }`}
                 >
                   <input
@@ -108,11 +171,11 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
                     value={opt}
                     checked={selected}
                     onChange={() => setMethod(opt)}
-                    className="h-3.5 w-3.5 shrink-0 border-slate-300 text-[var(--gs-accent)] focus:ring-[var(--gs-accent)]"
+                    className="h-3.5 w-3.5 shrink-0 border-[var(--gs-border-strong)] text-[var(--gs-accent)] focus:ring-[var(--gs-accent)]"
                   />
                   <span
                     className={`min-w-0 flex-1 text-left text-[11px] font-semibold leading-snug sm:text-xs ${
-                      selected ? "text-[var(--gs-navy)]" : "text-slate-600"
+                      selected ? "text-[var(--gs-text)]" : "text-[var(--gs-muted)]"
                     }`}
                   >
                     {opt}
@@ -123,8 +186,8 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
           </div>
         </fieldset>
 
-        <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm sm:p-4">
-          <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Invoice &amp; payer</p>
+        <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-3 shadow-sm sm:p-4">
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Invoice &amp; payer</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className={fieldLabel}>Invoice #</label>
@@ -145,6 +208,76 @@ export function ReceivePaymentModal({ open, onClose, initial, title = "Receive p
             <div className="sm:col-span-2">
               <label className={fieldLabel}>Amount received</label>
               <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className={inputClass} />
+            </div>
+            {requiresBank ? (
+              <div className="sm:col-span-2">
+                <label className={fieldLabel}>Company bank account *</label>
+                <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className={inputClass}>
+                  <option value="">Select bank account...</option>
+                  {COMPANY_BANK_ACCOUNTS.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.bankName} - {acc.accountTitle} ({acc.accountNumber})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div>
+              <label className={fieldLabel}>Deposit to</label>
+              <select value={depositTo} onChange={(e) => setDepositTo(e.target.value)} className={inputClass}>
+                <option>Operating bank</option>
+                <option>Cash on hand</option>
+                <option>PayPal clearing</option>
+              </select>
+            </div>
+            <div>
+              <label className={fieldLabel}>Date</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={fieldLabel}>Reference no</label>
+              <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="TXN-12345 / CHQ-00991" className={inputClass} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={fieldLabel}>Upload Payment Receipt</label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                className={inputClass}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  if (receiptPreviewUrl) {
+                    URL.revokeObjectURL(receiptPreviewUrl);
+                  }
+                  setReceiptFile(file);
+                  if (file && file.type.startsWith("image/")) {
+                    setReceiptPreviewUrl(URL.createObjectURL(file));
+                  } else {
+                    setReceiptPreviewUrl(null);
+                  }
+                }}
+              />
+              {receiptFile ? (
+                <div className="mt-2 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)] p-3">
+                  <p className="text-xs font-medium text-[var(--gs-text)]">{receiptFile.name}</p>
+                  {receiptPreviewUrl ? (
+                    <img src={receiptPreviewUrl} alt="Receipt preview" className="mt-2 max-h-28 rounded-md border border-[var(--gs-border)] object-contain" />
+                  ) : (
+                    <p className="mt-1 text-xs text-[var(--gs-muted)]">PDF selected</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl);
+                      setReceiptFile(null);
+                      setReceiptPreviewUrl(null);
+                    }}
+                    className="mt-2 text-xs font-semibold text-[var(--gs-accent)] hover:text-[var(--gs-accent-hover)]"
+                  >
+                    Remove file
+                  </button>
+                </div>
+              ) : null}
             </div>
             <div className="sm:col-span-2">
               <label className={fieldLabel}>Notes / detail</label>

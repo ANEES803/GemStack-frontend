@@ -55,10 +55,10 @@ export function SalesAreaChart() {
     <div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold tracking-tight text-[var(--gs-navy)]">Sales volume</h2>
+          <h2 className="text-lg font-bold tracking-tight text-[var(--gs-text)]">Sales volume</h2>
           <p className="mt-1 text-sm text-[var(--gs-muted)]">Last period — demo data until API is connected.</p>
         </div>
-        <div className="flex gap-1 rounded-full bg-slate-100/90 p-1 ring-1 ring-slate-200/60">
+        <div className="flex gap-1 rounded-full bg-[var(--gs-hover)]/90 p-1 ring-1 ring-[var(--gs-border)]/60">
           {(
             [
               ["month", "Month"],
@@ -72,8 +72,8 @@ export function SalesAreaChart() {
               onClick={() => setRange(key)}
               className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                 range === key
-                  ? "bg-white text-[var(--gs-accent)] shadow-sm ring-1 ring-slate-200/70"
-                  : "text-slate-500 hover:text-slate-800"
+                  ? "bg-[var(--gs-card)] text-[var(--gs-accent)] shadow-sm ring-1 ring-[var(--gs-border)]/70"
+                  : "text-[var(--gs-muted)] hover:text-[var(--gs-text)]"
               }`}
             >
               {label}
@@ -121,7 +121,7 @@ export function SalesAreaChart() {
           </ResponsiveContainer>
         ) : (
           <div
-            className="flex h-full w-full items-center justify-center rounded-xl bg-slate-50/80 text-sm text-slate-400"
+            className="flex h-full w-full items-center justify-center rounded-xl bg-[var(--gs-hover)]/80 text-sm text-[var(--gs-muted)]"
             aria-hidden
           />
         )}

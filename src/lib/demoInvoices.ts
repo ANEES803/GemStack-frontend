@@ -7,6 +7,8 @@ export type DemoInvoiceRow = {
   amount: string;
   method: string;
   status: "Paid" | "Pending";
+  /** Set for user-added rows so filters/sort use the real invoice date. */
+  dateIso?: string;
 };
 
 const STORAGE_KEY = "gemstack-demo-invoices-added";
@@ -37,16 +39,23 @@ export function rowFromInvoicePayload(p: {
   invoiceNo: string;
   customer: string;
   holder: string;
+  /** Reference / parcel; shown in FEP column when holder is unset or placeholder. */
+  parcelNo?: string;
+  dateIso?: string;
   paymentMethod: string;
   amount: number;
   status: "Paid" | "Pending";
 }): DemoInvoiceRow {
+  const holder = p.holder.trim();
+  const parcel = p.parcelNo?.trim() ?? "";
+  const fep = holder && holder !== "-" ? holder : parcel || "-";
   return {
     id: p.invoiceNo.trim(),
     customer: p.customer.trim(),
-    fep: p.holder.trim(),
+    fep,
     amount: formatMoney(p.amount, "USD"),
     method: p.paymentMethod,
     status: p.status,
+    ...(p.dateIso?.trim() ? { dateIso: p.dateIso.trim() } : {}),
   };
 }

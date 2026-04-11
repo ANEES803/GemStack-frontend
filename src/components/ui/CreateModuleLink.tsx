@@ -42,7 +42,7 @@ export function CreateModuleLink({ href, variant, children }: Props) {
         aria-hidden
       />
       <span className="relative flex items-center gap-2">
-        <span className={`flex h-7 w-7 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/25 ${v.icon}`}>
+        <span className={`flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--gs-card)]/15 ring-1 ring-white/25 ${v.icon}`}>
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.25} stroke="currentColor" aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>

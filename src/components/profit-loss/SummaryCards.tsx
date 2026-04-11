@@ -25,12 +25,12 @@ export function SummaryCards({ totalRevenue, grossProfit, netProfit, netProfitPc
       sub: "Period total",
       icon: TrendingUp,
       tint: "from-emerald-50/90 to-white ring-emerald-200/55",
-      iconBg: "bg-emerald-100 text-emerald-800",
+      iconBg: "bg-emerald-100 text-[var(--gs-text)]",
     },
     {
       label: "Gross profit",
       value: formatPlAmount(grossProfit, currency, rounding),
-      sub: "Revenue − COGS",
+      sub: "Revenue âˆ’ COGS",
       icon: Scale,
       tint: "from-sky-50/90 to-white ring-sky-200/55",
       iconBg: "bg-sky-100 text-sky-800",
@@ -54,7 +54,7 @@ export function SummaryCards({ totalRevenue, grossProfit, netProfit, netProfitPc
       icon: Percent,
       tint: "from-orange-50/90 to-white ring-orange-200/60",
       iconBg: "bg-[var(--gs-accent-soft)] text-[var(--gs-accent)]",
-      valueClass: netProfitPct >= 0 ? "text-[var(--gs-navy)]" : "text-red-700",
+      valueClass: netProfitPct >= 0 ? "text-[var(--gs-text)]" : "text-red-700",
     },
   ] as const;
 
@@ -67,13 +67,13 @@ export function SummaryCards({ totalRevenue, grossProfit, netProfit, netProfitPc
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{c.label}</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">{c.label}</p>
               <p
-                className={`mt-2 font-mono font-bold tracking-tight ${"valueClass" in c ? c.valueClass : "text-slate-900"} ${compact ? "text-lg" : "text-xl"}`}
+                className={`mt-2 font-mono font-bold tracking-tight ${"valueClass" in c ? c.valueClass : "text-[var(--gs-text)]"} ${compact ? "text-lg" : "text-xl"}`}
               >
                 {c.value}
               </p>
-              <p className="mt-1 text-xs font-medium text-slate-600">{c.sub}</p>
+              <p className="mt-1 text-xs font-medium text-[var(--gs-muted)]">{c.sub}</p>
             </div>
             <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${c.iconBg}`}>
               <c.icon className="h-5 w-5" aria-hidden />

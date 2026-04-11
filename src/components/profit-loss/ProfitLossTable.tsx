@@ -79,7 +79,7 @@ export function ProfitLossTable({
           <button
             type="button"
             onClick={expandAll}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
           >
             <ChevronsDownUp className="h-4 w-4" aria-hidden />
             Expand all
@@ -87,7 +87,7 @@ export function ProfitLossTable({
           <button
             type="button"
             onClick={collapseAll}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
           >
             <ChevronsUpDown className="h-4 w-4" aria-hidden />
             Collapse all
@@ -95,7 +95,7 @@ export function ProfitLossTable({
           <button
             type="button"
             onClick={onDownload}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
           >
             <Download className="h-4 w-4" aria-hidden />
             Download report
@@ -103,23 +103,23 @@ export function ProfitLossTable({
           <button
             type="button"
             onClick={onEmail}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
           >
             <Mail className="h-4 w-4" aria-hidden />
             Email report
           </button>
         </div>
         {showComparison ? (
-          <p className="text-xs font-medium text-slate-500">
-            Comparison: <span className="text-slate-800">{comparisonLabel}</span>
+          <p className="text-xs font-medium text-[var(--gs-muted)]">
+            Comparison: <span className="text-[var(--gs-text)]">{comparisonLabel}</span>
           </p>
         ) : null}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
         <div className="max-h-[min(640px,70vh)] overflow-auto">
           <table className="w-full min-w-[640px] border-collapse text-sm">
-            <thead className="sticky top-0 z-[1] border-b border-slate-200 bg-[var(--gs-table-head)] text-left text-xs font-bold uppercase tracking-wide text-slate-600 shadow-sm">
+            <thead className="sticky top-0 z-[1] border-b border-[var(--gs-border)] bg-[var(--gs-table-head)] text-left text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)] shadow-sm">
               <tr>
                 <th className={`${th} min-w-[200px]`}>Account name</th>
                 <th className={`${th} text-right whitespace-nowrap`}>Current period</th>
@@ -151,14 +151,14 @@ export function ProfitLossTable({
                       onClick={() => {
                         if (!isSection) onLineClick(row);
                       }}
-                      className={`border-b border-slate-100 transition-colors ${
+                      className={`border-b border-[var(--gs-border)] transition-colors ${
                         isSection
-                          ? "bg-slate-50/95"
+                          ? "bg-[var(--gs-hover)]/95"
                           : isMargin
-                            ? "bg-white"
+                            ? "bg-[var(--gs-card)]"
                             : isDetail && vIdx % 2 === 1
-                              ? "bg-slate-50/40 hover:bg-orange-50/50"
-                              : "bg-white hover:bg-orange-50/50"
+                              ? "bg-[var(--gs-hover)]/40 hover:bg-[var(--gs-accent-soft)]/50"
+                              : "bg-[var(--gs-card)] hover:bg-[var(--gs-accent-soft)]/50"
                       } ${!isSection ? "cursor-pointer" : ""} ${netProfitRow && marginPositive ? "bg-emerald-50/40" : ""} ${
                         netProfitRow && marginLoss ? "bg-red-50/40" : ""
                       }`}
@@ -172,7 +172,7 @@ export function ProfitLossTable({
                                 e.stopPropagation();
                                 toggleGroup(row.groupId);
                               }}
-                              className="flex shrink-0 items-center gap-1 text-left text-[var(--gs-navy)]"
+                              className="flex shrink-0 items-center gap-1 text-left text-[var(--gs-text)]"
                               aria-expanded={open}
                             >
                               {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -183,10 +183,10 @@ export function ProfitLossTable({
                           <span
                             className={`${
                               isTotal || isMargin
-                                ? "font-bold text-[var(--gs-navy)]"
+                                ? "font-bold text-[var(--gs-text)]"
                                 : isSection
-                                  ? "text-sm font-bold uppercase tracking-wide text-slate-700"
-                                  : "font-medium text-slate-800"
+                                  ? "text-sm font-bold uppercase tracking-wide text-[var(--gs-text)]"
+                                  : "font-medium text-[var(--gs-text)]"
                             } ${isMargin && netProfitRow ? (marginPositive ? "text-green-900" : "text-red-800") : ""}`}
                           >
                             {row.label}
@@ -196,7 +196,7 @@ export function ProfitLossTable({
                       <td
                         className={`${cell} text-right font-mono tabular-nums ${
                           isTotal || isMargin ? "font-bold" : ""
-                        } ${row.creditStyle && amtCur < 0 ? "text-slate-700" : "text-slate-900"} ${
+                        } ${row.creditStyle && amtCur < 0 ? "text-[var(--gs-text)]" : "text-[var(--gs-text)]"} ${
                           netProfitRow ? (marginPositive ? "text-green-900" : "text-red-800") : ""
                         }`}
                       >
@@ -204,7 +204,7 @@ export function ProfitLossTable({
                       </td>
                       {showComparison ? (
                         <td
-                          className={`${cell} text-right font-mono text-slate-600 tabular-nums ${isTotal || isMargin ? "font-bold" : ""}`}
+                          className={`${cell} text-right font-mono text-[var(--gs-muted)] tabular-nums ${isTotal || isMargin ? "font-bold" : ""}`}
                         >
                           {row.creditStyle && amtPrior < 0
                             ? `(${formatPlAmount(Math.abs(amtPrior), displayCurrency, rounding)})`
@@ -213,7 +213,7 @@ export function ProfitLossTable({
                       ) : null}
                       {showPercentages ? (
                         <td
-                          className={`${cell} text-right font-mono text-slate-600 tabular-nums ${isTotal || isMargin ? "font-semibold text-slate-800" : ""}`}
+                          className={`${cell} text-right font-mono text-[var(--gs-muted)] tabular-nums ${isTotal || isMargin ? "font-semibold text-[var(--gs-text)]" : ""}`}
                         >
                           {isSection ? "—" : formatPlPercent(pct, rounding)}
                         </td>
@@ -225,7 +225,7 @@ export function ProfitLossTable({
             </tbody>
           </table>
         </div>
-        <div className="border-t border-slate-100 px-4 py-3 text-center text-[10px] font-medium uppercase tracking-wide text-slate-400">
+        <div className="border-t border-[var(--gs-border)] px-4 py-3 text-center text-[10px] font-medium uppercase tracking-wide text-[var(--gs-muted)]">
           Statement columns: {colCount} · Click a line for detail (except section headers)
         </div>
       </div>

@@ -60,19 +60,19 @@ const INITIAL_USERS: UserRow[] = [
     email: "ali.fep@gemstack.demo",
     role: "fep",
     status: "invited",
-    lastLogin: "—",
+    lastLogin: "",
     otpVerified: false,
   },
 ];
 
 function statusPill(status: UserStatus) {
   if (status === "active") {
-    return <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-100">Active</span>;
+    return <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-[var(--gs-text)] ring-1 ring-emerald-100">Active</span>;
   }
   if (status === "invited") {
     return <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-800 ring-1 ring-sky-100">Invited</span>;
   }
-  return <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">Disabled</span>;
+  return <span className="inline-flex rounded-full bg-[var(--gs-hover)] px-2.5 py-0.5 text-xs font-semibold text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)]">Disabled</span>;
 }
 
 function userModal(
@@ -82,18 +82,18 @@ function userModal(
   wide?: boolean,
 ) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 p-3 pt-6 sm:items-center sm:p-4 sm:py-8">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-3 pt-6 sm:items-center sm:p-4 sm:py-8">
       <div
-        className={`w-full max-h-[min(92vh,calc(100dvh-1.5rem))] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 ${
+        className={`w-full max-h-[min(92vh,calc(100dvh-1.5rem))] overflow-y-auto overscroll-contain rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4 shadow-2xl sm:p-6 ${
           wide ? "max-w-2xl" : "max-w-lg"
         }`}
       >
         <div className="flex items-start justify-between gap-3">
-          <h3 className="text-lg font-bold text-[var(--gs-navy)]">{title}</h3>
+          <h3 className="text-lg font-bold text-[var(--gs-text)]">{title}</h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-full p-2 text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
             aria-label="Close"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
@@ -132,10 +132,10 @@ function matrixCell(role: RoleSlug, rowKey: string): "full" | "view" | "own" | "
 }
 
 function CellIcon({ kind }: { kind: "full" | "view" | "own" | "none" }) {
-  if (kind === "full") return <span className="text-emerald-600" title="Full">●</span>;
-  if (kind === "view") return <span className="text-sky-600" title="View">◐</span>;
-  if (kind === "own") return <span className="text-amber-600" title="Own / limited">◑</span>;
-  return <span className="text-slate-300">—</span>;
+  if (kind === "full") return <span className="text-[var(--gs-accent)]" title="Full">✓</span>;
+  if (kind === "view") return <span className="text-[var(--gs-muted)]" title="View">○</span>;
+  if (kind === "own") return <span className="text-[var(--gs-muted)]" title="Own / limited">○</span>;
+  return <span className="text-[var(--gs-muted)]"></span>;
 }
 
 export function UsersRolesWorkspace() {
@@ -173,7 +173,7 @@ export function UsersRolesWorkspace() {
           email: form.email.trim().toLowerCase(),
           role: form.role,
           status: form.status,
-          lastLogin: "—",
+          lastLogin: "",
           otpVerified: false,
         },
         ...prev,
@@ -206,26 +206,26 @@ export function UsersRolesWorkspace() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
-      <div className="rounded-2xl border border-[var(--gs-border)] bg-white p-5 shadow-sm sm:p-6">
-        <h2 className="text-lg font-bold text-[var(--gs-navy)]">User &amp; access control (SRS)</h2>
+      <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm sm:p-6">
+        <h2 className="text-lg font-bold text-[var(--gs-text)]">User &amp; access control (SRS)</h2>
         <p className="mt-2 text-sm leading-relaxed text-[var(--gs-muted)]">
           Multi-user access with role-based permissions: create users, assign roles, and restrict modules. Authentication is specified as{" "}
-          <strong className="text-slate-700">email + password</strong> with <strong className="text-slate-700">one-time OTP</strong> on first login or
+          <strong className="text-[var(--gs-text)]">email + password</strong> with <strong className="text-[var(--gs-text)]">one-time OTP</strong> on first login or
           verification. This screen is a frontend demo; connect your identity provider and policy engine next.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">Email + password</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">OTP (first login)</span>
+          <span className="rounded-full bg-[var(--gs-hover)] px-3 py-1 text-xs font-semibold text-[var(--gs-text)] ring-1 ring-[var(--gs-border)]">Email + password</span>
+          <span className="rounded-full bg-[var(--gs-hover)] px-3 py-1 text-xs font-semibold text-[var(--gs-text)] ring-1 ring-[var(--gs-border)]">OTP (first login)</span>
           <span className="rounded-full bg-[var(--gs-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--gs-accent)] ring-1 ring-orange-200">
             Role-based access
           </span>
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
+      <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-[var(--gs-border)] p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-[var(--gs-navy)]">Users</h2>
+            <h2 className="text-lg font-bold text-[var(--gs-text)]">Users</h2>
             <p className="mt-0.5 text-sm text-[var(--gs-muted)]">Create users and assign a single primary role (demo list).</p>
           </div>
           <button
@@ -238,7 +238,7 @@ export function UsersRolesWorkspace() {
         </div>
         <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+            <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
               <tr>
                 <th className="px-5 py-3">Name</th>
                 <th className="px-5 py-3">Email</th>
@@ -249,15 +249,15 @@ export function UsersRolesWorkspace() {
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--gs-border)]">
               {users.map((u) => (
-                <tr key={u.id} className="hover:bg-slate-50/80">
-                  <td className="px-5 py-3 font-medium text-slate-900">{u.name}</td>
-                  <td className="px-5 py-3 font-mono text-xs text-slate-700">{u.email}</td>
-                  <td className="px-5 py-3 text-slate-700">{roleBySlug[u.role]?.title ?? u.role}</td>
+                <tr key={u.id} className="hover:bg-[var(--gs-hover)]/80">
+                  <td className="px-5 py-3 font-medium text-[var(--gs-text)]">{u.name}</td>
+                  <td className="px-5 py-3 font-mono text-xs text-[var(--gs-text)]">{u.email}</td>
+                  <td className="px-5 py-3 text-[var(--gs-text)]">{roleBySlug[u.role]?.title ?? u.role}</td>
                   <td className="px-5 py-3">{statusPill(u.status)}</td>
-                  <td className="px-5 py-3 text-slate-600">{u.otpVerified ? "Verified" : "Pending"}</td>
-                  <td className="px-5 py-3 text-slate-500">{u.lastLogin}</td>
+                  <td className="px-5 py-3 text-[var(--gs-muted)]">{u.otpVerified ? "Verified" : "Pending"}</td>
+                  <td className="px-5 py-3 text-[var(--gs-muted)]">{u.lastLogin}</td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <RowActionsMenu
@@ -282,17 +282,17 @@ export function UsersRolesWorkspace() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-        <div className="border-b border-slate-100 p-5">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Access matrix (illustrative)</h2>
+      <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+        <div className="border-b border-[var(--gs-border)] p-5">
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Access matrix (illustrative)</h2>
           <p className="mt-1 text-sm text-[var(--gs-muted)]">
-            ● full · ◐ view · ◑ own/limited · — none. Tune in your policy layer; FEP is restricted from company-wide reports per SRS.
+            ✓ full · ○ view · ○ own/limited ·  none. Tune in your policy layer; FEP is restricted from company-wide reports per SRS.
           </p>
         </div>
         <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] p-5 pt-0">
           <table className="min-w-[720px] w-full text-center text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-[var(--gs-border)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                 <th className="py-3 pr-4 text-left">Area</th>
                 {ROLES.map((r) => (
                   <th key={r.slug} className="px-1 py-3">
@@ -301,10 +301,10 @@ export function UsersRolesWorkspace() {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--gs-border)]">
               {ACCESS_MATRIX.map((row) => (
                 <tr key={row.key}>
-                  <td className="py-3 pr-4 text-left font-medium text-slate-800">{row.label}</td>
+                  <td className="py-3 pr-4 text-left font-medium text-[var(--gs-text)]">{row.label}</td>
                   {ROLES.map((r) => (
                     <td key={r.slug} className="px-1 py-3">
                       <CellIcon kind={matrixCell(r.slug, row.key)} />
@@ -323,54 +323,54 @@ export function UsersRolesWorkspace() {
             () => setModal(null),
             <div className="mt-4 space-y-3">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Full name *</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Full name *</label>
                 <input
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Email (login) *</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Email (login) *</label>
                 <input
                   type="email"
                   autoComplete="off"
                   value={form.email}
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Role *</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Role *</label>
                 <select
                   value={form.role}
                   onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as RoleSlug }))}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                 >
                   {ROLES.map((r) => (
                     <option key={r.slug} value={r.slug}>
-                      {r.title} — {r.label}
+                      {r.title}  {r.label}
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Status</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Status</label>
                 <select
                   value={form.status}
                   onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as UserStatus }))}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                 >
                   <option value="invited">Invited (OTP pending)</option>
                   <option value="active">Active</option>
                   <option value="disabled">Disabled</option>
                 </select>
               </div>
-              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <p className="rounded-lg bg-[var(--gs-hover)] px-3 py-2 text-xs text-[var(--gs-muted)]">
                 Password setup and OTP delivery are not implemented in this demo; your backend should enforce verification and audit logging per SRS.
               </p>
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setModal(null)} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">
+                <button type="button" onClick={() => setModal(null)} className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)]">
                   Cancel
                 </button>
                 <button type="button" onClick={saveUser} className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white">

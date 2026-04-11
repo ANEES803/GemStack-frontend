@@ -121,7 +121,7 @@ function processLedgerRows(
 }
 
 function groupKey(r: LedgerRow, mode: GroupByMode): string {
-  if (mode === "account") return `${r.accountCode} — ${r.accountName}`;
+  if (mode === "account") return `${r.accountCode}  ${r.accountName}`;
   if (mode === "date") return r.date;
   return r.transactionType;
 }
@@ -141,7 +141,7 @@ export function GeneralLedgerPage() {
   const branchOptions = useMemo(() => {
     const s = new Set<string>();
     for (const r of sourceRows) {
-      if (r.branch && r.branch !== "—") s.add(r.branch);
+      if (r.branch && r.branch !== "") s.add(r.branch);
     }
     return [...s].sort();
   }, [sourceRows]);
@@ -297,9 +297,9 @@ export function GeneralLedgerPage() {
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-10">
-      <header className="flex flex-col gap-4 border-b border-slate-200/80 pb-6 lg:flex-row lg:items-start lg:justify-between">
+      <header className="flex flex-col gap-4 border-b border-[var(--gs-border)]/80 pb-6 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-navy)] sm:text-3xl">General Ledger</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-text)] sm:text-3xl">General Ledger</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--gs-muted)]">
             Account activity with running balance and drill-down
           </p>
@@ -308,7 +308,7 @@ export function GeneralLedgerPage() {
           <button
             type="button"
             onClick={() => window.alert("Demo: export general ledger as PDF")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export PDF"
             title="Export PDF"
           >
@@ -317,7 +317,7 @@ export function GeneralLedgerPage() {
           <button
             type="button"
             onClick={() => window.alert("Demo: export as Excel")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export Excel"
             title="Export Excel"
           >
@@ -326,7 +326,7 @@ export function GeneralLedgerPage() {
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Print"
             title="Print"
           >
@@ -339,7 +339,7 @@ export function GeneralLedgerPage() {
               setPage(1);
               window.alert("Refreshed from current filter draft (demo).");
             }}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Refresh"
             title="Refresh"
           >
@@ -348,7 +348,7 @@ export function GeneralLedgerPage() {
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gs-navy)] text-white shadow-sm hover:bg-slate-800"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gs-accent)] text-white shadow-sm hover:bg-[var(--gs-accent-hover)]"
             aria-label="Settings"
             title="Settings"
           >
@@ -415,7 +415,7 @@ export function GeneralLedgerPage() {
         onToggleGroup={toggleGroup}
       />
 
-      <p className="text-center text-xs text-slate-400">
+      <p className="text-center text-xs text-[var(--gs-muted)]">
         <Link href="/reports?tab=hub" className="font-semibold text-[var(--gs-accent)] hover:underline">
           ← Back to report hub
         </Link>

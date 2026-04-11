@@ -47,7 +47,7 @@ export default function SignupPage() {
     >
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label htmlFor="signup-name" className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+          <label htmlFor="signup-name" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
             Full name
           </label>
           <input
@@ -58,12 +58,12 @@ export default function SignupPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[var(--gs-accent)] focus:bg-white focus:ring-2 focus:ring-orange-100"
+            className="mt-2 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-4 py-3 text-sm text-[var(--gs-text)] outline-none transition focus:border-[var(--gs-accent)] focus:bg-[var(--gs-card)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
             placeholder="Sara Malik"
           />
         </div>
         <div>
-          <label htmlFor="signup-email" className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+          <label htmlFor="signup-email" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
             Work email
           </label>
           <input
@@ -74,12 +74,12 @@ export default function SignupPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[var(--gs-accent)] focus:bg-white focus:ring-2 focus:ring-orange-100"
+            className="mt-2 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-4 py-3 text-sm text-[var(--gs-text)] outline-none transition focus:border-[var(--gs-accent)] focus:bg-[var(--gs-card)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
             placeholder="you@company.com"
           />
         </div>
         <div>
-          <label htmlFor="signup-password" className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+          <label htmlFor="signup-password" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
             Password
           </label>
           <input
@@ -91,12 +91,12 @@ export default function SignupPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={8}
-            className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[var(--gs-accent)] focus:bg-white focus:ring-2 focus:ring-orange-100"
+            className="mt-2 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-4 py-3 text-sm text-[var(--gs-text)] outline-none transition focus:border-[var(--gs-accent)] focus:bg-[var(--gs-card)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
             placeholder="At least 8 characters"
           />
         </div>
         <div>
-          <label htmlFor="signup-confirm" className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+          <label htmlFor="signup-confirm" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
             Confirm password
           </label>
           <input
@@ -107,16 +107,16 @@ export default function SignupPage() {
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             required
-            className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[var(--gs-accent)] focus:bg-white focus:ring-2 focus:ring-orange-100"
+            className="mt-2 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-4 py-3 text-sm text-[var(--gs-text)] outline-none transition focus:border-[var(--gs-accent)] focus:bg-[var(--gs-card)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
             placeholder="Repeat password"
           />
         </div>
-        <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-600">
+        <label className="flex cursor-pointer items-start gap-2 text-sm text-[var(--gs-muted)]">
           <input
             type="checkbox"
             checked={accept}
             onChange={(e) => setAccept(e.target.checked)}
-            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[var(--gs-accent)] focus:ring-[var(--gs-accent)]"
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--gs-border-strong)] text-[var(--gs-accent)] focus:ring-[var(--gs-accent)]"
           />
           <span>
             I agree to the <button type="button" className="font-semibold text-[var(--gs-accent)] hover:underline">Terms</button> and{" "}
@@ -128,7 +128,7 @@ export default function SignupPage() {
           disabled={busy}
           className="w-full rounded-xl bg-[var(--gs-accent)] py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)] disabled:opacity-60"
         >
-          {busy ? "Creating account…" : "Create account"}
+          {busy ? "Creating account..." : "Create account"}
         </button>
       </form>
     </AuthShell>

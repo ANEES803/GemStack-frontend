@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 import { CreateModuleLink } from "@/components/ui/CreateModuleLink";
 import { ListPageLayout } from "@/components/ui/ListPageLayout";
@@ -13,60 +14,7 @@ import {
   type SortOption,
 } from "@/components/ui/ListToolbarInteractive";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
-
-type LotRow = {
-  code: string;
-  supplier: string;
-  carats: number;
-  caratsDisplay: string;
-  cost: number;
-  costDisplay: string;
-  dateIso: string;
-  dateDisplay: string;
-};
-
-const SEED: LotRow[] = [
-  {
-    code: "LO-09",
-    supplier: "Sapphire Co.",
-    carats: 312,
-    caratsDisplay: "312.0",
-    cost: 48200,
-    costDisplay: "$48,200",
-    dateIso: "2026-03-12",
-    dateDisplay: "Mar 12, 2026",
-  },
-  {
-    code: "LO-08",
-    supplier: "Global Gems Ltd",
-    carats: 145.5,
-    caratsDisplay: "145.5",
-    cost: 22900,
-    costDisplay: "$22,900",
-    dateIso: "2026-02-28",
-    dateDisplay: "Feb 28, 2026",
-  },
-  {
-    code: "LO-07",
-    supplier: "Sapphire Co.",
-    carats: 228,
-    caratsDisplay: "228.0",
-    cost: 31400,
-    costDisplay: "$31,400",
-    dateIso: "2026-02-02",
-    dateDisplay: "Feb 02, 2026",
-  },
-  {
-    code: "LO-06",
-    supplier: "Ceylon Traders",
-    carats: 88,
-    caratsDisplay: "88.0",
-    cost: 14200,
-    costDisplay: "$14,200",
-    dateIso: "2026-01-18",
-    dateDisplay: "Jan 18, 2026",
-  },
-];
+import { DEFAULT_LOTS_SEED, loadLots, saveLots, type LotListRow } from "@/lib/lotsListStorage";
 
 const SORT_OPTIONS: SortOption[] = [
   { id: "recent", label: "Recent receipt (default)" },
@@ -84,14 +32,36 @@ function cmpCode(a: string, b: string) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
+const thBase =
+  "px-3 py-3 text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)] sm:px-4 sm:py-3.5";
+const tdBase = "px-3 py-3.5 align-middle text-sm sm:px-4 sm:py-4";
+
 export default function LotsPage() {
-  const suppliers = useMemo(() => [...new Set(SEED.map((r) => r.supplier))].sort(), []);
+  const router = useRouter();
+  const [rows, setRows] = useState<LotListRow[]>(DEFAULT_LOTS_SEED);
+
+  useEffect(() => {
+    setRows(loadLots());
+  }, []);
+
+  const suppliers = useMemo(() => [...new Set(rows.map((r) => r.supplier))].sort(), [rows]);
 
   const [search, setSearch] = useState("");
   const [sortId, setSortId] = useState("recent");
   const [supplierFilters, setSupplierFilters] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(suppliers.map((s) => [s, false])),
+    Object.fromEntries([...new Set(DEFAULT_LOTS_SEED.map((r) => r.supplier))].sort().map((s) => [s, false])),
   );
+
+  useEffect(() => {
+    setSupplierFilters((prev) => {
+      const next = { ...prev };
+      for (const s of suppliers) {
+        if (!(s in next)) next[s] = false;
+      }
+      return next;
+    });
+  }, [suppliers]);
+
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -108,7 +78,7 @@ export default function LotsPage() {
 
   const filteredSorted = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let list = SEED.filter((row) => {
+    let list = rows.filter((row) => {
       if (q) {
         const blob = `${row.code} ${row.supplier} ${row.dateDisplay} ${row.costDisplay}`.toLowerCase();
         if (!blob.includes(q)) return false;
@@ -153,12 +123,23 @@ export default function LotsPage() {
         break;
     }
     return sorted;
-  }, [search, sortId, supplierFilters, dateFrom, dateTo, suppliers]);
+  }, [search, sortId, supplierFilters, dateFrom, dateTo, suppliers, rows]);
+
+  function handleDelete(row: LotListRow) {
+    if (!window.confirm("Are you sure you want to delete this lot?")) return;
+    const next = rows.filter((r) => r.code !== row.code);
+    saveLots(next);
+    setRows(next);
+    window.alert("Lot deleted successfully.");
+  }
+
+  function handleEdit(row: LotListRow) {
+    router.push(`/lots/edit/${encodeURIComponent(row.code)}`);
+  }
 
   return (
     <ListPageLayout
       title="Lots"
-      subtitle="Bulk purchases — total weight and cost at lot level before parcels are split."
       actions={<CreateModuleLink href="/lots/new" variant="lots">New lot</CreateModuleLink>}
       toolbar={
         <ListToolbarInteractive
@@ -193,43 +174,49 @@ export default function LotsPage() {
       }
     >
       <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
-        <table className="w-full min-w-[560px] text-left text-sm">
+        <table className="w-full min-w-[560px] table-fixed border-collapse text-sm">
           <thead>
-            <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
-              <th className="px-5 py-3.5 sm:px-6 sm:py-4">Lot</th>
-              <th className="px-5 py-3.5 sm:px-6 sm:py-4">Supplier</th>
-              <th className="px-5 py-3.5 text-right sm:px-6 sm:py-4">Carats</th>
-              <th className="px-5 py-3.5 text-right sm:px-6 sm:py-4">Total cost</th>
-              <th className="px-5 py-3.5 sm:px-6 sm:py-4">Received</th>
-              <th className="px-5 py-3.5 text-right sm:px-6 sm:py-4">Actions</th>
+            <tr className="border-b border-[var(--gs-border)]/80 bg-[var(--gs-table-head)]">
+              <th className={`${thBase} text-center`}>Lot</th>
+              <th className={`${thBase} text-center`}>Receive date</th>
+              <th className={`${thBase} text-center`}>Supplier</th>
+              <th className={`${thBase} text-center tabular-nums`}>UOM</th>
+              <th className={`${thBase} text-center tabular-nums`}>Cts in hand</th>
+              <th className={`${thBase} text-center tabular-nums`}>Total cost</th>
+              <th className={`${thBase} text-center`}>Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-[var(--gs-border)]">
             {filteredSorted.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500 sm:px-6 sm:py-14">
+                <td colSpan={7} className="px-4 py-12 text-center text-sm text-[var(--gs-muted)] sm:py-14">
                   No lots match your filters or search.
                 </td>
               </tr>
             ) : (
               filteredSorted.map((row) => (
-                <tr key={row.code} className="bg-white hover:bg-slate-50/80">
-                  <td className="px-5 py-4 sm:px-6 sm:py-5">
-                    <div className="flex items-start gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold tabular-nums text-slate-600">
-                        {row.code.slice(-2)}
-                      </span>
-                      <div className="flex min-w-0 items-center pt-0.5">
-                        <p className="font-mono text-sm font-semibold text-slate-900">{row.code}</p>
-                      </div>
-                    </div>
+                <tr
+                  key={row.code}
+                  className="bg-[var(--gs-card)] transition-colors duration-150 hover:bg-[var(--gs-hover)]/90"
+                >
+                  <td className={`${tdBase} text-center`}>
+                    <p className="font-mono text-sm font-semibold text-[var(--gs-text)]">{row.code}</p>
                   </td>
-                  <td className="px-5 py-4 text-slate-800 sm:px-6 sm:py-5">{row.supplier}</td>
-                  <td className="px-5 py-4 text-right font-medium text-slate-900 sm:px-6 sm:py-5">{row.caratsDisplay}</td>
-                  <td className="px-5 py-4 text-right font-semibold text-slate-900 sm:px-6 sm:py-5">{row.costDisplay}</td>
-                  <td className="px-5 py-4 text-slate-600 sm:px-6 sm:py-5">{row.dateDisplay}</td>
-                  <td className="px-5 py-4 text-right sm:px-6 sm:py-5">
-                    <RowActionsMenu />
+                  <td className={`${tdBase} text-center text-[var(--gs-muted)]`}>{row.dateDisplay}</td>
+                  <td className={`${tdBase} text-center text-[var(--gs-text)]`}>{row.supplier}</td>
+                  <td className={`${tdBase} text-center font-medium tabular-nums text-[var(--gs-text)]`}>{row.caratsDisplay}</td>
+                  <td className={`${tdBase} text-center font-medium tabular-nums text-[var(--gs-text)]`}>{row.caratsDisplay}</td>
+                  <td className={`${tdBase} text-center font-semibold tabular-nums text-[var(--gs-text)]`}>{row.costDisplay}</td>
+                  <td className={`${tdBase} text-center`}>
+                    <div className="flex justify-center">
+                      <RowActionsMenu
+                        align="right"
+                        actions={[
+                          { label: "Edit", tone: "accent", onSelect: () => handleEdit(row) },
+                          { label: "Delete", tone: "danger", onSelect: () => handleDelete(row) },
+                        ]}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))

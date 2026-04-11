@@ -30,7 +30,7 @@ export function SummaryCards({ totalDebit, totalCredit, difference, currency, co
       value: formatMoney(totalDebit, currency),
       icon: TrendingUp,
       tint: "from-emerald-50/90 to-white ring-emerald-200/60",
-      iconBg: "bg-emerald-100 text-emerald-800",
+      iconBg: "bg-emerald-100 text-[var(--gs-text)]",
     },
     {
       label: "Total credit",
@@ -44,10 +44,10 @@ export function SummaryCards({ totalDebit, totalCredit, difference, currency, co
       value: formatMoney(difference, currency),
       icon: isBalanced ? Equal : AlertTriangle,
       tint: isBalanced
-        ? "from-slate-50 to-white ring-slate-200/80"
+        ? "from-[var(--gs-card)] to-[var(--gs-card)] ring-[var(--gs-border)]/80"
         : "from-red-50/95 to-white ring-red-200/80",
-      iconBg: isBalanced ? "bg-slate-100 text-slate-700" : "bg-red-100 text-red-700",
-      valueClass: isBalanced ? "text-slate-900" : "text-red-700",
+      iconBg: isBalanced ? "bg-[var(--gs-hover)] text-[var(--gs-text)]" : "bg-red-100 text-red-700",
+      valueClass: isBalanced ? "text-[var(--gs-text)]" : "text-red-700",
       sub: isBalanced ? "Balanced" : "Out of balance — review",
     },
   ];
@@ -61,13 +61,13 @@ export function SummaryCards({ totalDebit, totalCredit, difference, currency, co
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{c.label}</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">{c.label}</p>
               <p
-                className={`mt-2 font-mono font-bold tracking-tight ${c.valueClass ?? "text-slate-900"} ${compact ? "text-lg" : "text-xl"}`}
+                className={`mt-2 font-mono font-bold tracking-tight ${c.valueClass ?? "text-[var(--gs-text)]"} ${compact ? "text-lg" : "text-xl"}`}
               >
                 {c.value}
               </p>
-              {c.sub ? <p className="mt-1 text-xs font-semibold text-slate-600">{c.sub}</p> : null}
+              {c.sub ? <p className="mt-1 text-xs font-semibold text-[var(--gs-muted)]">{c.sub}</p> : null}
             </div>
             <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${c.iconBg}`}>
               <c.icon className="h-5 w-5" aria-hidden />

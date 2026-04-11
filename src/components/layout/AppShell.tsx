@@ -2,14 +2,16 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
 import { DateFormatProvider } from "@/contexts/DateFormatContext";
 import { GlobalSearchBar } from "@/components/layout/GlobalSearchBar";
 import { MainSidebar } from "@/components/layout/MainSidebar";
 import { ThemeToggleIconButton } from "@/components/theme";
+import { initThemeFromStorage } from "@/components/theme";
 import { ACCOUNT_SETTINGS_LINKS } from "@/lib/accountMenuLinks";
+import { getAccessToken, getMe, getStoredUser, logout } from "@/lib/authClient";
 import { ROLES } from "@/lib/roles";
 
 function cx(...parts: (string | false | undefined)[]) {
@@ -26,6 +28,7 @@ const PATHS_WITH_PAGE_OWNED_TITLE = new Set([
   "/dashboard",
   "/inventory",
   "/lots",
+  "/lots/new",
   "/sales",
   "/reports/general-ledger",
   "/reports/trial-balance",
@@ -36,7 +39,7 @@ const PATHS_WITH_PAGE_OWNED_TITLE = new Set([
 
 const ROUTE_HEADINGS: Record<string, { title: string; sub?: string }> = {
   "/lots": { title: "Lots", sub: "Bulk purchases" },
-  "/lots/new": { title: "Create lot", sub: "New bulk purchase or third-party stock" },
+  "/lots/new": { title: "Add New LOT" },
   "/sales": { title: "Sales", sub: "Quotations · orders · invoices · receipts" },
   "/sales/new": { title: "Create invoice", sub: "Add a new sales invoice" },
   "/purchases": { title: "Purchases", sub: "Requisitions · PO · GRN · vendor bills" },
@@ -105,7 +108,7 @@ function CreateMenu() {
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-1 min-w-[7.2rem] rounded-md border border-[var(--gs-border)] bg-[var(--gs-card)] py-0.5 shadow-lg ring-1 ring-slate-900/5 dark:ring-slate-900/40"
+          className="absolute right-0 z-50 mt-1 min-w-[7.2rem] rounded-md border border-[var(--gs-border)] bg-[var(--gs-card)] py-0.5 shadow-lg ring-1 ring-[var(--gs-border)]"
         >
           {items.map((it) => (
             <Link
@@ -126,6 +129,7 @@ function CreateMenu() {
 
 function AccountMenu() {
   const [open, setOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -146,7 +150,7 @@ function AccountMenu() {
         aria-haspopup="menu"
         aria-label="Account and settings"
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-100 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200/80 dark:from-[var(--gs-border)] dark:to-[var(--gs-card)] dark:text-[var(--gs-muted)] dark:ring-[var(--gs-border)]">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--gs-hover)] text-[11px] font-semibold text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)]">
           GS
         </span>
         <span className="hidden text-xs font-medium text-[var(--gs-text)] sm:inline">Account</span>
@@ -164,7 +168,7 @@ function AccountMenu() {
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-1.5 max-h-[min(70vh,28rem)] w-[min(100vw-1.5rem,16rem)] overflow-y-auto rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-xl ring-1 ring-slate-900/5 dark:ring-slate-900/40"
+          className="absolute right-0 z-50 mt-1.5 max-h-[min(70vh,28rem)] w-[min(100vw-1.5rem,16rem)] overflow-y-auto rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-xl ring-1 ring-[var(--gs-border)]"
         >
           <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Settings</p>
           {ACCOUNT_SETTINGS_LINKS.map((it) => (
@@ -181,14 +185,23 @@ function AccountMenu() {
           <div className="my-1 border-t border-[var(--gs-border)]" role="separator" />
           <ThemeToggleIconButton />
           <div className="my-1 border-t border-[var(--gs-border)]" role="separator" />
-          <Link
-            href="/login"
+          <button
+            type="button"
             role="menuitem"
-            className="block px-3 py-2 text-xs font-semibold text-[var(--gs-muted)] transition-colors hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-text)]"
-            onClick={() => setOpen(false)}
+            disabled={isSigningOut}
+            className="block w-full px-3 py-2 text-left text-xs font-semibold text-[var(--gs-muted)] transition-colors hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-text)] disabled:opacity-60"
+            onClick={async () => {
+              setOpen(false);
+              setIsSigningOut(true);
+              try {
+                await logout();
+              } finally {
+                window.location.href = "/login";
+              }
+            }}
           >
-            Sign out
-          </Link>
+            {isSigningOut ? "Signing out..." : "Sign out"}
+          </button>
         </div>
       ) : null}
     </div>
@@ -233,21 +246,8 @@ function TopBarActionIcons() {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const pathname = usePathname();
-
-  // Marketing landing page: full-bleed (no sidebar / app chrome).
-  if (pathname === "/") {
-    return (
-      <DateFormatProvider>
-        <div className="min-h-screen bg-[#0b1220] text-[#e5e7eb]">{children}</div>
-      </DateFormatProvider>
-    );
-  }
-
-  const { title, sub } = shellHeading(pathname);
-  /** Role dashboards render their own heading in `RoleDashboardIntro` — hide shell duplicate. */
-  const showShellPageTitle =
-    !PATHS_WITH_PAGE_OWNED_TITLE.has(pathname) && !/^\/dashboard\/.+/.test(pathname);
   /** `true` = full width + labels; `false` = narrow rail with icons only */
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [sidebarHovered, setSidebarHovered] = useState(false);
@@ -264,6 +264,59 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    initThemeFromStorage();
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+    if (pathname === "/") {
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    async function verifySession() {
+      const token = getAccessToken();
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+
+      try {
+        const user = await getMe();
+        if (isCancelled) return;
+        if (user.must_change_password && !pathname.startsWith("/settings/security")) {
+          router.replace("/settings/security");
+          return;
+        }
+        if (pathname.startsWith("/dashboard/")) {
+          const routeRole = pathname.split("/")[2];
+          if (routeRole && routeRole !== user.role) {
+            router.replace(`/dashboard/${user.role}`);
+          }
+        }
+      } catch {
+        if (!isCancelled) {
+          router.replace("/login");
+        }
+      }
+    }
+
+    const cachedUser = getStoredUser();
+    if (cachedUser?.must_change_password && !pathname.startsWith("/settings/security")) {
+      router.replace("/settings/security");
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    verifySession();
+    return () => {
+      isCancelled = true;
+    };
+  }, [pathname, router]);
+
+  useEffect(() => {
     const root = document.documentElement;
     if (isDashboardRoute(pathname)) {
       root.style.removeProperty("font-size");
@@ -275,19 +328,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [pathname]);
 
+  // Marketing landing page: full-bleed (no sidebar / app chrome).
+  if (pathname === "/") {
+    return (
+      <DateFormatProvider>
+        <div className="min-h-screen bg-white text-neutral-950 dark:bg-[#020617] dark:text-white">{children}</div>
+      </DateFormatProvider>
+    );
+  }
+
+  const { title, sub } = shellHeading(pathname);
+  /** Role dashboards render their own heading in `RoleDashboardIntro` — hide shell duplicate. */
+  const showShellPageTitle =
+    !PATHS_WITH_PAGE_OWNED_TITLE.has(pathname) &&
+    !/^\/dashboard\/.+/.test(pathname) &&
+    !pathname.startsWith("/lots/edit");
+  const collapsedSidebarWidth = "6%";
+  const expandedSidebarWidth = "16rem";
+
   return (
     <DateFormatProvider>
     <div
-      className="flex min-h-screen bg-gradient-to-b from-[var(--gs-gradient-from)] via-[var(--gs-gradient-via)] to-[var(--gs-gradient-to)] text-[var(--gs-text)] transition-[background] duration-[250ms] ease-out"
+      className="flex min-h-screen overflow-x-hidden bg-white text-neutral-950 transition-colors duration-200 ease-out dark:bg-[#020617] dark:text-white"
       suppressHydrationWarning
     >
       <aside
         id="app-sidebar"
         onMouseEnter={() => setSidebarHovered(true)}
         onMouseLeave={() => setSidebarHovered(false)}
+        style={{ width: sidebarExpanded ? expandedSidebarWidth : collapsedSidebarWidth }}
         className={cx(
-          "fixed inset-y-0 left-0 z-40 flex flex-col overflow-visible border-r border-[var(--gs-border)] bg-[var(--gs-sidebar)] shadow-[4px_0_32px_rgba(15,23,42,0.04)] transition-[width,background-color] duration-[250ms] ease-out dark:shadow-[4px_0_32px_rgba(0,0,0,0.25)]",
-          sidebarExpanded ? "w-[20rem]" : "w-[3.2rem]",
+          "fixed inset-y-0 left-0 z-40 flex flex-col overflow-visible border-r border-neutral-200 bg-white shadow-[4px_0_32px_rgba(15,23,42,0.04)] transition-[width,background-color,border-color] duration-200 ease-out dark:border-[#1f2937] dark:bg-[#020617] dark:shadow-[4px_0_32px_rgba(0,0,0,0.35)]",
         )}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -299,7 +370,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className={cx("shrink-0 border-t border-[var(--gs-border)]", sidebarExpanded ? "p-3" : "hidden")}>
           <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-2.5 py-2.5">
             <p className="text-[10px] font-bold text-[var(--gs-text)]">Signed in</p>
-            <p className="mt-0.5 text-[9px] leading-relaxed text-[var(--gs-muted)]">Authentication will plug in later.</p>
+            <p className="mt-0.5 text-[9px] leading-relaxed text-[var(--gs-muted)]">Session protected.</p>
           </div>
         </div>
 
@@ -327,21 +398,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div
+        style={{ paddingLeft: sidebarExpanded ? expandedSidebarWidth : collapsedSidebarWidth }}
         className={cx(
-          "flex min-h-screen min-w-0 flex-1 flex-col transition-[padding] duration-200 ease-out",
-          sidebarExpanded ? "pl-[20rem]" : "pl-[3.2rem]",
+          "flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden transition-[padding] duration-200 ease-out",
         )}
         suppressHydrationWarning
       >
-        <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl transition-colors duration-[250ms] dark:border-[var(--gs-border)] dark:bg-[var(--gs-shell-header)]">
+        <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/95 text-neutral-950 backdrop-blur-xl transition-colors duration-200 dark:border-[#1f2937] dark:bg-[#020617]/95 dark:text-white">
           <div className="grid min-h-[2.45rem] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-4 sm:py-2">
             <Link
               href="/dashboard"
               className="group flex min-w-0 max-w-[min(18rem,calc(100vw-10rem))] shrink-0 items-center gap-1.5 rounded-lg py-0.5 outline-none ring-offset-2 transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)]"
               title="GemStack — Home"
             >
-              <span className="relative flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-[var(--gs-card)] text-[var(--gs-accent)] shadow-sm ring-1 ring-orange-100/80 transition-transform duration-200 ease-out will-change-transform group-hover:scale-[1.03] dark:ring-[var(--gs-border)]">
-                <span className="absolute inset-0 rounded-md bg-gradient-to-br from-orange-50 via-white to-white dark:from-[var(--gs-card)] dark:via-[var(--gs-card)] dark:to-[var(--gs-card)]" />
+              <span className="relative flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-[var(--gs-card)] text-[var(--gs-accent)] shadow-sm ring-1 ring-[var(--gs-border)] transition-transform duration-200 ease-out will-change-transform group-hover:scale-[1.03]">
+                <span className="absolute inset-0 rounded-md bg-gradient-to-br from-[var(--gs-card)] via-[var(--gs-card)] to-[var(--gs-card)]" />
                 <svg className="relative h-[11px] w-[11px] drop-shadow-[0_4px_12px_rgba(241,90,36,0.2)]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                   <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6L12 2z" />
                 </svg>
@@ -349,16 +420,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className="min-w-0">
                 <span className="flex flex-wrap items-center gap-1">
                   <span className="text-[13px] font-black leading-tight tracking-tight">
-                    <span className="bg-gradient-to-r from-[var(--gs-navy)] via-slate-900 to-[var(--gs-accent)] bg-clip-text text-transparent dark:from-[var(--gs-text)] dark:via-[var(--gs-muted)] dark:to-[var(--gs-accent)]">
+                    <span className="bg-gradient-to-r from-[var(--gs-text)] via-[var(--gs-muted)] to-[var(--gs-accent)] bg-clip-text text-transparent">
                       GemStack
                     </span>
                   </span>
-                  <span className="shrink-0 rounded-full bg-orange-100/80 px-1 py-px text-[6.5px] font-bold uppercase tracking-wider text-orange-800 ring-1 ring-orange-200/70 dark:bg-[var(--gs-accent-soft)] dark:text-orange-200 dark:ring-[var(--gs-border)]">
+                  <span className="shrink-0 rounded-full bg-[var(--gs-accent-soft)] px-1 py-px text-[6.5px] font-bold uppercase tracking-wider text-[var(--gs-accent)] ring-1 ring-[var(--gs-border)]">
                     Beta
                   </span>
-                </span>
-                <span className="mt-0.5 block text-[8px] font-medium leading-snug text-[var(--gs-muted)] sm:text-[9px]">
-                  Gemstone ERP • Inventory · Sales · Accounting
                 </span>
               </span>
             </Link>
@@ -372,7 +440,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <TopBarActionIcons />
             </div>
           </div>
-          <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-[var(--gs-border)] dark:from-transparent dark:to-transparent" />
+          <div className="h-px w-full bg-gradient-to-r from-transparent via-[var(--gs-border)] to-transparent" />
         </header>
 
         <main

@@ -90,11 +90,11 @@ export default function PartnersPage() {
       </p>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-[var(--gs-border)] bg-white p-5 shadow-sm lg:col-span-2">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Partners</h2>
+        <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm lg:col-span-2">
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Partners</h2>
           <div className="mt-4 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+              <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                 <tr>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3 text-right">Profit ratio</th>
@@ -102,12 +102,12 @@ export default function PartnersPage() {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--gs-border)]">
                 {partners.map((p) => (
                   <tr key={p.id}>
-                    <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{p.profitRatioPct}%</td>
-                    <td className="px-4 py-3 text-right font-semibold text-[var(--gs-navy)]">{formatMoney(p.capitalBalance, "PKR")}</td>
+                    <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{p.name}</td>
+                    <td className="px-4 py-3 text-right text-[var(--gs-text)]">{p.profitRatioPct}%</td>
+                    <td className="px-4 py-3 text-right font-semibold text-[var(--gs-text)]">{formatMoney(p.capitalBalance, "PKR")}</td>
                     <td className="px-4 py-3 text-right">
                       <RowActionsMenu items={["View ledger", "Adjust ratio", "Freeze partner"]} />
                     </td>
@@ -116,13 +116,13 @@ export default function PartnersPage() {
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-xs text-slate-500">Ratios sum: {ratioTotals}%</p>
+          <p className="mt-3 text-xs text-[var(--gs-muted)]">Ratios sum: {ratioTotals}%</p>
         </div>
 
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-5 shadow-sm">
-          <h3 className="font-bold text-emerald-900">Profit distribution</h3>
-          <p className="mt-2 text-sm text-emerald-800/90">Demo net profit: {formatMoney(profitToDistribute, "PKR")}</p>
-          <ul className="mt-3 space-y-1 text-sm text-emerald-900">
+          <h3 className="font-bold text-[var(--gs-text)]">Profit distribution</h3>
+          <p className="mt-2 text-sm text-[var(--gs-text)]/90">Demo net profit: {formatMoney(profitToDistribute, "PKR")}</p>
+          <ul className="mt-3 space-y-1 text-sm text-[var(--gs-text)]">
             {partners.map((p) => (
               <li key={p.id}>
                 {p.name}: <strong>{formatMoney((profitToDistribute * p.profitRatioPct) / 100, "PKR")}</strong>
@@ -132,16 +132,16 @@ export default function PartnersPage() {
           <button
             type="button"
             onClick={runProfitDistribution}
-            className="mt-4 w-full rounded-full bg-[var(--gs-navy)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            className="mt-4 w-full rounded-full bg-[var(--gs-accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
           >
             Post distribution (demo)
           </button>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Withdrawals</h2>
+      <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-[var(--gs-border)] p-5 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Withdrawals</h2>
           <button
             type="button"
             onClick={() => setDrawOpen(true)}
@@ -152,7 +152,7 @@ export default function PartnersPage() {
         </div>
         <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+            <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
               <tr>
                 <th className="px-5 py-3">Date</th>
                 <th className="px-5 py-3">Partner</th>
@@ -160,12 +160,12 @@ export default function PartnersPage() {
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--gs-border)]">
               {withdrawals.map((w) => (
                 <tr key={w.id}>
-                  <td className="px-5 py-3 text-slate-700">{w.dateIso}</td>
-                  <td className="px-5 py-3 font-medium text-slate-900">{w.partnerName}</td>
-                  <td className="px-5 py-3 text-right font-semibold text-slate-900">{formatMoney(w.amount, "PKR")}</td>
+                  <td className="px-5 py-3 text-[var(--gs-text)]">{w.dateIso}</td>
+                  <td className="px-5 py-3 font-medium text-[var(--gs-text)]">{w.partnerName}</td>
+                  <td className="px-5 py-3 text-right font-semibold text-[var(--gs-text)]">{formatMoney(w.amount, "PKR")}</td>
                   <td className="px-5 py-3 text-right">
                     <RowActionsMenu items={["View voucher", "Reverse", "Download"]} />
                   </td>
@@ -177,14 +177,14 @@ export default function PartnersPage() {
       </div>
 
       {drawOpen ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/35 p-3 pt-6 sm:items-center sm:p-4 sm:py-8">
-          <div className="w-full max-w-md max-h-[min(92vh,calc(100dvh-1.5rem))] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-3 pt-6 sm:items-center sm:p-4 sm:py-8">
+          <div className="w-full max-w-md max-h-[min(92vh,calc(100dvh-1.5rem))] overflow-y-auto overscroll-contain rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4 shadow-2xl sm:p-6">
             <div className="flex items-start justify-between gap-3">
-              <h3 className="text-lg font-bold text-[var(--gs-navy)]">Record withdrawal</h3>
+              <h3 className="text-lg font-bold text-[var(--gs-text)]">Record withdrawal</h3>
               <button
                 type="button"
                 onClick={() => setDrawOpen(false)}
-                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                className="rounded-full p-2 text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
                 aria-label="Close"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
@@ -194,11 +194,11 @@ export default function PartnersPage() {
             </div>
             <div className="mt-4 space-y-3">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Partner *</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Partner *</label>
                 <select
                   value={drawForm.partnerId}
                   onChange={(e) => setDrawForm((f) => ({ ...f, partnerId: e.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                 >
                   {partners.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -208,26 +208,26 @@ export default function PartnersPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Date *</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Date *</label>
                 <input
                   type="date"
                   value={drawForm.dateIso}
                   onChange={(e) => setDrawForm((f) => ({ ...f, dateIso: e.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Amount (PKR) *</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Amount (PKR) *</label>
                 <input
                   inputMode="decimal"
                   value={drawForm.amount}
                   onChange={(e) => setDrawForm((f) => ({ ...f, amount: e.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
                   placeholder="0.00"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setDrawOpen(false)} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">
+                <button type="button" onClick={() => setDrawOpen(false)} className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)]">
                   Cancel
                 </button>
                 <button type="button" onClick={addWithdrawal} className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white">

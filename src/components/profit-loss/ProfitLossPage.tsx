@@ -98,22 +98,22 @@ export function ProfitLossPage() {
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-6 pb-10">
-      <header className="flex flex-col gap-4 border-b border-slate-200/80 pb-6 lg:flex-row lg:items-start lg:justify-between">
+      <header className="flex flex-col gap-4 border-b border-[var(--gs-border)]/80 pb-6 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-navy)] sm:text-3xl">Profit & Loss</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-text)] sm:text-3xl">Profit & Loss</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--gs-muted)]">Revenue, COGS, expenses, net profit</p>
-          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--gs-muted)]">
             <span>
               Period:{" "}
-              <span className="font-mono font-semibold text-slate-700">
+              <span className="font-mono font-semibold text-[var(--gs-text)]">
                 {appliedFilters.dateFrom} → {appliedFilters.dateTo}
               </span>
             </span>
-            <span className="text-slate-300">|</span>
+            <span className="text-[var(--gs-muted)]">|</span>
             <span>{appliedFilters.accountingMethod} basis</span>
             {appliedFilters.branch ? (
               <>
-                <span className="text-slate-300">|</span>
+                <span className="text-[var(--gs-muted)]">|</span>
                 <span>{appliedFilters.branch}</span>
               </>
             ) : null}
@@ -123,7 +123,7 @@ export function ProfitLossPage() {
           <button
             type="button"
             onClick={() => window.alert("Demo: export P&L PDF")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export PDF"
             title="Export PDF"
           >
@@ -132,7 +132,7 @@ export function ProfitLossPage() {
           <button
             type="button"
             onClick={() => window.alert("Demo: export Excel")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export Excel"
             title="Export Excel"
           >
@@ -141,7 +141,7 @@ export function ProfitLossPage() {
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Print"
             title="Print"
           >
@@ -153,7 +153,7 @@ export function ProfitLossPage() {
               setAppliedFilters({ ...draftFilters });
               window.alert("Refreshed (demo).");
             }}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Refresh"
             title="Refresh"
           >
@@ -162,7 +162,7 @@ export function ProfitLossPage() {
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gs-navy)] text-white shadow-sm hover:bg-slate-800"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gs-accent)] text-white shadow-sm hover:bg-[var(--gs-accent-hover)]"
             aria-label="Settings"
             title="Settings"
           >
@@ -210,7 +210,7 @@ export function ProfitLossPage() {
         onEmail={() => window.alert("Demo: email P&L")}
       />
 
-      <p className="text-center text-xs text-slate-400">
+      <p className="text-center text-xs text-[var(--gs-muted)]">
         <Link href="/reports?tab=hub" className="font-semibold text-[var(--gs-accent)] hover:underline">
           ← Back to report hub
         </Link>

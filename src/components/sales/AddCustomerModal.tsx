@@ -47,7 +47,7 @@ export function AddCustomerModal({ open, onClose, onSave }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto sm:py-2.5"
+            className="w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)] sm:w-auto sm:py-2.5"
           >
             Cancel
           </button>
@@ -63,37 +63,37 @@ export function AddCustomerModal({ open, onClose, onSave }: Props) {
     >
       <div className="space-y-3">
         <div>
-          <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Name *</label>
+          <label className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Name *</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+            className="mt-1.5 w-full min-h-[44px] rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
           />
         </div>
         <div>
-          <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email</label>
+          <label className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Email</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+            className="mt-1.5 w-full min-h-[44px] rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
           />
         </div>
         <div>
-          <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Phone</label>
+          <label className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Phone</label>
           <input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+            className="mt-1.5 w-full min-h-[44px] rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
           />
         </div>
         <div>
-          <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Detail / notes</label>
+          <label className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Detail / notes</label>
           <textarea
             rows={3}
             value={detail}
             onChange={(e) => setDetail(e.target.value)}
-            className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+            className="mt-1.5 w-full resize-y rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
           />
         </div>
       </div>

@@ -20,15 +20,15 @@ export function SummaryCards({ opening, totalDebit, totalCredit, closing, curren
       label: "Opening balance",
       value: formatMoney(opening, currency),
       icon: Wallet,
-      tint: "from-slate-50 to-white ring-slate-200/80",
-      iconBg: "bg-slate-100 text-slate-700",
+      tint: "from-[var(--gs-card)] to-[var(--gs-card)] ring-[var(--gs-border)]/80",
+      iconBg: "bg-[var(--gs-hover)] text-[var(--gs-text)]",
     },
     {
       label: "Total debit",
       value: formatMoney(totalDebit, currency),
       icon: TrendingUp,
       tint: "from-emerald-50/90 to-white ring-emerald-200/60",
-      iconBg: "bg-emerald-100 text-emerald-800",
+      iconBg: "bg-emerald-100 text-[var(--gs-text)]",
     },
     {
       label: "Total credit",
@@ -55,8 +55,8 @@ export function SummaryCards({ opening, totalDebit, totalCredit, closing, curren
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{c.label}</p>
-              <p className={`mt-2 font-mono font-bold tracking-tight text-slate-900 ${compact ? "text-lg" : "text-xl"}`}>
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">{c.label}</p>
+              <p className={`mt-2 font-mono font-bold tracking-tight text-[var(--gs-text)] ${compact ? "text-lg" : "text-xl"}`}>
                 {c.value}
               </p>
             </div>

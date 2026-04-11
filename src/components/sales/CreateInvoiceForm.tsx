@@ -5,20 +5,55 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AddCustomerModal } from "@/components/sales/AddCustomerModal";
-import { InvoicePrintDialog } from "@/components/sales/InvoicePrintDialog";
 import { ReceivePaymentModal } from "@/components/sales/ReceivePaymentModal";
+import { AppDialog } from "@/components/ui/AppDialog";
 import { addCustomer, loadCustomers, type DemoCustomer } from "@/lib/demoCustomers";
 import { appendDemoInvoice, rowFromInvoicePayload } from "@/lib/demoInvoices";
-import { revenueAccountLabel } from "@/lib/demoRevenueAccounts";
-import { loadServiceItemsForSelect } from "@/lib/itemCatalogStorage";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
-function parseMoney(v: string): number {
-  const n = Number(String(v).replace(/[$,]/g, "").trim());
+type InvoiceLine = {
+  id: string;
+  item: string;
+  description: string;
+  qty: string;
+  rate: string;
+};
+
+type InvoiceCustomize = {
+  showDescription: boolean;
+  showRate: boolean;
+  showQty: boolean;
+  showNotes: boolean;
+  labelItem: string;
+  labelDescription: string;
+  labelQty: string;
+  labelRate: string;
+  labelAmount: string;
+};
+
+const ADD_NEW_VALUE = "__add_new__";
+const CUSTOMIZE_KEY = "invoice-customize-settings";
+
+const DEFAULT_CUSTOMIZE: InvoiceCustomize = {
+  showDescription: true,
+  showRate: true,
+  showQty: true,
+  showNotes: true,
+  labelItem: "Item / Product",
+  labelDescription: "Description",
+  labelQty: "Qty",
+  labelRate: "Rate",
+  labelAmount: "Amount",
+};
+
+function num(v: string): number {
+  const n = Number(v || 0);
   return Number.isFinite(n) ? n : 0;
 }
 
-const ADD_NEW_VALUE = "__add_new__";
+function money(v: number): string {
+  return `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 export function CreateInvoiceForm() {
   const router = useRouter();
@@ -28,87 +63,62 @@ export function CreateInvoiceForm() {
   const [customerPick, setCustomerPick] = useState("");
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
-  const [printOpen, setPrintOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   const [invoiceNo, setInvoiceNo] = useState("INV-NEW");
-  const [parcelNo, setParcelNo] = useState("");
-  const [fbInvoiceLink, setFbInvoiceLink] = useState("");
   const [dateIso, setDateIso] = useState("");
   const [customer, setCustomer] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [customerDetail, setCustomerDetail] = useState("");
-  const [holder, setHolder] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("Bank");
-  const [amount, setAmount] = useState("");
-  const [status, setStatus] = useState<"Paid" | "Pending">("Pending");
-  const [serviceCatalog, setServiceCatalog] = useState<ReturnType<typeof loadServiceItemsForSelect>>([]);
-  const [invoiceServicePick, setInvoiceServicePick] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("Due on receipt");
+  const [referenceNo, setReferenceNo] = useState("");
+  const [notes, setNotes] = useState("");
+  const [status, setStatus] = useState<"Draft" | "Pending" | "Paid">("Pending");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [customize, setCustomize] = useState<InvoiceCustomize>(DEFAULT_CUSTOMIZE);
 
-  useEffect(() => {
-    setCustomers(loadCustomers());
-  }, []);
+  const [lines, setLines] = useState<InvoiceLine[]>([
+    { id: crypto.randomUUID(), item: "", description: "", qty: "1", rate: "0" },
+  ]);
 
-  useEffect(() => {
-    setServiceCatalog(loadServiceItemsForSelect());
-  }, []);
-
+  useEffect(() => setCustomers(loadCustomers()), []);
   useEffect(() => {
     if (todayIso) setDateIso((d) => d || todayIso);
   }, [todayIso]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(CUSTOMIZE_KEY);
+    if (!raw) return;
+    try {
+      setCustomize({ ...DEFAULT_CUSTOMIZE, ...(JSON.parse(raw) as Partial<InvoiceCustomize>) });
+    } catch {
+      setCustomize(DEFAULT_CUSTOMIZE);
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(CUSTOMIZE_KEY, JSON.stringify(customize));
+  }, [customize]);
+
+  const subtotal = useMemo(() => lines.reduce((sum, l) => sum + num(l.qty) * num(l.rate), 0), [lines]);
 
   const receiveInitial = useMemo(
     () => ({
       invoiceId: invoiceNo.trim() || undefined,
       customerName: customer.trim() || undefined,
       email: customerEmail.trim() || undefined,
-      phone: customerPhone.trim() || undefined,
-      detail: customerDetail.trim() || undefined,
-      amount: amount.trim() || undefined,
+      amount: String(subtotal || ""),
+      detail: notes.trim() || undefined,
     }),
-    [invoiceNo, customer, customerEmail, customerPhone, customerDetail, amount],
-  );
-
-  const invoicePdfData = useMemo(
-    () => ({
-      invoiceNo: invoiceNo.trim() || "DRAFT",
-      dateIso: dateIso || "—",
-      customer: customer.trim(),
-      customerEmail: customerEmail.trim(),
-      customerPhone: customerPhone.trim(),
-      customerDetail: customerDetail.trim(),
-      holder: holder.trim(),
-      paymentMethod,
-      amountDisplay: (() => {
-        const t = amount.trim();
-        if (!t) return "$0.00";
-        return t.includes("$") ? t : `$${t}`;
-      })(),
-      status,
-      parcelNo: parcelNo.trim(),
-      fbInvoiceLink: fbInvoiceLink.trim(),
-    }),
-    [
-      invoiceNo,
-      dateIso,
-      customer,
-      customerEmail,
-      customerPhone,
-      customerDetail,
-      holder,
-      paymentMethod,
-      amount,
-      status,
-      parcelNo,
-      fbInvoiceLink,
-    ],
+    [invoiceNo, customer, customerEmail, subtotal, notes],
   );
 
   function applyCustomer(c: DemoCustomer) {
     setCustomer(c.name);
     setCustomerEmail(c.email);
-    setCustomerPhone(c.phone);
-    setCustomerDetail(c.detail);
   }
 
   function onCustomerSelect(value: string) {
@@ -129,269 +139,405 @@ export function CreateInvoiceForm() {
     applyCustomer(created);
   }
 
-  function onSave() {
-    if (!invoiceNo.trim()) return window.alert("Invoice # is required.");
-    if (!parcelNo.trim()) return window.alert("Parcel No. is required.");
-    if (!dateIso) return window.alert("Date is required.");
-    if (!customer.trim()) return window.alert("Customer is required.");
-    if (!holder.trim()) return window.alert("Holder is required.");
-    if (parseMoney(amount) <= 0) return window.alert("Amount must be greater than 0.");
+  function updateLine(id: string, key: keyof InvoiceLine, value: string) {
+    setLines((prev) => prev.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
+  }
 
-    const payload = {
-      invoiceNo: invoiceNo.trim(),
-      parcelNo: parcelNo.trim(),
-      fbInvoiceLink: fbInvoiceLink.trim() || undefined,
-      dateIso,
-      customer: customer.trim(),
-      holder: holder.trim(),
-      paymentMethod,
-      amount: parseMoney(amount),
-      status,
-    };
+  function addLine() {
+    setLines((prev) => [...prev, { id: crypto.randomUUID(), item: "", description: "", qty: "1", rate: "0" }]);
+  }
 
-    console.log("[CreateInvoice] demo save", payload);
-    appendDemoInvoice(rowFromInvoicePayload(payload));
-    router.push("/sales");
+  function removeLine(id: string) {
+    setLines((prev) => (prev.length === 1 ? prev : prev.filter((r) => r.id !== id)));
+  }
+
+  function validate(): string | null {
+    if (!invoiceNo.trim()) return "Invoice number is required.";
+    if (!customer.trim()) return "Customer is required.";
+    if (!dateIso) return "Date is required.";
+    if (subtotal <= 0) return "Invoice total must be greater than 0.";
+    return null;
+  }
+
+  function save(goBack: boolean) {
+    const msg = validate();
+    if (msg) {
+      setError(msg);
+      setSuccess(null);
+      return;
+    }
+    setError(null);
+
+    appendDemoInvoice(
+      rowFromInvoicePayload({
+        invoiceNo: invoiceNo.trim(),
+        parcelNo: referenceNo.trim() || "-",
+        dateIso,
+        customer: customer.trim(),
+        holder: "-",
+        paymentMethod: paymentTerms,
+        amount: subtotal,
+        status: status === "Paid" ? "Paid" : "Pending",
+      }),
+    );
+
+    setSuccess("Invoice saved successfully.");
+    if (goBack) router.push("/sales");
+  }
+
+  function openPrint() {
+    window.print();
+  }
+
+  function updateCustomize<K extends keyof InvoiceCustomize>(key: K, value: InvoiceCustomize[K]) {
+    setCustomize((prev) => ({ ...prev, [key]: value }));
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="mx-auto w-full max-w-7xl space-y-6 pb-32 no-print">
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          .invoice-print-area,
+          .invoice-print-area * {
+            visibility: visible !important;
+          }
+          .invoice-print-area {
+            position: fixed;
+            inset: 0;
+            background: white;
+            color: black;
+            padding: 24px;
+          }
+        }
+      `}</style>
+
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <Link
-            href="/sales"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--gs-accent)] transition hover:text-[var(--gs-accent-hover)]"
-          >
-            ← Back to invoices
+          <Link href="/sales" className="text-sm font-semibold text-[var(--gs-accent)] hover:text-[var(--gs-accent-hover)]">
+            Back to invoices
           </Link>
-          <h1 className="mt-4 text-2xl font-bold tracking-tight text-[var(--gs-navy)] md:text-3xl">Create invoice</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--gs-muted)]">
-            Select an existing customer or add a new one. Receive payment opens the same payment flow used on the invoice list.
-          </p>
+          <h1 className="mt-2 text-3xl font-bold text-[var(--gs-text)]">New Invoice</h1>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+        <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-5 py-3 text-right">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Balance Due</p>
+          <p className="mt-1 text-3xl font-bold text-[var(--gs-text)]">{money(subtotal)}</p>
+        </div>
+      </div>
+
+      {success ? <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">{success}</div> : null}
+      {error ? <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">{error}</div> : null}
+
+      <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="gs-label">Customer / Party</label>
+              <select value={customerPick} onChange={(e) => onCustomerSelect(e.target.value)} className="gs-field">
+                <option value="">Select customer...</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+                <option value={ADD_NEW_VALUE}>+ Add new customer</option>
+              </select>
+            </div>
+            <div>
+              <label className="gs-label">Email (optional)</label>
+              <input value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} className="gs-field" />
+            </div>
+            <div>
+              <label className="gs-label">Date</label>
+              <input type="date" value={dateIso} onChange={(e) => setDateIso(e.target.value)} className="gs-field" />
+            </div>
+            <div>
+              <label className="gs-label">Payment terms</label>
+              <select value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} className="gs-field">
+                <option>Due on receipt</option>
+                <option>Net 7</option>
+                <option>Net 15</option>
+                <option>Net 30</option>
+              </select>
+            </div>
+            <div>
+              <label className="gs-label">Reference no.</label>
+              <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} className="gs-field" />
+            </div>
+            <div>
+              <label className="gs-label">Invoice no.</label>
+              <input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className="gs-field" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="gs-label">Notes / Memo</label>
+              <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} className="gs-field" />
+            </div>
+          </div>
+        </div>
+
+        <aside className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Amount summary</p>
+          <p className="mt-2 text-4xl font-bold text-[var(--gs-text)]">{money(subtotal)}</p>
           <button
             type="button"
-            onClick={() => setPrintOpen(true)}
-            className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+            onClick={() => setStatus((s) => (s === "Paid" ? "Pending" : "Paid"))}
+            className="mt-4 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)]"
           >
-            <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" aria-hidden>
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6.72 13.829v-.75a.75.75 0 011.5 0v.75m0 0V18a.75.75 0 01-.75.75H4.5a.75.75 0 01-.75-.75v-4.171m9 0V18A.75.75 0 0113.5 19.5h-3a.75.75 0 01-.75-.75v-4.171M3 11.25h18M3.75 4.5h16.5a.75.75 0 01.75.75v4.5a.75.75 0 01-.75.75H3.75a.75.75 0 01-.75-.75v-4.5a.75.75 0 01.75-.75z"
-              />
-            </svg>
-            Print invoice
+            Status: {status}
           </button>
           <button
             type="button"
             onClick={() => setReceiveOpen(true)}
-            className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+            className="mt-3 w-full rounded-lg bg-[var(--gs-accent)] px-3 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]"
           >
-            Receive payment
+            Receive Payment
           </button>
+        </aside>
+      </section>
+
+      <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-sm">
+            <thead>
+              <tr className="border-b border-[var(--gs-border)]">
+                <th className="px-3 py-3 text-left font-semibold text-[var(--gs-muted)]">{customize.labelItem}</th>
+                {customize.showDescription ? <th className="px-3 py-3 text-left font-semibold text-[var(--gs-muted)]">{customize.labelDescription}</th> : null}
+                {customize.showQty ? <th className="px-3 py-3 text-right font-semibold text-[var(--gs-muted)]">{customize.labelQty}</th> : null}
+                {customize.showRate ? <th className="px-3 py-3 text-right font-semibold text-[var(--gs-muted)]">{customize.labelRate}</th> : null}
+                <th className="px-3 py-3 text-right font-semibold text-[var(--gs-muted)]">{customize.labelAmount}</th>
+                <th className="px-3 py-3 text-right font-semibold text-[var(--gs-muted)]"> </th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => {
+                const lineTotal = num(l.qty) * num(l.rate);
+                return (
+                  <tr key={l.id} className="border-b border-[var(--gs-border)]">
+                    <td className="px-3 py-2">
+                      <input value={l.item} onChange={(e) => updateLine(l.id, "item", e.target.value)} className="gs-field !mt-0" />
+                    </td>
+                    {customize.showDescription ? (
+                      <td className="px-3 py-2">
+                        <input value={l.description} onChange={(e) => updateLine(l.id, "description", e.target.value)} className="gs-field !mt-0" />
+                      </td>
+                    ) : null}
+                    {customize.showQty ? (
+                      <td className="px-3 py-2">
+                        <input value={l.qty} onChange={(e) => updateLine(l.id, "qty", e.target.value)} className="gs-field !mt-0 text-right" />
+                      </td>
+                    ) : null}
+                    {customize.showRate ? (
+                      <td className="px-3 py-2">
+                        <input value={l.rate} onChange={(e) => updateLine(l.id, "rate", e.target.value)} className="gs-field !mt-0 text-right" />
+                      </td>
+                    ) : null}
+                    <td className="px-3 py-2 text-right font-semibold text-[var(--gs-text)]">{money(lineTotal)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button type="button" onClick={() => removeLine(l.id)} className="text-sm font-semibold text-[var(--gs-muted)] hover:text-[var(--gs-text)]">
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <button type="button" onClick={addLine} className="mt-4 rounded-lg border border-[var(--gs-border)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+          + Add row
+        </button>
+      </section>
+
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-[var(--gs-border)] bg-[var(--gs-card)]/95 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-3">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => router.push("/sales")} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => setLines([{ id: crypto.randomUUID(), item: "", description: "", qty: "1", rate: "0" }])}
+              className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <button type="button" onClick={openPrint} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+              Print
+            </button>
+            <button type="button" onClick={() => setPreviewOpen(true)} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+              Preview
+            </button>
+            <button type="button" onClick={() => setCustomizeOpen(true)} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+              Customize
+            </button>
+          </div>
+
+          <div className="relative flex gap-2">
+            <button type="button" onClick={() => save(false)} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+              Save
+            </button>
+            <button type="button" onClick={() => setShowSaveMenu((v) => !v)} className="rounded-lg bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]">
+              Save and Close
+            </button>
+            {showSaveMenu ? (
+              <div className="absolute bottom-12 right-0 w-48 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] p-1 shadow-lg">
+                <button type="button" onClick={() => { setShowSaveMenu(false); save(true); }} className="block w-full rounded-md px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+                  Save and close
+                </button>
+                <button type="button" onClick={() => { setShowSaveMenu(false); save(false); }} className="block w-full rounded-md px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+                  Save and new
+                </button>
+              </div>
+            ) : null}
+            <button type="button" onClick={() => setShowMoreMenu((v) => !v)} className="rounded-lg border border-[var(--gs-border)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+              More
+            </button>
+            {showMoreMenu ? (
+              <div className="absolute bottom-12 right-0 w-44 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] p-1 shadow-lg">
+                <button type="button" className="block w-full rounded-md px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">Copy</button>
+                <button type="button" className="block w-full rounded-md px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">Delete</button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-[var(--gs-border)] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_10px_28px_rgba(15,23,42,0.05)] md:p-8">
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500"># Invoice *</label>
-            <input
-              value={invoiceNo}
-              onChange={(e) => setInvoiceNo(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Parcel No. *</label>
-            <input
-              value={parcelNo}
-              onChange={(e) => setParcelNo(e.target.value)}
-              placeholder="P-228"
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">FB Invoice Link</label>
-            <input
-              value={fbInvoiceLink}
-              onChange={(e) => setFbInvoiceLink(e.target.value)}
-              placeholder="https://facebook.com/invoice/..."
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Date *</label>
-            <input
-              type="date"
-              value={dateIso}
-              onChange={(e) => setDateIso(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Customer *</label>
-            <select
-              value={customerPick}
-              onChange={(e) => onCustomerSelect(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            >
-              <option value="">Select customer…</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-              <option value={ADD_NEW_VALUE}>+ Add new customer…</option>
-            </select>
-            <p className="mt-1.5 text-xs text-slate-500">Choosing a customer fills the fields below. You can edit them anytime.</p>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Customer name *</label>
-            <input
-              value={customer}
-              onChange={(e) => {
-                setCustomer(e.target.value);
-                setCustomerPick("");
-              }}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Email</label>
-            <input
-              type="email"
-              value={customerEmail}
-              onChange={(e) => setCustomerEmail(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Phone</label>
-            <input
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">FEP / Holder *</label>
-            <input
-              value={holder}
-              onChange={(e) => setHolder(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Customer detail / notes</label>
-            <textarea
-              rows={2}
-              value={customerDetail}
-              onChange={(e) => setCustomerDetail(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-
-          {serviceCatalog.length > 0 ? (
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
-                Service item (from catalog — optional)
-              </label>
-              <select
-                value={invoiceServicePick}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setInvoiceServicePick(id);
-                  const s = serviceCatalog.find((x) => x.id === id);
-                  if (s) setAmount(String(s.rate));
-                }}
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-              >
-                <option value="">— None —</option>
-                {serviceCatalog.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.itemName} · {s.rate.toLocaleString(undefined, { maximumFractionDigits: 2 })} ·{" "}
-                    {revenueAccountLabel(s.revenueAccountId)}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1.5 text-xs text-slate-500">
-                Pulls default rate from Inventory → Items → Service catalog. Services are not stock-tracked.
-              </p>
-            </div>
-          ) : null}
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Payment method</label>
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            >
-              <option>Bank</option>
-              <option>Cash</option>
-              <option>PayPal</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Amount *</label>
-            <input
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as "Paid" | "Pending")}
-              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-4"
-            >
-              <option value="Pending">Pending</option>
-              <option value="Paid">Paid</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="mt-8 flex flex-col gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:flex-wrap sm:justify-end">
-          <Link
-            href="/sales"
-            className="inline-flex justify-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-          >
-            Cancel
-          </Link>
-          <button
-            type="button"
-            onClick={() => setPrintOpen(true)}
-            className="inline-flex justify-center rounded-full border-2 border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
-          >
-            Print invoice
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            className="inline-flex justify-center rounded-full bg-[var(--gs-accent)] px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
-          >
-            Save invoice
-          </button>
-        </div>
+      <div className="invoice-print-area hidden print:block">
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700 }}>Invoice {invoiceNo || "DRAFT"}</h1>
+        <p style={{ marginTop: 8 }}>Date: {dateIso || "-"}</p>
+        <p>Customer: {customer || "-"}</p>
+        <p>Email: {customerEmail || "-"}</p>
+        {customize.showNotes ? <p>Notes: {notes || "-"}</p> : null}
+        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: "8px 4px" }}>{customize.labelItem}</th>
+              {customize.showDescription ? <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: "8px 4px" }}>{customize.labelDescription}</th> : null}
+              {customize.showQty ? <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: "8px 4px" }}>{customize.labelQty}</th> : null}
+              {customize.showRate ? <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: "8px 4px" }}>{customize.labelRate}</th> : null}
+              <th style={{ textAlign: "right", borderBottom: "1px solid #ddd", padding: "8px 4px" }}>{customize.labelAmount}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l) => (
+              <tr key={l.id}>
+                <td style={{ padding: "6px 4px" }}>{l.item || "-"}</td>
+                {customize.showDescription ? <td style={{ padding: "6px 4px" }}>{l.description || "-"}</td> : null}
+                {customize.showQty ? <td style={{ padding: "6px 4px", textAlign: "right" }}>{l.qty || "0"}</td> : null}
+                {customize.showRate ? <td style={{ padding: "6px 4px", textAlign: "right" }}>{l.rate || "0"}</td> : null}
+                <td style={{ padding: "6px 4px", textAlign: "right" }}>{money(num(l.qty) * num(l.rate))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p style={{ marginTop: 14, textAlign: "right", fontWeight: 700 }}>Total: {money(subtotal)}</p>
       </div>
 
       <AddCustomerModal open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSave={onNewCustomerSaved} />
-
       <ReceivePaymentModal open={receiveOpen} onClose={() => setReceiveOpen(false)} initial={receiveInitial} />
 
-      <InvoicePrintDialog open={printOpen} onClose={() => setPrintOpen(false)} data={invoicePdfData} />
+      <AppDialog
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        titleId="invoice-preview-title"
+        title="Invoice Preview"
+        description="Read-only preview of the final invoice."
+        footer={
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setPreviewOpen(false)} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+              Close
+            </button>
+            <button type="button" onClick={openPrint} className="rounded-lg bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]">
+              Print
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <div className="rounded-xl border border-[var(--gs-border)] p-4">
+            <p><span className="font-semibold">Invoice:</span> {invoiceNo || "DRAFT"}</p>
+            <p><span className="font-semibold">Date:</span> {dateIso || "-"}</p>
+            <p><span className="font-semibold">Customer:</span> {customer || "-"}</p>
+            <p><span className="font-semibold">Email:</span> {customerEmail || "-"}</p>
+            {customize.showNotes ? <p><span className="font-semibold">Notes:</span> {notes || "-"}</p> : null}
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-[var(--gs-border)]">
+            <table className="w-full min-w-[680px] text-sm">
+              <thead>
+                <tr className="border-b border-[var(--gs-border)]">
+                  <th className="px-3 py-2 text-left">{customize.labelItem}</th>
+                  {customize.showDescription ? <th className="px-3 py-2 text-left">{customize.labelDescription}</th> : null}
+                  {customize.showQty ? <th className="px-3 py-2 text-right">{customize.labelQty}</th> : null}
+                  {customize.showRate ? <th className="px-3 py-2 text-right">{customize.labelRate}</th> : null}
+                  <th className="px-3 py-2 text-right">{customize.labelAmount}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l) => (
+                  <tr key={l.id} className="border-b border-[var(--gs-border)]">
+                    <td className="px-3 py-2">{l.item || "-"}</td>
+                    {customize.showDescription ? <td className="px-3 py-2">{l.description || "-"}</td> : null}
+                    {customize.showQty ? <td className="px-3 py-2 text-right">{l.qty || "0"}</td> : null}
+                    {customize.showRate ? <td className="px-3 py-2 text-right">{l.rate || "0"}</td> : null}
+                    <td className="px-3 py-2 text-right">{money(num(l.qty) * num(l.rate))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-right text-base font-bold">Total: {money(subtotal)}</p>
+        </div>
+      </AppDialog>
+
+      <AppDialog
+        open={customizeOpen}
+        onClose={() => setCustomizeOpen(false)}
+        titleId="invoice-customize-title"
+        title="Customize Layout"
+        description="Choose what to show and how labels appear."
+        size="md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setCustomize(DEFAULT_CUSTOMIZE)} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+              Reset
+            </button>
+            <button type="button" onClick={() => setCustomizeOpen(false)} className="rounded-lg bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]">
+              Done
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={customize.showDescription} onChange={(e) => updateCustomize("showDescription", e.target.checked)} />
+            Show description
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={customize.showRate} onChange={(e) => updateCustomize("showRate", e.target.checked)} />
+            Show rate
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={customize.showQty} onChange={(e) => updateCustomize("showQty", e.target.checked)} />
+            Show quantity
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={customize.showNotes} onChange={(e) => updateCustomize("showNotes", e.target.checked)} />
+            Show notes
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input value={customize.labelItem} onChange={(e) => updateCustomize("labelItem", e.target.value)} className="gs-field !mt-0" />
+            <input value={customize.labelDescription} onChange={(e) => updateCustomize("labelDescription", e.target.value)} className="gs-field !mt-0" />
+            <input value={customize.labelQty} onChange={(e) => updateCustomize("labelQty", e.target.value)} className="gs-field !mt-0" />
+            <input value={customize.labelRate} onChange={(e) => updateCustomize("labelRate", e.target.value)} className="gs-field !mt-0" />
+            <input value={customize.labelAmount} onChange={(e) => updateCustomize("labelAmount", e.target.value)} className="gs-field !mt-0 sm:col-span-2" />
+          </div>
+        </div>
+      </AppDialog>
     </div>
   );
 }

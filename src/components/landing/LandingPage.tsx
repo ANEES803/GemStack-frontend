@@ -23,7 +23,7 @@ function roleBadge(role: RoleDefinition) {
 
 export function LandingPage() {
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative min-h-screen overflow-hidden bg-[#020617] text-white">
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.9]"
         style={{
@@ -35,24 +35,18 @@ export function LandingPage() {
 
       <header className="relative mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-5 py-5 sm:px-8">
         <Link href="/" className="group inline-flex items-center gap-2 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#f15a24]/50">
-          <span className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10">
+          <span className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--gs-card)]/5 ring-1 ring-white/10">
             <svg className="h-4 w-4 text-[#f15a24]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6L12 2z" />
             </svg>
           </span>
           <span className="text-base font-black tracking-tight text-white">GemStack</span>
-          <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/70 ring-1 ring-white/10">
+          <span className="rounded-full bg-[var(--gs-card)]/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/70 ring-1 ring-white/10">
             ERP
           </span>
         </Link>
 
         <div className="flex items-center gap-2">
-          <Link
-            href="/login"
-            className="hidden rounded-lg border border-white/10 bg-white/5 px-3.5 py-2 text-xs font-semibold text-white/90 transition hover:bg-white/10 sm:inline-flex"
-          >
-            Sign in
-          </Link>
           <Link
             href="/dashboard"
             className="inline-flex rounded-lg bg-[#f15a24] px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#ea580c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f15a24]/50"
@@ -65,7 +59,7 @@ export function LandingPage() {
       <main className="relative mx-auto w-full max-w-6xl px-5 pb-14 pt-8 sm:px-8 sm:pb-20">
         <section className="grid gap-10 lg:grid-cols-2 lg:items-center">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-white/80">
+            <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-[var(--gs-card)]/5 px-3 py-1 text-xs font-semibold text-white/80">
               Minimal, professional UI · Front-end only
             </p>
             <h1 className="mt-5 text-balance text-3xl font-black tracking-tight text-white sm:text-5xl">
@@ -81,11 +75,11 @@ export function LandingPage() {
                 href="/login"
                 className="rounded-lg bg-[#f15a24] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#ea580c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f15a24]/50"
               >
-                Sign in
+                Login
               </Link>
               <Link
                 href="#roles"
-                className="rounded-lg border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white/90 transition hover:bg-white/10"
+                className="rounded-lg border border-white/10 bg-[var(--gs-card)]/5 px-5 py-3 text-sm font-semibold text-white/90 transition hover:bg-[var(--gs-card)]/10"
               >
                 Choose a role →
               </Link>
@@ -97,7 +91,7 @@ export function LandingPage() {
                 ["Scannable tables", "Zebra rows, hover states, and soft borders."],
                 ["Single accent", "One primary color for consistent actions."],
               ].map(([k, v]) => (
-                <div key={k} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div key={k} className="rounded-2xl border border-white/10 bg-[var(--gs-card)]/5 p-4">
                   <dt className="text-sm font-bold text-white">{k}</dt>
                   <dd className="mt-1 text-xs leading-relaxed text-white/70">{v}</dd>
                 </div>
@@ -108,8 +102,8 @@ export function LandingPage() {
           <div className="relative">
             <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-white/10 to-white/5 p-6 shadow-[0_20px_70px_rgba(0,0,0,0.45)]">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-bold text-white">Sign in bar (UI demo)</p>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold text-white/70">
+                <p className="text-sm font-bold text-white">Login bar (UI demo)</p>
+                <span className="rounded-full border border-white/10 bg-[var(--gs-card)]/5 px-2 py-1 text-[10px] font-semibold text-white/70">
                   No backend
                 </span>
               </div>
@@ -133,7 +127,7 @@ export function LandingPage() {
                   {ROLES.map((r) => (
                     <span
                       key={r.slug}
-                      className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-white/80"
+                      className="inline-flex items-center rounded-full border border-white/10 bg-[var(--gs-card)]/5 px-3 py-1 text-xs font-semibold text-white/80"
                     >
                       {r.title}
                     </span>
@@ -142,7 +136,7 @@ export function LandingPage() {
 
                 <Link
                   href="#roles"
-                  className="mt-1 inline-flex w-full items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#0b1220] transition hover:bg-white/90"
+                  className="mt-1 inline-flex w-full items-center justify-center rounded-xl bg-[var(--gs-card)] px-4 py-3 text-sm font-bold text-[#0b1220] transition hover:bg-[var(--gs-card)]/90"
                 >
                   Continue →
                 </Link>
@@ -156,13 +150,13 @@ export function LandingPage() {
         <section id="roles" className="mt-16 sm:mt-20">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-2xl font-black tracking-tight text-white">Choose a role to sign in</h2>
+              <h2 className="text-2xl font-black tracking-tight text-white">Choose a role to login</h2>
               <p className="mt-2 max-w-2xl text-sm text-white/70">
                 This is a front-end demo. Clicking a role will open the login screen pre-selected for that role.
               </p>
             </div>
             <Link href="/login" className="text-sm font-semibold text-[#f15a24] hover:underline">
-              Or sign in without selecting →
+              Or login without selecting →
             </Link>
           </div>
 
@@ -171,7 +165,7 @@ export function LandingPage() {
               <Link
                 key={role.slug}
                 href={`/login?role=${role.slug}`}
-                className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f15a24]/50"
+                className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[var(--gs-card)]/5 p-5 transition hover:bg-[var(--gs-card)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f15a24]/50"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
@@ -217,4 +211,3 @@ export function LandingPage() {
     </div>
   );
 }
-

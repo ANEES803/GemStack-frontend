@@ -29,16 +29,16 @@ export function CashFlowPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-10">
-      <header className="flex flex-col gap-4 border-b border-slate-200/80 pb-6 sm:flex-row sm:items-start sm:justify-between">
+      <header className="flex flex-col gap-4 border-b border-[var(--gs-border)]/80 pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-navy)] sm:text-3xl">Cash Flow</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-text)] sm:text-3xl">Cash Flow</h1>
           <p className="mt-1 text-sm text-[var(--gs-muted)]">Operating, investing, financing activities</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => window.alert("Demo: export cash flow statement")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export"
             title="Export"
           >
@@ -47,7 +47,7 @@ export function CashFlowPage() {
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Print"
             title="Print"
           >
@@ -56,7 +56,7 @@ export function CashFlowPage() {
           <button
             type="button"
             onClick={() => window.alert("Refreshed (demo).")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gs-navy)] text-white shadow-sm hover:bg-slate-800"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gs-accent)] text-white shadow-sm hover:bg-[var(--gs-accent-hover)]"
             aria-label="Refresh"
             title="Refresh"
           >
@@ -65,24 +65,24 @@ export function CashFlowPage() {
         </div>
       </header>
 
-      <div className="rounded-2xl border border-[var(--gs-border)] bg-white p-4 shadow-sm sm:p-5">
+      <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4 shadow-sm sm:p-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">From</label>
+            <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">From</label>
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-orange-100"
+              className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">To</label>
+            <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">To</label>
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-orange-100"
+              className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
             />
           </div>
         </div>
@@ -91,24 +91,24 @@ export function CashFlowPage() {
         </p>
       </div>
 
-      <div className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-sm sm:grid-cols-3">
+      <div className="grid gap-3 rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-4 text-sm sm:grid-cols-3">
         <div>
-          <p className="text-[10px] font-bold uppercase text-slate-500">Net change in cash</p>
-          <p className="mt-1 font-mono font-bold text-[var(--gs-navy)]">{formatMoney(netChange, "PKR")}</p>
+          <p className="text-[10px] font-bold uppercase text-[var(--gs-muted)]">Net change in cash</p>
+          <p className="mt-1 font-mono font-bold text-[var(--gs-text)]">{formatMoney(netChange, "PKR")}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase text-slate-500">Opening cash</p>
-          <p className="mt-1 font-mono font-bold text-slate-800">{formatMoney(opening, "PKR")}</p>
+          <p className="text-[10px] font-bold uppercase text-[var(--gs-muted)]">Opening cash</p>
+          <p className="mt-1 font-mono font-bold text-[var(--gs-text)]">{formatMoney(opening, "PKR")}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase text-slate-500">Closing cash</p>
-          <p className="mt-1 font-mono font-bold text-slate-800">{formatMoney(closing, "PKR")}</p>
+          <p className="text-[10px] font-bold uppercase text-[var(--gs-muted)]">Closing cash</p>
+          <p className="mt-1 font-mono font-bold text-[var(--gs-text)]">{formatMoney(closing, "PKR")}</p>
         </div>
       </div>
 
       <CashFlowTable rows={CASH_FLOW_ROWS} reconciliationDiff={reconciliationDiff} onLineClick={setSelected} />
 
-      <p className="text-center text-xs text-slate-400">
+      <p className="text-center text-xs text-[var(--gs-muted)]">
         <Link href="/reports?tab=hub" className="font-semibold text-[var(--gs-accent)] hover:underline">
           ← Back to report hub
         </Link>

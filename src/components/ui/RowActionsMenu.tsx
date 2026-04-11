@@ -15,6 +15,8 @@ type RowActionsMenuProps = {
   actions?: RowAction[];
   items?: string[];
   align?: "left" | "right";
+  /** Extra classes for the ⋮ trigger button (e.g. cursor-pointer). */
+  triggerClassName?: string;
 };
 
 const DEFAULT_ACTIONS: RowAction[] = [
@@ -42,13 +44,13 @@ function toneClass(tone: ActionTone) {
     case "accent":
       return "text-[var(--gs-accent)] hover:bg-[var(--gs-accent-soft)] active:bg-orange-100/60";
     case "success":
-      return "text-emerald-800 hover:bg-emerald-50 active:bg-emerald-100/70";
+      return "text-[var(--gs-text)] hover:bg-emerald-50 active:bg-emerald-100/70";
     case "warning":
       return "text-amber-900 hover:bg-amber-50 active:bg-amber-100/70";
     case "info":
       return "text-sky-900 hover:bg-sky-50 active:bg-sky-100/70";
     default:
-      return "text-slate-700 hover:bg-slate-50 active:bg-slate-100/80";
+      return "text-[var(--gs-text)] hover:bg-[var(--gs-hover)] active:bg-[var(--gs-hover)]/80";
   }
 }
 
@@ -81,7 +83,7 @@ function computeMenuPosition(anchor: DOMRect, align: "left" | "right") {
   return { top, left, width: menuWidth, maxHeight: maxH };
 }
 
-export function RowActionsMenu({ actions, items, align = "right" }: RowActionsMenuProps) {
+export function RowActionsMenu({ actions, items, align = "right", triggerClassName }: RowActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -139,7 +141,7 @@ export function RowActionsMenu({ actions, items, align = "right" }: RowActionsMe
       <div
         data-gs-row-actions-menu
         style={menuStyle}
-        className="flex flex-col overflow-hidden rounded-xl border border-slate-200/95 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-1 ring-black/[0.04]"
+        className="flex flex-col overflow-hidden rounded-xl border border-[var(--gs-border)]/95 bg-[var(--gs-card)] shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-1 ring-black/[0.04]"
         role="menu"
       >
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 [scrollbar-gutter:stable]">
@@ -172,9 +174,9 @@ export function RowActionsMenu({ actions, items, align = "right" }: RowActionsMe
           aria-expanded={open}
           aria-haspopup="menu"
           onClick={() => setOpen((v) => !v)}
-          className={`inline-flex min-h-9 min-w-9 items-center justify-center rounded-full border text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 ${
-            open ? "border-slate-200 bg-slate-100 text-slate-800" : "border-transparent hover:border-slate-200"
-          }`}
+          className={`inline-flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-full border text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)] sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 ${
+            open ? "border-[var(--gs-border)] bg-[var(--gs-hover)] text-[var(--gs-text)]" : "border-transparent hover:border-[var(--gs-border)]"
+          } ${triggerClassName ?? ""}`}
           aria-label="Open row actions"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden>

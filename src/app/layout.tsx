@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import Script from "next/script";
 
 import "./globals.css";
-
-import { AppToastHost } from "@/components/ui/AppToastHost";
 
 /** Bitdefender and some AV extensions inject `bis_skin_checked` on divs before React hydrates, causing false hydration errors. */
 const STRIP_EXTENSION_ATTRS_JS = `
@@ -87,9 +84,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
-        <Script id="strip-av-extension-attrs" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: STRIP_EXTENSION_ATTRS_JS }} />
-        <Script id="apply-theme-early" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: APPLY_THEME_EARLY_JS }} />
-        <AppToastHost />
+        {/*
+          Plain <script> in the RSC layout avoids next/script’s HeadManagerContext (breaks when React
+          is resolved twice). These IIFEs run at parse time before paint; keep them tiny.
+        */}
+        <script id="strip-av-extension-attrs" dangerouslySetInnerHTML={{ __html: STRIP_EXTENSION_ATTRS_JS }} />
+        <script id="apply-theme-early" dangerouslySetInnerHTML={{ __html: APPLY_THEME_EARLY_JS }} />
         {children}
       </body>
     </html>

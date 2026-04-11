@@ -43,6 +43,7 @@ export const navigation: NavModule[] = [
       { label: "Journal entries", href: "/accounting?tab=journal_list" },
       { label: "Banking", href: "/accounting?tab=banking" },
       { label: "Opening balances", href: "/accounting?tab=opening" },
+      { label: "Capital, drawings & profit split", href: "/partners" },
       { label: "Expenses & cash", href: "/expenses" },
     ],
   },

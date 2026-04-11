@@ -26,13 +26,13 @@ const activities = [
 function statusPill(status: "Paid" | "Pending") {
   if (status === "Paid") {
     return (
-      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-100/90">
+      <span className="inline-flex rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-300">
         Paid
       </span>
     );
   }
   return (
-    <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-100/90">
+    <span className="inline-flex rounded-full bg-[var(--gs-accent)]/12 px-2.5 py-1 text-xs font-semibold text-[var(--gs-accent)] ring-1 ring-[var(--gs-accent)]/30 dark:text-orange-200">
       Pending
     </span>
   );
@@ -122,12 +122,12 @@ export function OwnerDashboard() {
               <div
                 className="h-full w-full rounded-full"
                 style={{
-                  background: "conic-gradient(#22c55e 0deg 202deg, #fb923c 202deg 360deg)",
+                  background: "conic-gradient(#22c55e 0deg 202deg, #f15a24 202deg 360deg)",
                 }}
               />
-              <div className="absolute inset-9 flex flex-col items-center justify-center rounded-full bg-white text-center shadow-inner ring-1 ring-slate-100/80">
+              <div className="absolute inset-9 flex flex-col items-center justify-center rounded-full bg-[var(--gs-card)] text-center shadow-inner ring-1 ring-[var(--gs-border)]">
                 <span className="text-xs font-medium text-[var(--gs-muted)]">Mix</span>
-                <span className="text-lg font-bold text-slate-900">56% / 44%</span>
+                <span className="text-lg font-bold text-[var(--gs-text)]">56% / 44%</span>
               </div>
             </div>
             <ul className="mt-4 space-y-2 text-sm">
@@ -135,13 +135,13 @@ export function OwnerDashboard() {
                 <span className="flex items-center gap-2 text-[var(--gs-muted)]">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" /> Paid
                 </span>
-                <span className="font-semibold text-slate-900">56%</span>
+                <span className="font-semibold text-[var(--gs-text)]">56%</span>
               </li>
               <li className="flex justify-between">
                 <span className="flex items-center gap-2 text-[var(--gs-muted)]">
-                  <span className="h-2 w-2 rounded-full bg-orange-400" /> Pending
+                  <span className="h-2 w-2 rounded-full bg-[var(--gs-accent)]" /> Pending
                 </span>
-                <span className="font-semibold text-slate-900">44%</span>
+                <span className="font-semibold text-[var(--gs-text)]">44%</span>
               </li>
             </ul>
           </PanelCard>
@@ -150,13 +150,13 @@ export function OwnerDashboard() {
             <ul className="space-y-4">
               {activities.map((a, i) => (
                 <li key={i} className="flex gap-3 text-sm">
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 ring-1 ring-slate-200/60">
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--gs-hover)] text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)]">
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </span>
                   <div>
-                    <p className="font-medium text-slate-800">{a.text}</p>
+                    <p className="font-medium text-[var(--gs-text)]">{a.text}</p>
                     <p className="mt-0.5 text-xs text-[var(--gs-muted)]">{a.time}</p>
                   </div>
                 </li>
@@ -179,22 +179,22 @@ export function OwnerDashboard() {
         <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[560px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-6 py-3.5">Invoice</th>
-                <th className="px-6 py-3.5">Channel</th>
-                <th className="px-6 py-3.5">FEP</th>
-                <th className="px-6 py-3.5 text-right">Amount</th>
-                <th className="px-6 py-3.5">Status</th>
-                <th className="px-6 py-3.5 text-right">Actions</th>
+              <tr className="border-b border-[var(--gs-border)] bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">
+                <th className="px-6 py-4">Invoice</th>
+                <th className="px-6 py-4">Channel</th>
+                <th className="px-6 py-4">FEP</th>
+                <th className="px-6 py-4 text-right">Amount</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--gs-border)]">
               {invoiceRows.map((row) => (
-                <tr key={row.id} className="bg-white hover:bg-slate-50/80">
-                  <td className="whitespace-nowrap px-6 py-4 font-mono text-sm font-medium text-slate-900">{row.id}</td>
-                  <td className="px-6 py-4 text-slate-700">{row.channel}</td>
-                  <td className="px-6 py-4 text-slate-600">{row.fep}</td>
-                  <td className="px-6 py-4 text-right font-semibold text-slate-900">{row.amount}</td>
+                <tr key={row.id} className="odd:bg-[var(--gs-table-row)] even:bg-[var(--gs-table-row-alt)] hover:bg-[var(--gs-hover)]">
+                  <td className="whitespace-nowrap px-6 py-4 font-mono text-sm font-medium text-[var(--gs-text)]">{row.id}</td>
+                  <td className="px-6 py-4 text-[var(--gs-text)]">{row.channel}</td>
+                  <td className="px-6 py-4 text-[var(--gs-muted)]">{row.fep}</td>
+                  <td className="px-6 py-4 text-right font-semibold text-[var(--gs-text)]">{row.amount}</td>
                   <td className="px-6 py-4">{statusPill(row.status)}</td>
                   <td className="px-6 py-4 text-right">
                     <RowActionsMenu items={["Open invoice", "Send reminder", "Download PDF"]} />
@@ -209,13 +209,13 @@ export function OwnerDashboard() {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/reports"
-          className="rounded-full bg-[var(--gs-navy)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+          className="rounded-xl bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(241,90,36,0.22)] transition hover:bg-[var(--gs-accent-hover)]"
         >
           Open reports
         </Link>
         <Link
           href="/partners"
-          className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-5 py-2.5 text-sm font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)]"
         >
           Partners & profit
         </Link>

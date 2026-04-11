@@ -218,15 +218,15 @@ export function TrialBalancePage() {
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-10">
-      <header className="flex flex-col gap-4 border-b border-slate-200/80 pb-6 lg:flex-row lg:items-start lg:justify-between">
+      <header className="flex flex-col gap-4 border-b border-[var(--gs-border)]/80 pb-6 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-navy)] sm:text-3xl">Trial Balance</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-text)] sm:text-3xl">Trial Balance</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--gs-muted)]">
-            All accounts — debits vs credits (as of date)
+            All accounts  debits vs credits (as of date)
           </p>
-          <p className="mt-2 text-xs font-medium text-slate-500">
+          <p className="mt-2 text-xs font-medium text-[var(--gs-muted)]">
             As of{" "}
-            <span className="font-mono text-slate-800">
+            <span className="font-mono text-[var(--gs-text)]">
               {appliedFilters.asOfDate}
               {appliedFilters.useDateRange
                 ? ` · Activity ${appliedFilters.dateFrom} → ${appliedFilters.dateTo}`
@@ -238,7 +238,7 @@ export function TrialBalancePage() {
           <button
             type="button"
             onClick={() => window.alert("Demo: export trial balance PDF")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export PDF"
             title="Export PDF"
           >
@@ -247,7 +247,7 @@ export function TrialBalancePage() {
           <button
             type="button"
             onClick={() => window.alert("Demo: export Excel")}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export Excel"
             title="Export Excel"
           >
@@ -256,7 +256,7 @@ export function TrialBalancePage() {
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Print"
             title="Print"
           >
@@ -269,7 +269,7 @@ export function TrialBalancePage() {
               setPage(1);
               window.alert("Refreshed (demo).");
             }}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Refresh"
             title="Refresh"
           >
@@ -278,7 +278,7 @@ export function TrialBalancePage() {
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gs-navy)] text-white shadow-sm hover:bg-slate-800"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gs-accent)] text-white shadow-sm hover:bg-[var(--gs-accent-hover)]"
             aria-label="Settings"
             title="Settings"
           >
@@ -331,7 +331,7 @@ export function TrialBalancePage() {
         onEmail={() => window.alert("Demo: email trial balance")}
       />
 
-      <p className="text-center text-xs text-slate-400">
+      <p className="text-center text-xs text-[var(--gs-muted)]">
         <Link href="/reports?tab=hub" className="font-semibold text-[var(--gs-accent)] hover:underline">
           ← Back to report hub
         </Link>

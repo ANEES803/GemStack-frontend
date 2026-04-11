@@ -22,6 +22,8 @@ export type CustomFieldDef = {
   options?: string[];
   /** When false, empty values are allowed on save. Default true. */
   required?: boolean;
+  /** When false, field is hidden on New Item (data may still exist in stored rows). Default true. */
+  visible?: boolean;
 };
 
 export type CustomInventoryType = {

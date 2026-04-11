@@ -70,7 +70,7 @@ export function FepDashboard() {
         <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-[var(--gs-border)]/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">
                 <th className="px-6 py-3.5">Parcel</th>
                 <th className="px-6 py-3.5">Grade</th>
                 <th className="px-6 py-3.5 text-right">Carats</th>
@@ -78,17 +78,17 @@ export function FepDashboard() {
                 <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--gs-border)]">
               {myParcels.map((row) => (
-                <tr key={row.code} className="hover:bg-slate-50/80">
-                  <td className="px-6 py-3.5 font-mono text-sm font-semibold text-slate-900">{row.code}</td>
+                <tr key={row.code} className="hover:bg-[var(--gs-hover)]/80">
+                  <td className="px-6 py-3.5 font-mono text-sm font-semibold text-[var(--gs-text)]">{row.code}</td>
                   <td className="px-6 py-3.5">
                     <span className="inline-flex rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-800 ring-1 ring-violet-100">
                       {row.grade}
                     </span>
                   </td>
-                  <td className="px-6 py-3.5 text-right font-medium text-slate-900">{row.ct}</td>
-                  <td className="px-6 py-3.5 text-slate-600">{row.status}</td>
+                  <td className="px-6 py-3.5 text-right font-medium text-[var(--gs-text)]">{row.ct}</td>
+                  <td className="px-6 py-3.5 text-[var(--gs-muted)]">{row.status}</td>
                   <td className="px-6 py-3.5 text-right">
                     <RowActionsMenu items={["Open parcel", "Mark hold", "Request transfer"]} />
                   </td>

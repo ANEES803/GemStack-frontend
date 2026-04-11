@@ -5,8 +5,8 @@
 }
 
 :root {
-  --gs-page-bg: #f4f6fa;
-  --gs-text: #0f172a;
+  --gs-page-bg: #ffffff;
+  --gs-text: #111827;
   --gs-muted: #64748b;
   --gs-border: #e2e8f0;
   --gs-border-strong: #cbd5e1;
@@ -21,38 +21,50 @@
   --gs-chart-line: #3b82f6;
   --gs-chart-fill: rgba(59, 130, 246, 0.12);
 
-  --gs-input-bg: #f8fafc;
+  --gs-input-bg: #ffffff;
+  --gs-input-border: #d1d5db;
   --gs-pill-active-bg: rgba(241, 90, 36, 0.12);
   --gs-pill-active-text: #9a3412;
 
   --gs-shell-header: rgba(255, 255, 255, 0.86);
   --gs-topbar-icon-hover: rgba(15, 23, 42, 0.04);
 
-  --gs-gradient-from: #f4f6fa;
-  --gs-gradient-via: #f6f7fb;
+  --gs-gradient-from: #ffffff;
+  --gs-gradient-via: #ffffff;
   --gs-gradient-to: #ffffff;
 }
 
 .dark {
-  --gs-page-bg: #0b1220;
+  /* Workspace surfaces */
+  --gs-page-bg: #020617;
+  --gs-card: #111827;
+  --gs-sidebar: #020617;
+  --gs-sidebar-edge: #020617;
+  --gs-shell-header: rgba(11, 18, 32, 0.84);
+
+  /* Typography */
   --gs-text: #e5e7eb;
-  --gs-muted: #94a3b8;
-  --gs-border: rgba(148, 163, 184, 0.22);
-  --gs-border-strong: rgba(148, 163, 184, 0.34);
-  --gs-card: #0f172a;
-  --gs-sidebar: #0b1220;
-  --gs-sidebar-edge: #0b1220;
-  --gs-accent-soft: rgba(241, 90, 36, 0.18);
-  --gs-navy: #e5e7eb;
-  --gs-table-head: rgba(59, 130, 246, 0.12);
+  --gs-muted: #9ca3af;
+  --gs-navy: #0b1220; /* used by a few primary buttons; keep it dark in dark mode */
 
-  --gs-input-bg: rgba(255, 255, 255, 0.04);
+  /* Borders & hovers */
+  --gs-border: #1f2937;
+  --gs-border-strong: #374151;
+  --gs-topbar-icon-hover: rgba(255, 255, 255, 0.08);
+
+  /* Tables */
+  --gs-table-head: #0a0f16;
+
+  /* Inputs / chips */
+  --gs-input-bg: #020617;
+  --gs-input-border: #374151;
+
+  /* Accent */
+  --gs-accent-soft: rgba(241, 90, 36, 0.16);
   --gs-pill-active-bg: rgba(241, 90, 36, 0.22);
-  --gs-pill-active-text: #fdba74;
+  --gs-pill-active-text: #ffedd5;
 
-  --gs-shell-header: rgba(2, 6, 23, 0.72);
-  --gs-topbar-icon-hover: rgba(255, 255, 255, 0.06);
-
+  /* Page gradients */
   --gs-gradient-from: #050a14;
   --gs-gradient-via: #070e1d;
   --gs-gradient-to: #0b1220;
@@ -72,8 +84,29 @@ body {
   color: var(--gs-text);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .gs-toast-motion {
-    transition-duration: 0.01ms !important;
-  }
+.gs-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--gs-muted);
 }
+
+.gs-field {
+  margin-top: 0.5rem;
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--gs-input-border);
+  background: var(--gs-input-bg);
+  color: var(--gs-text);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.gs-field:focus {
+  border-color: var(--gs-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 22%, transparent);
+}
+

@@ -19,8 +19,8 @@ import { loadCustomers, type DemoCustomer } from "@/lib/demoCustomers";
 import { type DemoInvoiceRow, loadAddedInvoices } from "@/lib/demoInvoices";
 
 const DEFAULT_ROWS: DemoInvoiceRow[] = [
-  { id: "INV-1042", customer: "Facebook — batch A", fep: "A. Khan", amount: "$2,840.00", method: "PayPal", status: "Paid" },
-  { id: "INV-1041", customer: "Direct — Zurich", fep: "M. Ali", amount: "$4,120.00", method: "Bank", status: "Pending" },
+  { id: "INV-1042", customer: "Facebook  batch A", fep: "A. Khan", amount: "$2,840.00", method: "PayPal", status: "Paid" },
+  { id: "INV-1041", customer: "Direct  Zurich", fep: "M. Ali", amount: "$4,120.00", method: "Bank", status: "Pending" },
   { id: "INV-1040", customer: "PayPal checkout", fep: "A. Khan", amount: "$910.00", method: "PayPal", status: "Paid" },
   { id: "INV-1039", customer: "Bank transfer", fep: "S. Noor", amount: "$6,400.00", method: "Bank", status: "Paid" },
 ];
@@ -37,7 +37,8 @@ type InvoiceView = DemoInvoiceRow & { dateIso: string; amountNum: number };
 
 function augmentRow(row: DemoInvoiceRow, index: number): InvoiceView {
   const amountNum = parseFloat(row.amount.replace(/[$,]/g, "")) || 0;
-  const dateIso = INVOICE_DATE_ISO[row.id] ?? `2026-03-${String(25 - index).padStart(2, "0")}`;
+  const dateIso =
+    row.dateIso ?? INVOICE_DATE_ISO[row.id] ?? `2026-03-${String(25 - index).padStart(2, "0")}`;
   return { ...row, dateIso, amountNum };
 }
 
@@ -58,7 +59,7 @@ const METHODS = ["PayPal", "Bank", "Cash", "Wire (SWIFT)", "Other"] as const;
 function pill(status: DemoInvoiceRow["status"]) {
   if (status === "Paid") {
     return (
-      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-100">
+      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-[var(--gs-text)] ring-1 ring-emerald-100">
         Paid
       </span>
     );
@@ -79,11 +80,11 @@ function methodPill(method: string) {
 }
 
 function customerTitleLines(label: string) {
-  const parts = label.split("—");
+  const parts = label.split("");
   if (parts.length < 2) return { primary: label.trim(), secondary: undefined as string | undefined };
   const secondary = parts
     .slice(1)
-    .join("—")
+    .join("")
     .trim();
   return { primary: parts[0]!.trim(), secondary: secondary || undefined };
 }
@@ -245,7 +246,7 @@ function SalesPageContent() {
             type="button"
             onClick={() => router.push(`/sales?tab=${id}`, { scroll: false })}
             className={`rounded-full px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
-              tab === id ? "bg-[var(--gs-navy)] text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              tab === id ? "bg-[var(--gs-accent)] text-white" : "border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
             }`}
           >
             {label}
@@ -254,14 +255,14 @@ function SalesPageContent() {
       </div>
 
       {tab === "customers" && (
-        <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-5">
-            <h2 className="text-lg font-bold text-[var(--gs-navy)]">Customers</h2>
-            <p className="mt-1 text-sm text-[var(--gs-muted)]">Customer list and profiles — demo data from browser storage.</p>
+        <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+          <div className="border-b border-[var(--gs-border)] p-5">
+            <h2 className="text-lg font-bold text-[var(--gs-text)]">Customers</h2>
+            <p className="mt-1 text-sm text-[var(--gs-muted)]">Customer list and profiles  demo data from browser storage.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+              <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                 <tr>
                   <th className="px-5 py-3">Name</th>
                   <th className="px-5 py-3">Email</th>
@@ -269,13 +270,13 @@ function SalesPageContent() {
                   <th className="px-5 py-3">Notes</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--gs-border)]">
                 {customers.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50/80">
-                    <td className="px-5 py-3 font-medium text-slate-900">{c.name}</td>
-                    <td className="px-5 py-3 text-slate-600">{c.email}</td>
-                    <td className="px-5 py-3 text-slate-600">{c.phone}</td>
-                    <td className="px-5 py-3 text-slate-600">{c.detail}</td>
+                  <tr key={c.id} className="hover:bg-[var(--gs-hover)]/80">
+                    <td className="px-5 py-3 font-medium text-[var(--gs-text)]">{c.name}</td>
+                    <td className="px-5 py-3 text-[var(--gs-muted)]">{c.email}</td>
+                    <td className="px-5 py-3 text-[var(--gs-muted)]">{c.phone}</td>
+                    <td className="px-5 py-3 text-[var(--gs-muted)]">{c.detail}</td>
                   </tr>
                 ))}
               </tbody>
@@ -285,9 +286,9 @@ function SalesPageContent() {
       )}
 
       {tab === "receipts" && (
-        <section className="rounded-2xl border border-[var(--gs-border)] bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Receipts & customer payments</h2>
-          <p className="mt-1 text-sm text-[var(--gs-muted)]">Allocate incoming payments to open invoices — same flow as Receive payment on invoices.</p>
+        <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Receipts & customer payments</h2>
+          <p className="mt-1 text-sm text-[var(--gs-muted)]">Allocate incoming payments to open invoices  same flow as Receive payment on invoices.</p>
           <div className="mt-6 flex flex-wrap gap-3">
             <button
               type="button"
@@ -299,7 +300,7 @@ function SalesPageContent() {
             <button
               type="button"
               onClick={() => router.push("/sales?tab=receipts")}
-              className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              className="rounded-full border border-[var(--gs-border)] px-5 py-2.5 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
             >
               Receipts tab
             </button>
@@ -315,7 +316,7 @@ function SalesPageContent() {
             key={doc}
             type="button"
             onClick={() => window.alert(`Demo: open ${doc} list / create`)}
-            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-[var(--gs-accent)] hover:text-[var(--gs-accent)]"
+            className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] shadow-sm hover:border-[var(--gs-accent)] hover:text-[var(--gs-accent)]"
           >
             {doc}
           </button>
@@ -332,7 +333,7 @@ function SalesPageContent() {
               onClick={() => openReceivePayment()}
               className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border-2 border-sky-200 bg-gradient-to-b from-sky-50 to-white px-4 py-2.5 text-sm font-bold text-sky-900 shadow-sm ring-1 ring-sky-100/80 transition hover:border-sky-300 hover:from-sky-100/90 sm:min-h-0 sm:flex-initial sm:rounded-full"
             >
-              <svg className="h-4 w-4 shrink-0 text-sky-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" aria-hidden>
+              <svg className="h-4 w-4 shrink-0 text-[var(--gs-muted)]" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" aria-hidden>
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -360,7 +361,7 @@ function SalesPageContent() {
       }
       toolbar={
         <ListToolbarInteractive
-          placeholder="Search by invoice, customer, FEP…"
+          placeholder="Search by invoice, customer, FEP..."
           search={search}
           onSearchChange={setSearch}
           sortOptions={SORT_OPTIONS}
@@ -399,7 +400,7 @@ function SalesPageContent() {
       <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
-            <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-slate-600">
+            <tr className="border-b border-[var(--gs-border)]/80 bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
               <th className="px-5 py-3.5 sm:px-6 sm:py-4">Invoice</th>
               <th className="px-5 py-3.5 sm:px-6 sm:py-4">Customer</th>
               <th className="px-5 py-3.5 sm:px-6 sm:py-4">FEP</th>
@@ -409,10 +410,10 @@ function SalesPageContent() {
               <th className="px-5 py-3.5 text-right sm:px-6 sm:py-4">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-[var(--gs-border)]">
             {filteredSorted.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-500 sm:px-6 sm:py-14">
+                <td colSpan={7} className="px-5 py-12 text-center text-sm text-[var(--gs-muted)] sm:px-6 sm:py-14">
                   No invoices match your filters or search.
                 </td>
               </tr>
@@ -420,24 +421,24 @@ function SalesPageContent() {
               filteredSorted.map((row) => {
                 const customerLines = customerTitleLines(row.customer);
                 return (
-                <tr key={row.id} className="bg-white hover:bg-slate-50/80">
-                  <td className="whitespace-nowrap px-5 py-4 font-mono text-sm font-semibold text-slate-900 sm:px-6 sm:py-5">{row.id}</td>
+                <tr key={row.id} className="bg-[var(--gs-card)] hover:bg-[var(--gs-hover)]/80">
+                  <td className="whitespace-nowrap px-5 py-4 font-mono text-sm font-semibold text-[var(--gs-text)] sm:px-6 sm:py-5">{row.id}</td>
                   <td className="px-5 py-4 sm:px-6 sm:py-5">
                     <div className="flex items-start gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-600">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--gs-hover)] text-sm font-semibold text-[var(--gs-muted)]">
                         {row.customer.slice(0, 1).toUpperCase()}
                       </span>
                       <div className="min-w-0 pt-0.5">
-                        <p className="font-semibold leading-tight text-slate-900">{customerLines.primary}</p>
+                        <p className="font-semibold leading-tight text-[var(--gs-text)]">{customerLines.primary}</p>
                         {customerLines.secondary ? (
-                          <p className="mt-1 truncate text-xs text-slate-500">{customerLines.secondary}</p>
+                          <p className="mt-1 truncate text-xs text-[var(--gs-muted)]">{customerLines.secondary}</p>
                         ) : null}
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-4 text-slate-700 sm:px-6 sm:py-5">{row.fep}</td>
+                  <td className="px-5 py-4 text-[var(--gs-text)] sm:px-6 sm:py-5">{row.fep}</td>
                   <td className="px-5 py-4 sm:px-6 sm:py-5">{methodPill(row.method)}</td>
-                  <td className="px-5 py-4 text-right font-semibold text-slate-900 sm:px-6 sm:py-5">{row.amount}</td>
+                  <td className="px-5 py-4 text-right font-semibold text-[var(--gs-text)] sm:px-6 sm:py-5">{row.amount}</td>
                   <td className="px-5 py-4 sm:px-6 sm:py-5">{pill(row.status)}</td>
                   <td className="px-5 py-4 text-right sm:px-6 sm:py-5">
                     <div className="flex items-center justify-end">
@@ -474,7 +475,7 @@ function SalesPageContent() {
 
 export default function SalesPage() {
   return (
-    <Suspense fallback={<div className="py-10 text-center text-sm text-slate-500">Loading sales…</div>}>
+    <Suspense fallback={<div className="py-10 text-center text-sm text-[var(--gs-muted)]">Loading sales...</div>}>
       <SalesPageContent />
     </Suspense>
   );

@@ -75,13 +75,13 @@ export function AccountantDashboard() {
         </Link>
         <Link
           href="/accounting"
-          className="rounded-full bg-[var(--gs-navy)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+          className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
         >
           Open journals
         </Link>
         <Link
           href="/reports"
-          className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-5 py-2.5 text-sm font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
         >
           Financial reports
         </Link>
@@ -91,7 +91,7 @@ export function AccountantDashboard() {
         <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-[var(--gs-border)]/80 bg-[var(--gs-table-head)] text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">
                 <th className="px-6 py-3.5">Entry</th>
                 <th className="px-6 py-3.5">Memo</th>
                 <th className="px-6 py-3.5">Debit</th>
@@ -100,14 +100,14 @@ export function AccountantDashboard() {
                 <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[var(--gs-border)]">
               {lines.map((row) => (
-                <tr key={row.ref} className="hover:bg-slate-50/80">
-                  <td className="px-6 py-3.5 font-mono text-xs font-semibold text-slate-900">{row.ref}</td>
-                  <td className="max-w-[220px] truncate px-6 py-3.5 text-slate-700">{row.memo}</td>
-                  <td className="px-6 py-3.5 text-slate-600">{row.debit}</td>
-                  <td className="px-6 py-3.5 text-slate-600">{row.credit}</td>
-                  <td className="px-6 py-3.5 text-right font-semibold text-slate-900">{row.amt}</td>
+                <tr key={row.ref} className="hover:bg-[var(--gs-hover)]/80">
+                  <td className="px-6 py-3.5 font-mono text-xs font-semibold text-[var(--gs-text)]">{row.ref}</td>
+                  <td className="max-w-[220px] truncate px-6 py-3.5 text-[var(--gs-text)]">{row.memo}</td>
+                  <td className="px-6 py-3.5 text-[var(--gs-muted)]">{row.debit}</td>
+                  <td className="px-6 py-3.5 text-[var(--gs-muted)]">{row.credit}</td>
+                  <td className="px-6 py-3.5 text-right font-semibold text-[var(--gs-text)]">{row.amt}</td>
                   <td className="px-6 py-3.5 text-right">
                     <RowActionsMenu items={["Open entry", "Reverse", "Export"]} />
                   </td>

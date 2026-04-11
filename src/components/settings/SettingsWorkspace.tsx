@@ -49,7 +49,7 @@ export function SettingsWorkspace() {
             className={`rounded-full px-3 py-1.5 text-xs font-semibold transition duration-200 sm:text-sm ${
               tab === id
                 ? "bg-[var(--gs-pill-active-bg)] text-[var(--gs-pill-active-text)]"
-                : "text-[var(--gs-muted)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                : "text-[var(--gs-muted)] hover:bg-black/[0.04] dark:hover:bg-[var(--gs-card)]/[0.06]"
             }`}
           >
             {label}
@@ -59,7 +59,7 @@ export function SettingsWorkspace() {
 
       {tab === "appearance" && (
         <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-sm transition-colors duration-200">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Appearance</h2>
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Appearance</h2>
           <p className="mt-1 text-sm text-[var(--gs-muted)]">Workspace theme and display preferences.</p>
           <div className="mt-6 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-input-bg)] p-4 transition-colors duration-200">
             <ThemeToggleRow />
@@ -69,7 +69,7 @@ export function SettingsWorkspace() {
 
       {tab === "company" && (
         <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-sm transition-colors duration-200">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Company setup</h2>
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Company setup</h2>
           <p className="mt-1 text-sm text-[var(--gs-muted)]">Legal name, address, logo, and registration — stored locally in demo.</p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -114,7 +114,7 @@ export function SettingsWorkspace() {
 
       {tab === "tax" && (
         <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-sm transition-colors duration-200">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Tax & currency</h2>
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Tax & currency</h2>
           <p className="mt-1 text-sm text-[var(--gs-muted)]">GST / VAT labels, default rates, and multi-currency pairs.</p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div>
@@ -136,7 +136,7 @@ export function SettingsWorkspace() {
         <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-sm transition-colors duration-200">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-[var(--gs-navy)]">Account types</h2>
+              <h2 className="text-lg font-bold text-[var(--gs-text)]">Account types</h2>
               <p className="mt-1 text-sm text-[var(--gs-muted)]">Map custom labels to Asset / Liability / Equity / Revenue / Expense.</p>
             </div>
             <button
@@ -176,7 +176,7 @@ export function SettingsWorkspace() {
 
       {tab === "workflow" && (
         <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-sm transition-colors duration-200">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Workflow & approvals</h2>
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Workflow & approvals</h2>
           <p className="mt-1 text-sm text-[var(--gs-muted)]">Route drafts for journals, invoices, and bills to approvers.</p>
           <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-[var(--gs-text)]">
             <li>Journal entry: Draft → Submitted → Approved → Posted</li>
@@ -194,7 +194,7 @@ export function SettingsWorkspace() {
 
       {tab === "integrations" && (
         <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-sm transition-colors duration-200">
-          <h2 className="text-lg font-bold text-[var(--gs-navy)]">Integrations</h2>
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Integrations</h2>
           <p className="mt-1 text-sm text-[var(--gs-muted)]">API keys, webhooks, and payment gateways.</p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-input-bg)] p-4 transition-colors duration-200">
