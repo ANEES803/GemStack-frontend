@@ -24,6 +24,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 
 import { DEMO_REVENUE_ACCOUNTS, revenueAccountLabel } from "@/lib/demoRevenueAccounts";
 import { loadItemCatalog, saveItemCatalog, type StoredItemRow } from "@/lib/itemCatalogStorage";
+import { getAccessToken } from "@/lib/authClient";
+import { fetchRoughLotPickerOptions } from "@/lib/purchaseLotsApi";
 import { ROUGH_LOTS_SEED } from "@/lib/roughLotsSeed";
 
 import {
@@ -1557,6 +1559,7 @@ export function InventoryHub() {
   const [auditClosedItemIds, setAuditClosedItemIds] = useState<Set<string>>(() => new Set());
   /** Empty set = all inventory types; non-empty = filter item name-wise report by these kinds */
   const [reportItemNameKinds, setReportItemNameKinds] = useState<Set<string>>(() => new Set());
+  const [roughLotOptions, setRoughLotOptions] = useState<{ code: string; supplier: string }[]>(() => [...ROUGH_LOTS_SEED]);
   const [custodianReportExpanded, setCustodianReportExpanded] = useState<string | null>(null);
   const [addTypeDraft, setAddTypeDraft] = useState<{
     label: string;
@@ -1577,6 +1580,21 @@ export function InventoryHub() {
   useEffect(() => {
     setAuditRecords(loadAuditRecords());
     setAuditClosedItemIds(loadAuditClosedIds());
+  }, []);
+
+  useEffect(() => {
+    if (!getAccessToken()) return;
+    let cancelled = false;
+    fetchRoughLotPickerOptions()
+      .then((opts) => {
+        if (!cancelled && opts.length > 0) setRoughLotOptions(opts);
+      })
+      .catch(() => {
+        /* keep seed */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -3892,7 +3910,7 @@ export function InventoryHub() {
                       className={FIELD_INPUT}
                     >
                       <option value="">Select lot…</option>
-                      {ROUGH_LOTS_SEED.map((lot) => (
+                      {roughLotOptions.map((lot) => (
                         <option key={lot.code} value={lot.code}>
                           {lot.code} — {lot.supplier}
                         </option>

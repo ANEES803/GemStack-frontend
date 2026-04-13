@@ -3,6 +3,8 @@
  */
 
 export type LotListRow = {
+  /** Set when row comes from API (for delete). */
+  id?: string;
   code: string;
   supplier: string;
   carats: number;
@@ -11,6 +13,8 @@ export type LotListRow = {
   costDisplay: string;
   dateIso: string;
   dateDisplay: string;
+  /** From API: settlement + commercial terms, e.g. "Paid · Net 30". */
+  paymentSummary?: string;
 };
 
 const STORAGE_KEY = "gemstack-lots-list-v1";
@@ -58,7 +62,7 @@ export const DEFAULT_LOTS_SEED: LotListRow[] = [
   },
 ];
 
-function formatLotDisplays(carats: number, cost: number, dateIso: string): Pick<LotListRow, "caratsDisplay" | "costDisplay" | "dateDisplay"> {
+export function formatLotDisplays(carats: number, cost: number, dateIso: string): Pick<LotListRow, "caratsDisplay" | "costDisplay" | "dateDisplay"> {
   const caratsDisplay = Number.isInteger(carats) ? String(carats) : carats.toLocaleString(undefined, { maximumFractionDigits: 4 });
   const costDisplay = `$${cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   const d = new Date(dateIso + "T12:00:00");
@@ -89,16 +93,17 @@ export function lotRowFromForm(
   };
 }
 
+/** Loads saved demo rows only; no placeholder seed (avoids flashing fake lots before API data). */
 export function loadLots(): LotListRow[] {
-  if (typeof window === "undefined") return [...DEFAULT_LOTS_SEED];
+  if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...DEFAULT_LOTS_SEED];
+    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed) || parsed.length === 0) return [...DEFAULT_LOTS_SEED];
+    if (!Array.isArray(parsed) || parsed.length === 0) return [];
     return parsed as LotListRow[];
   } catch {
-    return [...DEFAULT_LOTS_SEED];
+    return [];
   }
 }
 

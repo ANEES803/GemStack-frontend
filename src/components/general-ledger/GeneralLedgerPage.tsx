@@ -3,20 +3,57 @@
 import { FileDown, FileSpreadsheet, Printer, RefreshCw, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { buildMockLedgerRows, drawerDataForRow } from "./mockData";
+import { getGlSettings, getJournalEntry, listJournalEntries, type JournalDetailDto } from "@/lib/glApi";
+
+import { drawerDataForRow } from "./mockData";
 import { DEFAULT_GL_FILTERS, FilterPanel, type GlFilterState } from "./FilterPanel";
 import { LedgerDrawer } from "./LedgerDrawer";
 import { LedgerTable, LedgerTableToolbar, type LedgerRowView } from "./LedgerTable";
 import { SettingsModal } from "./SettingsModal";
 import { SummaryCards } from "./SummaryCards";
-import type { ColumnId, GlSettings, GroupByMode, LedgerRow, SortDir, SortKey } from "./types";
+import type {
+  AccountTypeFilter,
+  ColumnId,
+  GlSettings,
+  GroupByMode,
+  LedgerRow,
+  PostingStatus,
+  SortDir,
+  SortKey,
+  TransactionType,
+} from "./types";
 import { DEFAULT_GL_SETTINGS } from "./types";
 
 const STORAGE_SAVED_VIEW = "gemstack-gl-saved-view";
 const STORAGE_DEFAULT_FILTERS = "gemstack-gl-default-filters";
-const OPENING_BALANCE = 2_450_000;
+const OPENING_BALANCE = 0;
+
+function mapJournalToLedgerRows(je: JournalDetailDto, currency: "PKR" | "USD"): LedgerRow[] {
+  const contact = (je.vendor_name || "").trim();
+  const tt: TransactionType =
+    je.source_kind === "purchase_receipt" ? "Bill" : je.source_kind === "vendor_payment" ? "Payment" : "Journal";
+  const st: PostingStatus = je.status === "posted" ? "Posted" : "Draft";
+  const accountType: AccountTypeFilter = "Expense";
+  return je.lines.map((ln) => ({
+    id: `${je.id}-${ln.id}`,
+    date: je.entry_date,
+    journalNo: je.reference,
+    transactionType: tt,
+    accountCode: ln.account_code,
+    accountName: ln.account_name,
+    accountType,
+    description: ln.description || je.memo || "",
+    reference: je.reference,
+    debit: Number(ln.debit) || 0,
+    credit: Number(ln.credit) || 0,
+    contact,
+    branch: "Main",
+    currency,
+    status: st,
+  }));
+}
 
 const DEFAULT_VISIBLE: Record<ColumnId, boolean> = {
   date: true,
@@ -128,7 +165,34 @@ function groupKey(r: LedgerRow, mode: GroupByMode): string {
 
 export function GeneralLedgerPage() {
   const router = useRouter();
-  const sourceRows = useMemo(() => buildMockLedgerRows(), []);
+  const [sourceRows, setSourceRows] = useState<LedgerRow[]>([]);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+
+  const loadLedger = useCallback(async () => {
+    setLedgerLoading(true);
+    setLedgerError(null);
+    try {
+      const [summaries, settings] = await Promise.all([listJournalEntries(), getGlSettings()]);
+      const fc = (settings.functional_currency || "USD").toUpperCase();
+      const currency: "PKR" | "USD" = fc === "PKR" ? "PKR" : "USD";
+      const details = await Promise.all(summaries.map((s) => getJournalEntry(s.id)));
+      const rows: LedgerRow[] = [];
+      for (const je of details) {
+        rows.push(...mapJournalToLedgerRows(je, currency));
+      }
+      setSourceRows(rows);
+    } catch (e) {
+      setLedgerError(e instanceof Error ? e.message : "Could not load general ledger");
+      setSourceRows([]);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadLedger();
+  }, [loadLedger]);
 
   const accountOptions = useMemo(() => {
     const m = new Map<string, { code: string; name: string }>();
@@ -335,15 +399,15 @@ export function GeneralLedgerPage() {
           <button
             type="button"
             onClick={() => {
+              void loadLedger();
               setAppliedFilters({ ...draftFilters });
               setPage(1);
-              window.alert("Refreshed from current filter draft (demo).");
             }}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Refresh"
             title="Refresh"
           >
-            <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+            <RefreshCw className={`h-4 w-4 shrink-0 ${ledgerLoading ? "animate-spin" : ""}`} aria-hidden />
           </button>
           <button
             type="button"
@@ -356,6 +420,12 @@ export function GeneralLedgerPage() {
           </button>
         </div>
       </header>
+
+      {ledgerError ? (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
+          {ledgerError}
+        </p>
+      ) : null}
 
       <FilterPanel
         value={draftFilters}

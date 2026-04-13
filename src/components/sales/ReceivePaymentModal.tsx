@@ -49,7 +49,7 @@ export function ReceivePaymentModal({
   const [phone, setPhone] = useState("");
   const [detail, setDetail] = useState("");
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState<(typeof PAYMENT_OPTIONS)[number]>("Bank transfer");
+  const [method, setMethod] = useState<(typeof PAYMENT_OPTIONS)[number]>("Bank Transfer");
   const [depositTo, setDepositTo] = useState("Operating bank");
   const [date, setDate] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");

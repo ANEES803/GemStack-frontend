@@ -3,10 +3,27 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { AppDialog } from "@/components/ui/AppDialog";
+import { LoadingBlock } from "@/components/ui/LoadingBlock";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
-import { DEMO_REVENUE_ACCOUNTS, revenueAccountLabel } from "@/lib/demoRevenueAccounts";
 import { formatMoney } from "@/lib/format";
-import { loadServiceItemsForSelect, type StoredItemRow } from "@/lib/itemCatalogStorage";
+import {
+  createGlAccount,
+  createJournalEntry,
+  createJournalReversalDraft,
+  getGlSettings,
+  getJournalEntry,
+  listGlAccounts,
+  listJournalEntries,
+  listPostableGlAccounts,
+  patchGlSettings,
+  postJournalEntry,
+  updateGlAccount,
+  type GlAccountDto,
+  type GlSettingsDto,
+  type JournalDetailDto,
+  type JournalSummaryDto,
+} from "@/lib/glApi";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
 type TabId = "coa" | "opening" | "journal_list" | "banking";
@@ -29,20 +46,24 @@ type CoaRow = {
   parentId: string | null;
   balance: number;
   status: "Active" | "Inactive";
+  isGroup: boolean;
+  allowPosting: boolean;
 };
 
-const INITIAL_COA: CoaRow[] = [
-  { id: "1", code: "1000", name: "Assets", type: "Asset", parentId: null, balance: 0, status: "Active" },
-  { id: "2", code: "1100", name: "Cash  PKR", type: "Asset", parentId: "1", balance: 125000, status: "Active" },
-  { id: "3", code: "1200", name: "Accounts receivable", type: "Asset", parentId: "1", balance: 48200, status: "Active" },
-  { id: "4", code: "1300", name: "Inventory  Grade A", type: "Asset", parentId: "1", balance: 960000, status: "Active" },
-  { id: "5", code: "2000", name: "Liabilities", type: "Liability", parentId: null, balance: 0, status: "Active" },
-  { id: "6", code: "2100", name: "Accounts payable", type: "Liability", parentId: "5", balance: 31000, status: "Active" },
-  { id: "7", code: "2200", name: "FEP commission payable", type: "Liability", parentId: "5", balance: 4500, status: "Active" },
-  { id: "8", code: "4000", name: "Sales revenue", type: "Revenue", parentId: null, balance: 0, status: "Active" },
-  { id: "9", code: "5000", name: "Cost of sales", type: "Expense", parentId: null, balance: 0, status: "Active" },
-  { id: "10", code: "5100", name: "Commission expense", type: "Expense", parentId: null, balance: 0, status: "Active" },
-];
+function mapDtoToCoaRow(a: GlAccountDto): CoaRow {
+  const t = (a.account_type || "Asset") as AccountType;
+  return {
+    id: a.id,
+    code: a.code,
+    name: a.name,
+    type: t,
+    parentId: a.parent_id,
+    balance: Number.parseFloat(a.balance) || 0,
+    status: a.is_active ? "Active" : "Inactive",
+    isGroup: a.is_group,
+    allowPosting: a.allow_posting,
+  };
+}
 
 function coaDepth(rows: CoaRow[], id: string): number {
   const row = rows.find((r) => r.id === id);
@@ -56,6 +77,41 @@ function parentLabel(rows: CoaRow[], parentId: string | null): string {
   return p ? `${p.code}  ${p.name}` : "";
 }
 
+function mapJournalSummaries(list: JournalSummaryDto[]) {
+  return list.map((j) => ({
+    id: j.id,
+    date: j.entry_date,
+    ref: j.reference,
+    desc: j.memo || "—",
+    amount: Number.parseFloat(j.total_debit) || 0,
+    creditAmount: Number.parseFloat(j.total_credit) || 0,
+    status: j.status,
+    tag: (j.tag || "").trim(),
+    sourceType: j.source_type,
+    sourceId: j.source_id,
+    vendorName: j.vendor_name,
+    lotCode: j.lot_code,
+    sourceKind: j.source_kind,
+    sourceLabel: journalSourceLabel(j.source_kind, j.source_type, j.tag, j.vendor_name),
+  }));
+}
+
+function journalSourceLabel(
+  sourceKind: string | null,
+  sourceType: string | null,
+  tag: string,
+  vendorName?: string | null,
+): string {
+  const v = (vendorName || "").trim();
+  if (sourceKind === "purchase_receipt") return v ? `Purchase receipt · ${v}` : "Purchase receipt";
+  if (sourceKind === "vendor_payment") return v ? `Vendor payment · ${v}` : "Vendor payment";
+  const t = (sourceType || "").toLowerCase();
+  if (t === "purchase_lot_receipt") return v ? `Purchase receipt · ${v}` : "Lot receipt";
+  if (t === "lot_payment") return v ? `Vendor payment · ${v}` : "Lot payment";
+  if (t === "manual" || !t) return tag ? tag : "Manual / other";
+  return sourceType || tag || "—";
+}
+
 const VALID_TABS = new Set<TabId>(TABS.map((t) => t.id));
 
 export function AccountingWorkspace() {
@@ -64,9 +120,10 @@ export function AccountingWorkspace() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<TabId>("coa");
   const [journalEditorOpen, setJournalEditorOpen] = useState(false);
-  const [jeListView, setJeListView] = useState<"list" | "recurring" | "approval">("list");
-
-  const [coaRows, setCoaRows] = useState<CoaRow[]>(INITIAL_COA);
+  const [functionalCurrency, setFunctionalCurrency] = useState("USD");
+  const [coaRows, setCoaRows] = useState<CoaRow[]>([]);
+  const [coaLoading, setCoaLoading] = useState(false);
+  const [coaError, setCoaError] = useState<string | null>(null);
   const [coaModal, setCoaModal] = useState<"add" | { edit: CoaRow } | null>(null);
   const [coaDetail, setCoaDetail] = useState<CoaRow | null>(null);
   const [coaSearch, setCoaSearch] = useState("");
@@ -79,8 +136,6 @@ export function AccountingWorkspace() {
     parentId: "none" as string | "none",
     isGroup: false,
     allowTransactions: true,
-    openingBalance: "",
-    openingDate: "",
     status: "Active" as "Active" | "Inactive",
   });
 
@@ -89,20 +144,45 @@ export function AccountingWorkspace() {
   const [openingSub, setOpeningSub] = useState<null | "trial" | "customer" | "vendor" | "inventory">(null);
 
   const [jeDate, setJeDate] = useState("");
-  const [jeRef, setJeRef] = useState("JE-015");
-  const [jeMemo, setJeMemo] = useState("Month-end accrual  demo");
-  const [jeTag, setJeTag] = useState("");
-  const [jeLines, setJeLines] = useState([
-    { id: "j1", account: "5100  Commission expense", lineDesc: "", debit: 450, credit: 0 },
-    { id: "j2", account: "2200  FEP commission payable", lineDesc: "", debit: 0, credit: 450 },
+  const [jeRef, setJeRef] = useState("");
+  const [jeMemo, setJeMemo] = useState("");
+  const [jeSaving, setJeSaving] = useState(false);
+  const [jeError, setJeError] = useState<string | null>(null);
+  const [postableAccounts, setPostableAccounts] = useState<GlAccountDto[]>([]);
+  const [jeLines, setJeLines] = useState<{ id: string; accountId: string; lineDesc: string; debit: number; credit: number }[]>([
+    { id: "j1", accountId: "", lineDesc: "", debit: 0, credit: 0 },
+    { id: "j2", accountId: "", lineDesc: "", debit: 0, credit: 0 },
   ]);
-  const [journalServiceCatalog, setJournalServiceCatalog] = useState<StoredItemRow[]>([]);
-  const [jeServiceSelectSeq, setJeServiceSelectSeq] = useState(0);
+  const [journalRows, setJournalRows] = useState<
+    {
+      id: string;
+      date: string;
+      ref: string;
+      desc: string;
+      amount: number;
+      creditAmount: number;
+      status: string;
+      tag: string;
+      sourceType: string | null;
+      sourceId: string | null;
+      vendorName: string | null | undefined;
+      lotCode: string | null | undefined;
+      sourceKind: string | null | undefined;
+      sourceLabel: string;
+    }[]
+  >([]);
+  const [journalsLoading, setJournalsLoading] = useState(false);
+  const [journalViewerOpen, setJournalViewerOpen] = useState(false);
+  const [journalViewerLoading, setJournalViewerLoading] = useState(false);
+  const [journalViewerError, setJournalViewerError] = useState<string | null>(null);
+  const [journalViewerDetail, setJournalViewerDetail] = useState<JournalDetailDto | null>(null);
+  const [journalReversalBusy, setJournalReversalBusy] = useState(false);
 
-  const [journalRows] = useState([
-    { id: "JE-2026-014", date: "2026-03-28", ref: "JE-014", desc: "Month-end accrual", amount: 450, status: "Posted" as const, by: "A. Khan" },
-    { id: "JE-2026-013", date: "2026-03-20", ref: "JE-013", desc: "Bank charges", amount: 120, status: "Draft" as const, by: "S. Noor" },
-  ]);
+  const [glPostingSettings, setGlPostingSettings] = useState<GlSettingsDto | null>(null);
+  const [glPostingAccounts, setGlPostingAccounts] = useState<GlAccountDto[]>([]);
+  const [glPostingLoad, setGlPostingLoad] = useState(false);
+  const [glPostingSave, setGlPostingSave] = useState(false);
+  const [glPostingErr, setGlPostingErr] = useState<string | null>(null);
 
   const [bankCards] = useState([
     { id: "b1", bank: "HBL", last4: "9012", balance: 125000, recon: "2026-03-15" },
@@ -127,13 +207,100 @@ export function AccountingWorkspace() {
   useEffect(() => {
     if (!todayIso) return;
     setJeDate((p) => p || todayIso);
-    setCoaForm((f) => ({ ...f, openingDate: f.openingDate || todayIso }));
   }, [todayIso]);
+
+  async function refreshCoa() {
+    setCoaLoading(true);
+    setCoaError(null);
+    try {
+      const iso = todayIso || new Date().toISOString().slice(0, 10);
+      const rows = await listGlAccounts(iso);
+      setCoaRows(rows.map(mapDtoToCoaRow));
+    } catch (e) {
+      setCoaError(e instanceof Error ? e.message : "Could not load chart of accounts");
+    } finally {
+      setCoaLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (tab !== "coa") return;
+    void refreshCoa();
+  }, [tab, todayIso]);
+
+  useEffect(() => {
+    if (tab !== "journal_list") return;
+    let cancelled = false;
+    (async () => {
+      setJournalsLoading(true);
+      try {
+        const list = await listJournalEntries();
+        if (cancelled) return;
+        setJournalRows(mapJournalSummaries(list));
+      } catch {
+        if (!cancelled) setJournalRows([]);
+      } finally {
+        if (!cancelled) setJournalsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, journalEditorOpen]);
 
   useEffect(() => {
     if (!journalEditorOpen) return;
-    setJournalServiceCatalog(loadServiceItemsForSelect());
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await listPostableGlAccounts();
+        if (!cancelled) setPostableAccounts(p);
+      } catch {
+        if (!cancelled) setPostableAccounts([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [journalEditorOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await getGlSettings();
+        if (!cancelled) setFunctionalCurrency(s.functional_currency || "USD");
+      } catch {
+        if (!cancelled) setFunctionalCurrency("USD");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "coa") return;
+    let cancelled = false;
+    (async () => {
+      setGlPostingLoad(true);
+      setGlPostingErr(null);
+      try {
+        const [s, acc] = await Promise.all([getGlSettings(), listPostableGlAccounts()]);
+        if (!cancelled) {
+          setGlPostingSettings(s);
+          setGlPostingAccounts(acc);
+        }
+      } catch (e) {
+        if (!cancelled) setGlPostingErr(e instanceof Error ? e.message : "Could not load GL settings");
+      } finally {
+        if (!cancelled) setGlPostingLoad(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
 
   useEffect(() => {
     const t = searchParams.get("tab");
@@ -184,8 +351,6 @@ export function AccountingWorkspace() {
       parentId: "none",
       isGroup: false,
       allowTransactions: true,
-      openingBalance: "",
-      openingDate: todayIso || "",
       status: "Active",
     });
     setCoaModal("add");
@@ -197,65 +362,59 @@ export function AccountingWorkspace() {
       name: row.name,
       type: row.type,
       parentId: row.parentId ?? "none",
-      isGroup: false,
-      allowTransactions: true,
-      openingBalance: String(row.balance),
-      openingDate: todayIso || "",
+      isGroup: row.isGroup,
+      allowTransactions: row.allowPosting,
       status: row.status,
     });
     setCoaModal({ edit: row });
   }
 
-  function saveCoa(andNew?: boolean) {
+  async function saveCoa(andNew?: boolean) {
     if (!coaForm.code.trim() || !coaForm.name.trim()) return;
     const parentId = coaForm.parentId === "none" ? null : coaForm.parentId;
-    const ob = parseFloat(coaForm.openingBalance) || 0;
-    if (coaModal === "add") {
-      const id = `n-${Date.now()}`;
-      setCoaRows((prev) => [
-        ...prev,
-        {
-          id,
+    try {
+      if (coaModal === "add") {
+        await createGlAccount({
           code: coaForm.code.trim(),
           name: coaForm.name.trim(),
-          type: coaForm.type,
-          parentId,
-          balance: ob,
-          status: coaForm.status,
-        },
-      ]);
-    } else if (coaModal && typeof coaModal === "object") {
-      const { id } = coaModal.edit;
-      setCoaRows((prev) =>
-        prev.map((r) =>
-          r.id === id
-            ? {
-                ...r,
-                code: coaForm.code.trim(),
-                name: coaForm.name.trim(),
-                type: coaForm.type,
-                parentId,
-                balance: ob,
-                status: coaForm.status,
-              }
-            : r,
-        ),
-      );
-    }
-    if (andNew) {
-      openCoaAdd();
-    } else {
-      setCoaModal(null);
+          account_type: coaForm.type,
+          parent_id: parentId,
+          is_group: coaForm.isGroup,
+          allow_posting: coaForm.allowTransactions,
+          is_active: coaForm.status === "Active",
+        });
+      } else if (coaModal && typeof coaModal === "object") {
+        await updateGlAccount(coaModal.edit.id, {
+          name: coaForm.name.trim(),
+          parent_id: parentId,
+          is_group: coaForm.isGroup,
+          allow_posting: coaForm.allowTransactions,
+          is_active: coaForm.status === "Active",
+        });
+      }
+      await refreshCoa();
+      if (andNew) {
+        openCoaAdd();
+      } else {
+        setCoaModal(null);
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Save failed");
     }
   }
 
-  function deleteCoa(row: CoaRow) {
-    if (!window.confirm(`Remove account ${row.code} from list? (SRS: production uses soft delete.)`)) return;
-    setCoaRows((prev) => prev.filter((r) => r.id !== row.id));
+  async function deactivateCoa(row: CoaRow) {
+    if (!window.confirm(`Deactivate account ${row.code}? It will be hidden from new postings.`)) return;
+    try {
+      await updateGlAccount(row.id, { is_active: false });
+      await refreshCoa();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Update failed");
+    }
   }
 
   function addJeLine() {
-    setJeLines((prev) => [...prev, { id: `j-${Date.now()}`, account: "", lineDesc: "", debit: 0, credit: 0 }]);
+    setJeLines((prev) => [...prev, { id: `j-${Date.now()}`, accountId: "", lineDesc: "", debit: 0, credit: 0 }]);
   }
 
   function updateJeLine(id: string, patch: Partial<(typeof jeLines)[0]>) {
@@ -264,6 +423,156 @@ export function AccountingWorkspace() {
 
   function removeJeLine(id: string) {
     setJeLines((prev) => (prev.length <= 2 ? prev : prev.filter((l) => l.id !== id)));
+  }
+
+  function openNewJournal() {
+    setJeError(null);
+    setJeRef(`JE-${Date.now().toString().slice(-8)}`);
+    setJeMemo("");
+    setJeLines([
+      { id: `j-${Date.now()}-a`, accountId: "", lineDesc: "", debit: 0, credit: 0 },
+      { id: `j-${Date.now()}-b`, accountId: "", lineDesc: "", debit: 0, credit: 0 },
+    ]);
+    setJournalEditorOpen(true);
+  }
+
+  async function saveJournalDraft() {
+    setJeError(null);
+    if (!jeRef.trim() || !jeDate) {
+      setJeError("Date and reference are required.");
+      return;
+    }
+    const lines = jeLines
+      .filter((l) => l.accountId && (l.debit > 0 || l.credit > 0))
+      .map((l) => ({
+        account_id: l.accountId,
+        debit: l.debit,
+        credit: l.credit,
+        description: l.lineDesc,
+      }));
+    if (lines.length < 2) {
+      setJeError("Add at least two lines with an account and an amount.");
+      return;
+    }
+    setJeSaving(true);
+    try {
+      await createJournalEntry({
+        entry_date: jeDate,
+        reference: jeRef.trim(),
+        memo: jeMemo,
+        tag: "",
+        lines,
+      });
+      setJournalEditorOpen(false);
+      if (tab === "journal_list") {
+        const list = await listJournalEntries();
+        setJournalRows(mapJournalSummaries(list));
+      }
+    } catch (e) {
+      setJeError(e instanceof Error ? e.message : "Could not save journal");
+    } finally {
+      setJeSaving(false);
+    }
+  }
+
+  async function saveAndPostJournal() {
+    setJeError(null);
+    if (!jeBalanced.ok) {
+      setJeError("Debits and credits must match before posting.");
+      return;
+    }
+    if (!jeRef.trim() || !jeDate) {
+      setJeError("Date and reference are required.");
+      return;
+    }
+    const lines = jeLines
+      .filter((l) => l.accountId && (l.debit > 0 || l.credit > 0))
+      .map((l) => ({
+        account_id: l.accountId,
+        debit: l.debit,
+        credit: l.credit,
+        description: l.lineDesc,
+      }));
+    if (lines.length < 2) {
+      setJeError("Add at least two lines with an account and an amount.");
+      return;
+    }
+    setJeSaving(true);
+    try {
+      const draft = await createJournalEntry({
+        entry_date: jeDate,
+        reference: jeRef.trim(),
+        memo: jeMemo,
+        tag: "",
+        lines,
+      });
+      await postJournalEntry(draft.id);
+      setJournalEditorOpen(false);
+      const list = await listJournalEntries();
+      setJournalRows(mapJournalSummaries(list));
+    } catch (e) {
+      setJeError(e instanceof Error ? e.message : "Could not post journal");
+    } finally {
+      setJeSaving(false);
+    }
+  }
+
+  async function openJournalViewer(journalId: string) {
+    setJournalViewerOpen(true);
+    setJournalViewerLoading(true);
+    setJournalViewerError(null);
+    setJournalViewerDetail(null);
+    try {
+      const d = await getJournalEntry(journalId);
+      setJournalViewerDetail(d);
+    } catch (e) {
+      setJournalViewerError(e instanceof Error ? e.message : "Could not load journal");
+    } finally {
+      setJournalViewerLoading(false);
+    }
+  }
+
+  async function saveGlPostingSettings() {
+    if (!glPostingSettings) return;
+    setGlPostingSave(true);
+    setGlPostingErr(null);
+    try {
+      const fc = (glPostingSettings.functional_currency || "USD").trim().toUpperCase().slice(0, 3);
+      const updated = await patchGlSettings({
+        functional_currency: fc || "USD",
+        account_inventory_id: glPostingSettings.account_inventory_id,
+        account_purchases_id: glPostingSettings.account_purchases_id,
+        account_ap_id: glPostingSettings.account_ap_id,
+        account_default_bank_id: glPostingSettings.account_default_bank_id,
+        purchase_receipt_mode: glPostingSettings.purchase_receipt_mode,
+        auto_post_purchase_lots: glPostingSettings.auto_post_purchase_lots,
+      });
+      setGlPostingSettings(updated);
+      setFunctionalCurrency(updated.functional_currency || "USD");
+    } catch (e) {
+      setGlPostingErr(e instanceof Error ? e.message : "Could not save GL settings");
+    } finally {
+      setGlPostingSave(false);
+    }
+  }
+
+  async function createReversalFromViewer() {
+    if (!journalViewerDetail || journalViewerDetail.status !== "posted") return;
+    setJournalReversalBusy(true);
+    setJournalViewerError(null);
+    try {
+      await createJournalReversalDraft(journalViewerDetail.id);
+      setJournalViewerOpen(false);
+      setJournalViewerDetail(null);
+      if (tab === "journal_list") {
+        const list = await listJournalEntries();
+        setJournalRows(mapJournalSummaries(list));
+      }
+    } catch (e) {
+      setJournalViewerError(e instanceof Error ? e.message : "Could not create reversal draft");
+    } finally {
+      setJournalReversalBusy(false);
+    }
   }
 
   const selectedBank = bankCards.find((b) => b.id === bankDetailId) ?? null;
@@ -308,20 +617,24 @@ export function AccountingWorkspace() {
           <div className="flex flex-col gap-3 border-b border-[var(--gs-border)] p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-[var(--gs-text)]">Chart of accounts</h2>
-              <p className="mt-0.5 text-sm text-[var(--gs-muted)]">Account code, parent, balance, status  row opens detail drawer.</p>
+              <p className="mt-0.5 text-sm text-[var(--gs-muted)]">
+                Balances are running totals from <strong>posted</strong> journals (as of today). Group accounts are for structure only.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => window.alert("Demo: import COA")}
-                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+                disabled
+                title="Coming later"
+                className="cursor-not-allowed rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-muted)] opacity-50"
               >
                 Import
               </button>
               <button
                 type="button"
-                onClick={() => window.alert("Demo: export COA")}
-                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+                disabled
+                title="Coming later"
+                className="cursor-not-allowed rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-muted)] opacity-50"
               >
                 Export
               </button>
@@ -334,6 +647,14 @@ export function AccountingWorkspace() {
               </button>
             </div>
           </div>
+          {coaError ? (
+            <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-950">{coaError}</div>
+          ) : null}
+          {coaLoading ? (
+            <div className="border-b border-[var(--gs-border)]">
+              <LoadingBlock label="Loading chart of accounts…" className="py-10" />
+            </div>
+          ) : null}
           <div className="flex flex-col gap-3 border-b border-[var(--gs-border)] p-4 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="min-w-[180px] flex-1">
               <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Search</label>
@@ -417,7 +738,7 @@ export function AccountingWorkspace() {
                       </td>
                       <td className="px-5 py-3 text-[var(--gs-muted)]">{row.type}</td>
                       <td className="px-5 py-3 text-[var(--gs-muted)]">{parentLabel(coaRows, row.parentId)}</td>
-                      <td className="px-5 py-3 text-right font-mono text-[var(--gs-text)]">{formatMoney(row.balance, "PKR")}</td>
+                      <td className="px-5 py-3 text-right font-mono text-[var(--gs-text)]">{formatMoney(row.balance, functionalCurrency)}</td>
                       <td className="px-5 py-3">
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${
@@ -434,8 +755,7 @@ export function AccountingWorkspace() {
                           <RowActionsMenu
                             actions={[
                               { label: "View / edit", onSelect: () => openCoaEdit(row), tone: "accent" },
-                              { label: "Delete account", onSelect: () => deleteCoa(row), tone: "danger" },
-                              { label: "View ledger" },
+                              { label: "Deactivate", onSelect: () => deactivateCoa(row), tone: "danger" },
                             ]}
                           />
                         </div>
@@ -445,6 +765,146 @@ export function AccountingWorkspace() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          <div className="border-t border-[var(--gs-border)] p-5">
+            <h3 className="text-base font-bold text-[var(--gs-text)]">Purchase lot posting (GL)</h3>
+            <p className="mt-1 text-sm text-[var(--gs-muted)]">
+              Map system roles to chart accounts. Receipts and payments post automatically when enabled.
+            </p>
+            {glPostingErr ? <p className="mt-2 text-sm text-red-700">{glPostingErr}</p> : null}
+            {glPostingLoad || !glPostingSettings ? (
+              <p className="mt-3 text-sm text-[var(--gs-muted)]">Loading settings…</p>
+            ) : (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="block text-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Functional currency</span>
+                  <input
+                    value={glPostingSettings.functional_currency}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) => (p ? { ...p, functional_currency: e.target.value.toUpperCase().slice(0, 3) } : p))
+                    }
+                    maxLength={3}
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 font-mono text-sm"
+                  />
+                </label>
+                <label className="block text-sm sm:col-span-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Receipt mode</span>
+                  <select
+                    value={glPostingSettings.purchase_receipt_mode}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) => (p ? { ...p, purchase_receipt_mode: e.target.value } : p))
+                    }
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  >
+                    <option value="inventory">Debit inventory</option>
+                    <option value="expense">Debit purchases (expense)</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-sm sm:col-span-3">
+                  <input
+                    type="checkbox"
+                    checked={glPostingSettings.auto_post_purchase_lots}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) => (p ? { ...p, auto_post_purchase_lots: e.target.checked } : p))
+                    }
+                  />
+                  Auto-post purchase receipts and payments to the general ledger
+                </label>
+                <label className="block text-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Inventory (asset)</span>
+                  <select
+                    value={glPostingSettings.account_inventory_id ?? ""}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) =>
+                        p ? { ...p, account_inventory_id: e.target.value || null } : p,
+                      )
+                    }
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  >
+                    <option value="">— None —</option>
+                    {glPostingAccounts
+                      .filter((a) => a.account_type.toLowerCase() === "asset")
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label className="block text-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Purchases (expense)</span>
+                  <select
+                    value={glPostingSettings.account_purchases_id ?? ""}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) =>
+                        p ? { ...p, account_purchases_id: e.target.value || null } : p,
+                      )
+                    }
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  >
+                    <option value="">— None —</option>
+                    {glPostingAccounts
+                      .filter((a) => a.account_type.toLowerCase() === "expense")
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label className="block text-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Accounts payable</span>
+                  <select
+                    value={glPostingSettings.account_ap_id ?? ""}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) => (p ? { ...p, account_ap_id: e.target.value || null } : p))
+                    }
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  >
+                    <option value="">— None —</option>
+                    {glPostingAccounts
+                      .filter((a) => a.account_type.toLowerCase() === "liability")
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label className="block text-sm sm:col-span-2 lg:col-span-3">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Default bank / cash (asset)</span>
+                  <select
+                    value={glPostingSettings.account_default_bank_id ?? ""}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) =>
+                        p ? { ...p, account_default_bank_id: e.target.value || null } : p,
+                      )
+                    }
+                    className="mt-1 w-full max-w-md rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  >
+                    <option value="">— None —</option>
+                    {glPostingAccounts
+                      .filter((a) => a.account_type.toLowerCase() === "asset")
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <button
+                    type="button"
+                    disabled={glPostingSave}
+                    onClick={() => void saveGlPostingSettings()}
+                    className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {glPostingSave ? "Saving…" : "Save GL posting settings"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -497,66 +957,25 @@ export function AccountingWorkspace() {
           <div className="flex flex-col gap-3 rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-[var(--gs-text)]">Journal entries</h2>
-              <p className="mt-1 text-sm text-[var(--gs-muted)]">List, recurring templates, and approval queue  full entry opens full-screen.</p>
+              <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                Manual vouchers: pick accounts from your chart, keep debits equal to credits, then post. Saving a purchase lot posts a
+                receipt entry (inventory or purchases vs AP); recording a payment posts AP vs bank. Use <strong>View lines</strong>{" "}
+                to see full history for each voucher.
+              </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setJournalEditorOpen(true)}
-                className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white shadow-sm"
-              >
-                + New journal entry
-              </button>
-              <button
-                type="button"
-                onClick={() => setJeListView("list")}
-                className={`rounded-full px-4 py-2 text-xs font-semibold sm:text-sm ${
-                  jeListView === "list" ? "bg-[var(--gs-accent)] text-white" : "border border-[var(--gs-border)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
-                }`}
-              >
-                Journal list
-              </button>
-              <button
-                type="button"
-                onClick={() => setJeListView("recurring")}
-                className={`rounded-full px-4 py-2 text-xs font-semibold sm:text-sm ${
-                  jeListView === "recurring" ? "bg-[var(--gs-accent)] text-white" : "border border-[var(--gs-border)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
-                }`}
-              >
-                Recurring journals
-              </button>
-              <button
-                type="button"
-                onClick={() => setJeListView("approval")}
-                className={`rounded-full px-4 py-2 text-xs font-semibold sm:text-sm ${
-                  jeListView === "approval" ? "bg-[var(--gs-accent)] text-white" : "border border-[var(--gs-border)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
-                }`}
-              >
-                Approval queue
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => openNewJournal()}
+              className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white shadow-sm"
+            >
+              + New journal entry
+            </button>
           </div>
 
-          {jeListView === "list" && (
-            <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
-              <div className="flex flex-wrap gap-2 border-b border-[var(--gs-border)] p-4">
-                <input
-                  placeholder="Search ref / description"
-                  className="min-w-[200px] flex-1 rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-                />
-                <input type="date" className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm" />
-                <select className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm">
-                  <option>All statuses</option>
-                  <option>Draft</option>
-                  <option>Posted</option>
-                  <option>Approved</option>
-                </select>
-                <select className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm" aria-label="Created by">
-                  <option>Created by (all)</option>
-                  <option>A. Khan</option>
-                  <option>S. Noor</option>
-                </select>
-              </div>
+          <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+            {journalsLoading ? (
+              <LoadingBlock label="Loading journal entries…" className="py-12" />
+            ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
@@ -564,87 +983,67 @@ export function AccountingWorkspace() {
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3">Reference</th>
                       <th className="px-4 py-3">Description</th>
-                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3">Source</th>
+                      <th className="px-4 py-3 text-right">Total debit</th>
+                      <th className="px-4 py-3 text-right">Total credit</th>
                       <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Created by</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
+                      <th className="px-4 py-3 text-right"> </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--gs-border)]">
-                    {journalRows.map((j) => (
-                      <tr key={j.id} className="cursor-pointer hover:bg-[var(--gs-hover)]/80" onClick={() => window.alert(`Demo: open ${j.ref}`)}>
-                        <td className="px-4 py-3 text-[var(--gs-text)]">{j.date}</td>
-                        <td className="px-4 py-3 font-mono text-[var(--gs-text)]">{j.ref}</td>
-                        <td className="px-4 py-3 text-[var(--gs-text)]">{j.desc}</td>
-                        <td className="px-4 py-3 text-right font-mono">{formatMoney(j.amount, "PKR")}</td>
-                        <td className="px-4 py-3">
-                          <span className="rounded-full bg-[var(--gs-hover)] px-2 py-0.5 text-xs font-semibold text-[var(--gs-text)] ring-1 ring-[var(--gs-border)]">
-                            {j.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-[var(--gs-muted)]">{j.by}</td>
-                        <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                          <RowActionsMenu actions={[{ label: "View", tone: "accent" }, { label: "Edit" }]} />
+                    {journalRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-8 text-center text-[var(--gs-muted)]">
+                          No journal entries yet.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      journalRows.map((j) => (
+                        <tr key={j.id} className="hover:bg-[var(--gs-hover)]/80">
+                          <td className="px-4 py-3 text-[var(--gs-text)]">{j.date}</td>
+                          <td className="px-4 py-3 font-mono text-[var(--gs-text)]">{j.ref}</td>
+                          <td className="max-w-[14rem] truncate px-4 py-3 text-[var(--gs-text)]" title={j.desc}>
+                            {j.desc}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-[var(--gs-muted)]">
+                            <span className="text-[var(--gs-text)]">{j.sourceLabel}</span>
+                            {j.lotCode ? (
+                              <span className="mt-0.5 block font-mono text-[10px] text-[var(--gs-text)]/70">Lot {j.lotCode}</span>
+                            ) : null}
+                            {j.sourceId ? (
+                              <span className="mt-0.5 block font-mono text-[10px] text-[var(--gs-text)]/70">{j.sourceId}</span>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono">{formatMoney(j.amount, functionalCurrency)}</td>
+                          <td className="px-4 py-3 text-right font-mono">{formatMoney(j.creditAmount, functionalCurrency)}</td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${
+                                j.status === "posted"
+                                  ? "bg-emerald-50 text-emerald-900 ring-emerald-100"
+                                  : "bg-[var(--gs-hover)] text-[var(--gs-text)] ring-[var(--gs-border)]"
+                              }`}
+                            >
+                              {j.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => void openJournalViewer(j.id)}
+                              className="rounded-lg border border-[var(--gs-border)] px-3 py-1 text-xs font-semibold text-[var(--gs-accent)] hover:bg-[var(--gs-hover)]"
+                            >
+                              View lines
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-
-          {jeListView === "recurring" && (
-            <div className="rounded-2xl border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-6 text-sm text-[var(--gs-text)]">
-              <p className="font-bold text-[var(--gs-text)]">Recurring journal templates</p>
-              <p className="mt-2 text-[var(--gs-muted)]">Rent, salaries, depreciation  same line layout as manual journals.</p>
-              <button type="button" className="mt-4 text-sm font-semibold text-[var(--gs-accent)] hover:underline">
-                + Create template (demo)
-              </button>
-            </div>
-          )}
-
-          {jeListView === "approval" && (
-            <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-sm">
-              <h3 className="font-bold text-[var(--gs-text)]">Approval queue</h3>
-              <p className="mt-1 text-sm text-[var(--gs-muted)]">Drafts awaiting manager sign-off.</p>
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="text-xs font-bold uppercase text-[var(--gs-muted)]">
-                    <tr>
-                      <th className="py-2 pr-4">Date</th>
-                      <th className="py-2 pr-4">Ref</th>
-                      <th className="py-2 pr-4 text-right">Amount</th>
-                      <th className="py-2 pr-4">Created by</th>
-                      <th className="py-2 pr-4">Status</th>
-                      <th className="py-2 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="py-3 text-[var(--gs-text)]">2026-03-20</td>
-                      <td className="py-3 font-mono">JE-013</td>
-                      <td className="py-3 text-right">{formatMoney(120, "PKR")}</td>
-                      <td className="py-3 text-[var(--gs-muted)]">S. Noor</td>
-                      <td className="py-3">
-                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900 ring-1 ring-amber-100">
-                          Draft
-                        </span>
-                      </td>
-                      <td className="py-3 text-right">
-                        <button type="button" className="mr-2 text-xs font-semibold text-emerald-700 hover:underline">
-                          Approve
-                        </button>
-                        <button type="button" className="text-xs font-semibold text-[var(--gs-muted)] hover:underline">
-                          Reject
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </section>
       )}
 
@@ -694,7 +1093,9 @@ export function AccountingWorkspace() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-[var(--gs-text)]">New journal entry</h2>
-                <p className="mt-1 text-sm text-[var(--gs-muted)]">Full-page editor  debits must equal credits before post.</p>
+                <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                  Choose a posting account per line. Each line is either a debit or a credit — totals must match before you post.
+                </p>
               </div>
               <button
                 type="button"
@@ -734,47 +1135,7 @@ export function AccountingWorkspace() {
                 />
               </div>
             </div>
-            {journalServiceCatalog.length > 0 ? (
-              <div className="mt-4 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-4">
-                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
-                  Revenue  quick add from service catalog
-                </label>
-                <p className="mt-1 text-xs text-[var(--gs-muted)]">
-                  Adds a credit line to the service&apos;s income account (Inventory → Service catalog). Balance with a debit (e.g. cash or AR).
-                </p>
-                <select
-                  key={jeServiceSelectSeq}
-                  defaultValue=""
-                  className="mt-2 w-full max-w-xl rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    if (!id) return;
-                    const s = journalServiceCatalog.find((x) => x.id === id);
-                    if (!s) return;
-                    const acc =
-                      DEMO_REVENUE_ACCOUNTS.find((a) => a.id === s.revenueAccountId) ?? DEMO_REVENUE_ACCOUNTS[0];
-                    setJeServiceSelectSeq((n) => n + 1);
-                    setJeLines((prev) => [
-                      ...prev,
-                      {
-                        id: `j-${Date.now()}`,
-                        account: `${acc.code}  ${acc.name}`,
-                        lineDesc: s.itemName,
-                        debit: 0,
-                        credit: s.rate,
-                      },
-                    ]);
-                  }}
-                >
-                  <option value="">Select service to add credit line...</option>
-                  {journalServiceCatalog.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.itemName}  {formatMoney(s.rate, "PKR")} (→ {revenueAccountLabel(s.revenueAccountId)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
+            {jeError ? <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{jeError}</div> : null}
             <div className="mt-6 overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
@@ -790,12 +1151,18 @@ export function AccountingWorkspace() {
                   {jeLines.map((l) => (
                     <tr key={l.id}>
                       <td className="py-2 pr-4">
-                        <input
-                          value={l.account}
-                          onChange={(e) => updateJeLine(l.id, { account: e.target.value })}
-                          className="w-full min-w-[180px] rounded-lg border border-[var(--gs-border)] px-3 py-2 text-sm"
-                          placeholder="Account"
-                        />
+                        <select
+                          value={l.accountId}
+                          onChange={(e) => updateJeLine(l.id, { accountId: e.target.value })}
+                          className="w-full min-w-[220px] rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-sm"
+                        >
+                          <option value="">Select account…</option>
+                          {postableAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.code} — {a.name}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="py-2 pr-4">
                         <input
@@ -845,11 +1212,11 @@ export function AccountingWorkspace() {
               }`}
             >
               <span>
-                Total debit: <strong>{formatMoney(jeBalanced.debit, "PKR")}</strong> · Total credit:{" "}
-                <strong>{formatMoney(jeBalanced.credit, "PKR")}</strong>
+                Total debit: <strong>{formatMoney(jeBalanced.debit, functionalCurrency)}</strong> · Total credit:{" "}
+                <strong>{formatMoney(jeBalanced.credit, functionalCurrency)}</strong>
                 {!jeBalanced.ok ? (
                   <span className="ml-2 text-amber-800">
-                    · Difference {formatMoney(Math.abs(jeBalanced.debit - jeBalanced.credit), "PKR")}
+                    · Difference {formatMoney(Math.abs(jeBalanced.debit - jeBalanced.credit), functionalCurrency)}
                   </span>
                 ) : null}
               </span>
@@ -857,43 +1224,31 @@ export function AccountingWorkspace() {
                 {jeBalanced.ok ? "Balanced" : "Not balanced"}
               </span>
             </div>
-            <div className="mt-6 grid gap-4 border-t border-[var(--gs-border)] pt-6 sm:grid-cols-2">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Attachments</label>
-                <button
-                  type="button"
-                  onClick={() => window.alert("Demo: upload supporting document")}
-                  className="mt-2 w-full rounded-xl border border-dashed border-[var(--gs-border-strong)] px-4 py-6 text-sm font-semibold text-[var(--gs-muted)] hover:border-[var(--gs-accent)] hover:text-[var(--gs-accent)]"
-                >
-                  Upload file (invoice, proof)
-                </button>
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Tag (optional)</label>
-                <input
-                  value={jeTag}
-                  onChange={(e) => setJeTag(e.target.value)}
-                  placeholder="e.g. Adjustment, Salary"
-                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-                />
-              </div>
-            </div>
-            <div className="mt-6 flex flex-wrap gap-2">
-              <button type="button" className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)]">
-                Save as draft
-              </button>
-              <button type="button" className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)]">
-                Submit for approval
+            <p className="mt-6 border-t border-[var(--gs-border)] pt-4 text-xs text-[var(--gs-muted)]">
+              Drafts must still be <strong>balanced</strong>. Attachments and approval workflows are not enabled in this build.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={jeSaving || !jeBalanced.ok}
+                onClick={() => void saveJournalDraft()}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {jeSaving ? "Saving…" : "Save balanced draft"}
               </button>
               <button
                 type="button"
-                disabled={!jeBalanced.ok}
-                onClick={() => (jeBalanced.ok ? window.alert("Demo: journal posted.") : undefined)}
+                disabled={jeSaving || !jeBalanced.ok}
+                onClick={() => void saveAndPostJournal()}
                 className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Post directly
+                {jeSaving ? "Posting…" : "Post journal"}
               </button>
-              <button type="button" onClick={() => setJournalEditorOpen(false)} className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]">
+              <button
+                type="button"
+                onClick={() => setJournalEditorOpen(false)}
+                className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
+              >
                 Cancel
               </button>
             </div>
@@ -931,7 +1286,7 @@ export function AccountingWorkspace() {
               </div>
               <div className="flex justify-between border-b border-[var(--gs-border)] py-2">
                 <span className="text-[var(--gs-muted)]">Balance</span>
-                <span className="font-mono font-semibold text-[var(--gs-text)]">{formatMoney(coaDetail.balance, "PKR")}</span>
+                <span className="font-mono font-semibold text-[var(--gs-text)]">{formatMoney(coaDetail.balance, functionalCurrency)}</span>
               </div>
               <div className="flex justify-between border-b border-[var(--gs-border)] py-2">
                 <span className="text-[var(--gs-muted)]">Status</span>
@@ -971,7 +1326,8 @@ export function AccountingWorkspace() {
               </button>
             ) : (
               <p className="mt-6 rounded-xl border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-4 text-sm text-[var(--gs-muted)]">
-                No posted lines yet  connect ledger API for activity by account.
+                Account activity by voucher will appear here in a future update. Use <strong>Journal entries</strong> for posted
+                detail today.
               </p>
             )}
           </div>
@@ -1005,8 +1361,9 @@ export function AccountingWorkspace() {
                 <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Account code (auto, editable)</label>
                 <input
                   value={coaForm.code}
+                  readOnly={coaModal !== "add"}
                   onChange={(e) => setCoaForm((f) => ({ ...f, code: e.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 font-mono text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 font-mono text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2 read-only:bg-[var(--gs-hover)]"
                 />
               </div>
               <div>
@@ -1069,26 +1426,10 @@ export function AccountingWorkspace() {
                   </select>
                 </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Opening balance</label>
-                  <input
-                    type="number"
-                    value={coaForm.openingBalance}
-                    onChange={(e) => setCoaForm((f) => ({ ...f, openingBalance: e.target.value }))}
-                    className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">As of date</label>
-                  <input
-                    type="date"
-                    value={coaForm.openingDate}
-                    onChange={(e) => setCoaForm((f) => ({ ...f, openingDate: e.target.value }))}
-                    className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm"
-                  />
-                </div>
-              </div>
+              <p className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 px-4 py-3 text-xs text-[var(--gs-muted)]">
+                Opening balances are recorded with <strong>journal entries</strong>, not on this form. Balances in the list update
+                when you post.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2 border-t border-[var(--gs-border)] p-6">
               <button type="button" onClick={() => setCoaModal(null)} className="rounded-full border border-[var(--gs-border)] px-4 py-2.5 text-sm font-semibold text-[var(--gs-text)]">
@@ -1552,6 +1893,113 @@ export function AccountingWorkspace() {
           </div>
         </div>
       ) : null}
+
+      <AppDialog
+        open={journalViewerOpen}
+        onClose={() => {
+          setJournalViewerOpen(false);
+          setJournalViewerDetail(null);
+          setJournalViewerError(null);
+        }}
+        titleId="journal-viewer-title"
+        title="Journal entry"
+        description={journalViewerDetail ? `${journalViewerDetail.reference} · ${journalViewerDetail.entry_date}` : undefined}
+        size="lg"
+        footer={
+          <div className="flex flex-wrap items-center gap-2">
+            {journalViewerDetail?.status === "posted" ? (
+              <button
+                type="button"
+                disabled={journalReversalBusy}
+                onClick={() => void createReversalFromViewer()}
+                className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100"
+              >
+                {journalReversalBusy ? "Creating…" : "Create reversal draft"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                setJournalViewerOpen(false);
+                setJournalViewerDetail(null);
+                setJournalViewerError(null);
+              }}
+              className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+            >
+              Close
+            </button>
+          </div>
+        }
+      >
+        {journalViewerLoading ? <p className="text-sm text-[var(--gs-muted)]">Loading lines…</p> : null}
+        {journalViewerError ? (
+          <p className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm text-red-800 dark:text-red-100">
+            {journalViewerError}
+          </p>
+        ) : null}
+        {journalViewerDetail && !journalViewerLoading ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/50 px-3 py-2 text-sm">
+              <p>
+                <span className="font-semibold text-[var(--gs-text)]">Memo:</span>{" "}
+                <span className="text-[var(--gs-muted)]">{journalViewerDetail.memo || "—"}</span>
+              </p>
+              <p className="mt-1 text-xs text-[var(--gs-muted)]">
+                Source:{" "}
+                {journalSourceLabel(
+                  journalViewerDetail.source_kind,
+                  journalViewerDetail.source_type,
+                  journalViewerDetail.tag,
+                  journalViewerDetail.vendor_name,
+                )}
+                {journalViewerDetail.lot_code ? (
+                  <>
+                    {" "}
+                    · Lot <span className="font-mono">{journalViewerDetail.lot_code}</span>
+                  </>
+                ) : null}
+                {journalViewerDetail.source_id ? (
+                  <>
+                    {" "}
+                    · ID <span className="font-mono">{journalViewerDetail.source_id}</span>
+                  </>
+                ) : null}
+              </p>
+              <p className="mt-1 text-xs text-[var(--gs-muted)]">
+                Status: <span className="font-semibold text-[var(--gs-text)]">{journalViewerDetail.status}</span>
+              </p>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-[var(--gs-border)]">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                  <tr>
+                    <th className="px-3 py-2">Account</th>
+                    <th className="px-3 py-2">Description</th>
+                    <th className="px-3 py-2 text-right">Debit</th>
+                    <th className="px-3 py-2 text-right">Credit</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--gs-border)]">
+                  {journalViewerDetail.lines.map((ln) => (
+                    <tr key={ln.id}>
+                      <td className="px-3 py-2 font-mono text-[var(--gs-text)]">
+                        {ln.account_code} {ln.account_name}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--gs-muted)]">{ln.description || "—"}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">
+                        {Number(ln.debit) > 0 ? formatMoney(Number(ln.debit), functionalCurrency) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">
+                        {Number(ln.credit) > 0 ? formatMoney(Number(ln.credit), functionalCurrency) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+      </AppDialog>
 
     </div>
   );

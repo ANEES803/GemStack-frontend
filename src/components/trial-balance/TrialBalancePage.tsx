@@ -6,16 +6,21 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AccountDrawer } from "./AccountDrawer";
 import { DEFAULT_TB_FILTERS, FilterPanel, type TbFilterState } from "./FilterPanel";
-import {
-  applyRounding,
-  buildTrialBalanceSource,
-  miniLedgerForAccount,
-  netToDebitCredit,
-} from "./mockData";
+import { fetchTrialBalance, getGlSettings } from "@/lib/glApi";
+
+import { applyRounding, miniLedgerForAccount, netToDebitCredit } from "./mockData";
 import { SettingsModal } from "./SettingsModal";
 import { SummaryCards } from "./SummaryCards";
 import { TrialBalanceTable } from "./TrialBalanceTable";
-import type { TbAccountSource, TbColumnId, TbDisplayRow, TbSettings, SortDirTB, SortKeyTB } from "./types";
+import type {
+  AccountTypeTB,
+  TbAccountSource,
+  TbColumnId,
+  TbDisplayRow,
+  TbSettings,
+  SortDirTB,
+  SortKeyTB,
+} from "./types";
 import { DEFAULT_TB_SETTINGS } from "./types";
 
 const STORAGE_SAVED = "gemstack-tb-saved-view";
@@ -86,12 +91,10 @@ const DEFAULT_COL_PICK: Record<TbColumnId, boolean> = {
 };
 
 export function TrialBalancePage() {
-  const source = useMemo(() => buildTrialBalanceSource(), []);
-  const branchOptions = useMemo(() => {
-    const s = new Set<string>();
-    for (const r of source) s.add(r.branch);
-    return [...s].sort();
-  }, [source]);
+  const [source, setSource] = useState<TbAccountSource[]>([]);
+  const [tbLoading, setTbLoading] = useState(false);
+  const [tbError, setTbError] = useState<string | null>(null);
+  const branchOptions = useMemo(() => ["Main"], []);
 
   const [draftFilters, setDraftFilters] = useState<TbFilterState>(DEFAULT_TB_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<TbFilterState>(DEFAULT_TB_FILTERS);
@@ -102,6 +105,43 @@ export function TrialBalancePage() {
   const [page, setPage] = useState(1);
   const [drawerRow, setDrawerRow] = useState<TbDisplayRow | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const loadTrialBalance = useCallback(async () => {
+    setTbLoading(true);
+    setTbError(null);
+    try {
+      const [report, settings] = await Promise.all([fetchTrialBalance(appliedFilters.asOfDate), getGlSettings()]);
+      const fc = (settings.functional_currency || "USD").toUpperCase();
+      const displayCur: "PKR" | "USD" =
+        appliedFilters.currency === "PKR" ? "PKR" : appliedFilters.currency === "USD" ? "USD" : fc === "PKR" ? "PKR" : "USD";
+      setSource(
+        report.lines.map((ln) => ({
+          id: ln.account_id,
+          code: ln.code,
+          name: ln.name,
+          type: (ln.account_type as AccountTypeTB) || "Asset",
+          branch: "Main",
+          currency: displayCur,
+          postedDebit: Number.parseFloat(ln.debit) || 0,
+          postedCredit: Number.parseFloat(ln.credit) || 0,
+          draftDebit: 0,
+          draftCredit: 0,
+          openingBalance: 0,
+          priorPostedDebit: 0,
+          priorPostedCredit: 0,
+        })),
+      );
+    } catch (e) {
+      setTbError(e instanceof Error ? e.message : "Could not load trial balance");
+      setSource([]);
+    } finally {
+      setTbLoading(false);
+    }
+  }, [appliedFilters.asOfDate, appliedFilters.currency]);
+
+  useEffect(() => {
+    void loadTrialBalance();
+  }, [loadTrialBalance]);
 
   useEffect(() => {
     setColumnPick((p) => ({
@@ -265,15 +305,14 @@ export function TrialBalancePage() {
           <button
             type="button"
             onClick={() => {
-              setAppliedFilters({ ...draftFilters });
+              void loadTrialBalance();
               setPage(1);
-              window.alert("Refreshed (demo).");
             }}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Refresh"
             title="Refresh"
           >
-            <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+            <RefreshCw className={`h-4 w-4 shrink-0 ${tbLoading ? "animate-spin" : ""}`} aria-hidden />
           </button>
           <button
             type="button"
@@ -296,6 +335,12 @@ export function TrialBalancePage() {
         onSaveView={saveView}
         onLoadView={loadView}
       />
+
+      {tbError ? (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
+          {tbError}
+        </p>
+      ) : null}
 
       <SummaryCards
         totalDebit={footerTotals.debit}

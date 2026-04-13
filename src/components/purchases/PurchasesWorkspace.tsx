@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { formatMoney } from "@/lib/format";
+import { fetchVendorOpenBalances, fetchVendors, type VendorDto } from "@/lib/purchaseLotsApi";
 
 type Tab = "flow" | "payments" | "vendors";
 
@@ -17,10 +18,7 @@ const FLOW_STEPS = [
   { id: "pr", label: "Purchase return", desc: "Debit note / returns" },
 ] as const;
 
-const DEMO_VENDORS = [
-  { id: "v1", name: "Sapphire Co.", email: "sales@sapphire.com", balance: 12500 },
-  { id: "v2", name: "Rough Traders Ltd", email: "ops@rough.demo", balance: 0 },
-];
+type VendorUiRow = { id: string; name: string; email: string; balance: number };
 
 export function PurchasesWorkspace() {
   const router = useRouter();
@@ -34,12 +32,37 @@ export function PurchasesWorkspace() {
   const setTab = (t: Tab) => router.push(`/purchases?tab=${t}`, { scroll: false });
 
   const [vendorSearch, setVendorSearch] = useState("");
+  const [vendorRows, setVendorRows] = useState<VendorUiRow[]>([]);
+  const [vendorsError, setVendorsError] = useState<string | null>(null);
+
+  const refreshVendorBalances = useCallback(async () => {
+    try {
+      const [vendors, balances] = await Promise.all([fetchVendors(), fetchVendorOpenBalances()]);
+      const balMap = new Map(balances.map((b) => [b.vendor_id, Number.parseFloat(b.open_balance) || 0]));
+      setVendorRows(
+        vendors.map((v: VendorDto) => ({
+          id: v.id,
+          name: v.name,
+          email: v.email || "",
+          balance: balMap.get(v.id) ?? 0,
+        })),
+      );
+      setVendorsError(null);
+    } catch (e) {
+      setVendorsError(e instanceof Error ? e.message : "Could not load vendors");
+      setVendorRows([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "vendors" || tab === "payments") void refreshVendorBalances();
+  }, [tab, refreshVendorBalances]);
 
   const vendors = useMemo(() => {
     const q = vendorSearch.trim().toLowerCase();
-    if (!q) return DEMO_VENDORS;
-    return DEMO_VENDORS.filter((v) => `${v.name} ${v.email}`.toLowerCase().includes(q));
-  }, [vendorSearch]);
+    if (!q) return vendorRows;
+    return vendorRows.filter((v) => `${v.name} ${v.email}`.toLowerCase().includes(q));
+  }, [vendorSearch, vendorRows]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -106,7 +129,14 @@ export function PurchasesWorkspace() {
       {tab === "payments" && (
         <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm sm:p-6">
           <h2 className="text-lg font-bold text-[var(--gs-text)]">Vendor payments</h2>
-          <p className="mt-1 text-sm text-[var(--gs-muted)]">Allocate to open bills and record bank / cash disbursements.</p>
+          <p className="mt-1 text-sm text-[var(--gs-muted)]">
+            Open balances from unpaid purchase lots (functional currency). Record payments from the{" "}
+            <Link href="/lots" className="font-semibold text-[var(--gs-accent)] hover:underline">
+              Lots
+            </Link>{" "}
+            screen.
+          </p>
+          {vendorsError ? <p className="mt-2 text-sm text-red-700">{vendorsError}</p> : null}
           <div className="mt-6 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
@@ -117,21 +147,30 @@ export function PurchasesWorkspace() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--gs-border)]">
-                {DEMO_VENDORS.map((v) => (
-                  <tr key={v.id} className="hover:bg-[var(--gs-hover)]/80">
-                    <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{v.name}</td>
-                    <td className="px-4 py-3 text-right font-mono text-[var(--gs-text)]">{formatMoney(v.balance, "PKR")}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => window.alert(`Demo: pay ${v.name}`)}
-                        className="rounded-full border border-[var(--gs-border)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
-                      >
-                        Record payment
-                      </button>
+                {vendorRows.filter((v) => v.balance > 0).length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-6 text-center text-[var(--gs-muted)]">
+                      No open vendor balances.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  vendorRows
+                    .filter((v) => v.balance > 0)
+                    .map((v) => (
+                      <tr key={v.id} className="hover:bg-[var(--gs-hover)]/80">
+                        <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{v.name}</td>
+                        <td className="px-4 py-3 text-right font-mono text-[var(--gs-text)]">{formatMoney(v.balance, "USD")}</td>
+                        <td className="px-4 py-3 text-right">
+                          <Link
+                            href="/lots"
+                            className="inline-block rounded-full border border-[var(--gs-border)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-accent)] hover:bg-[var(--gs-hover)]"
+                          >
+                            Go to lots
+                          </Link>
+                        </td>
+                      </tr>
+                    ))
+                )}
               </tbody>
             </table>
           </div>
@@ -143,7 +182,9 @@ export function PurchasesWorkspace() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-[var(--gs-text)]">Vendor list</h2>
-              <p className="mt-1 text-sm text-[var(--gs-muted)]">Search, export, and open vendor profiles.</p>
+              <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                Live from the API. Balance column shows open purchase-lot totals (sub-ledger, not the GL control total).
+              </p>
             </div>
             <button
               type="button"
@@ -161,23 +202,32 @@ export function PurchasesWorkspace() {
               className="w-full max-w-md rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
             />
           </div>
+          {vendorsError ? <p className="mt-2 text-sm text-red-700">{vendorsError}</p> : null}
           <div className="mt-6 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                 <tr>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3 text-right">Balance</th>
+                  <th className="px-4 py-3 text-right">Open balance</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--gs-border)]">
-                {vendors.map((v) => (
-                  <tr key={v.id} className="cursor-pointer hover:bg-[var(--gs-hover)]/80" onClick={() => window.alert(`Demo: vendor ${v.name}`)}>
-                    <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{v.name}</td>
-                    <td className="px-4 py-3 text-[var(--gs-muted)]">{v.email}</td>
-                    <td className="px-4 py-3 text-right font-mono text-[var(--gs-text)]">{formatMoney(v.balance, "PKR")}</td>
+                {vendors.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-6 text-center text-[var(--gs-muted)]">
+                      No vendors yet.
+                    </td>
                   </tr>
-                ))}
+                ) : (
+                  vendors.map((v) => (
+                    <tr key={v.id} className="hover:bg-[var(--gs-hover)]/80">
+                      <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{v.name}</td>
+                      <td className="px-4 py-3 text-[var(--gs-muted)]">{v.email || "—"}</td>
+                      <td className="px-4 py-3 text-right font-mono text-[var(--gs-text)]">{formatMoney(v.balance, "USD")}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

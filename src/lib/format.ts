@@ -15,15 +15,19 @@ function formatAbsUSD(abs: number): string {
   return `${withGrouping(intPart)}.${dec}`;
 }
 
-export function formatMoney(n: number, currency: "USD" | "PKR" = "USD"): string {
+export function formatMoney(n: number, currency: string = "USD"): string {
   if (!Number.isFinite(n)) return "—";
   const neg = n < 0;
   const v = Math.abs(n);
   const sign = neg ? "-" : "";
-  if (currency === "PKR") {
+  const c = (currency || "USD").toUpperCase();
+  if (c === "PKR") {
     return `Rs ${sign}${formatAbsPKR(v)}`;
   }
-  return `$${sign}${formatAbsUSD(v)}`;
+  if (c === "USD") {
+    return `$${sign}${formatAbsUSD(v)}`;
+  }
+  return `${c} ${sign}${formatAbsUSD(v)}`;
 }
 
 export function formatPct(n: number): string {

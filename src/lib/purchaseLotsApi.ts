@@ -1,0 +1,292 @@
+/**
+ * Authenticated API client for vendors and purchase lots (GemStack backend).
+ */
+
+import { getAccessToken } from "@/lib/authClient";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+const FETCH_TIMEOUT_MS = 15_000;
+
+function mergeAbortSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
+  if (!a) return b;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (a.aborted || b.aborted) {
+    controller.abort();
+    return controller.signal;
+  }
+  a.addEventListener("abort", onAbort, { once: true });
+  b.addEventListener("abort", onAbort, { once: true });
+  return controller.signal;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const signal = mergeAbortSignals(init.signal ?? undefined, timeoutController.signal);
+    return await fetch(url, { ...init, signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function authHeaders(): HeadersInit {
+  const token = getAccessToken();
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) h.Authorization = `Bearer ${token}`;
+  return h;
+}
+
+function authBearerOnly(): HeadersInit {
+  const token = getAccessToken();
+  const h: Record<string, string> = {};
+  if (token) h.Authorization = `Bearer ${token}`;
+  return h;
+}
+
+async function parseError(response: Response): Promise<string> {
+  const body = (await response.json().catch(() => ({}))) as { detail?: unknown };
+  const { detail } = body;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: unknown };
+    if (typeof first?.msg === "string") return first.msg;
+  }
+  return `Request failed (${response.status})`;
+}
+
+export type VendorDto = {
+  id: string;
+  business_id: string;
+  name: string;
+  email: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PurchaseLotSummary = {
+  id: string;
+  code: string;
+  supplier: string;
+  total_carats: string;
+  cost: string;
+  date_iso: string;
+  status: string;
+  paid_amount: string;
+  currency: string;
+  payment_terms: string;
+  payment_status: string;
+};
+
+export type PurchaseLotLineDto = {
+  id: string;
+  sort_order: number;
+  item_name: string;
+  category: string;
+  lot_details: string;
+  line_type: string;
+  quantity: string;
+  uom: string;
+  pieces: number;
+  rate: string;
+  line_total: string;
+};
+
+export type LotPaymentDto = {
+  id: string;
+  purchase_lot_id: string;
+  amount: string;
+  payment_method: string;
+  paid_from: string;
+  paid_to: string;
+  bank_account: string;
+  pay_date: string;
+  reference_no: string;
+  notes: string;
+  created_at: string;
+};
+
+export type PurchaseLotDetail = {
+  id: string;
+  business_id: string;
+  vendor_id: string;
+  vendor_name: string;
+  lot_code: string;
+  receipt_date: string;
+  due_date: string | null;
+  payment_terms: string;
+  reference_no: string;
+  receipt_contact_email: string | null;
+  memo: string;
+  status: string;
+  payment_status: string;
+  currency: string;
+  total_amount: string;
+  paid_amount: string;
+  posted_to_gl: boolean;
+  lines: PurchaseLotLineDto[];
+  payments: LotPaymentDto[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type VendorOpenBalanceDto = {
+  vendor_id: string;
+  vendor_name: string;
+  open_balance: string;
+};
+
+export type ApAgingLineDto = {
+  vendor_id: string;
+  vendor_name: string;
+  lot_id: string;
+  lot_code: string;
+  open_amount: string;
+  due_date: string;
+  days_until_due: number;
+  aging_bucket: string;
+};
+
+export async function fetchVendorOpenBalances(): Promise<VendorOpenBalanceDto[]> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/vendors/open-balances`, { headers: authHeaders() });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as VendorOpenBalanceDto[];
+}
+
+export async function fetchApAging(asOfIso: string): Promise<ApAgingLineDto[]> {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/vendors/ap-aging?as_of=${encodeURIComponent(asOfIso)}`,
+    { headers: authHeaders() },
+  );
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as ApAgingLineDto[];
+}
+
+export async function fetchVendors(): Promise<VendorDto[]> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/vendors`, { headers: authHeaders() });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as VendorDto[];
+}
+
+export async function createVendor(body: { name: string; email?: string | null }): Promise<VendorDto> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/vendors`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as VendorDto;
+}
+
+export async function suggestNextLotCode(): Promise<string> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/next-code`, { headers: authHeaders() });
+  if (!response.ok) throw new Error(await parseError(response));
+  const data = (await response.json()) as { lot_code: string };
+  return data.lot_code;
+}
+
+export async function listPurchaseLotSummaries(): Promise<PurchaseLotSummary[]> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots`, { headers: authHeaders() });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as PurchaseLotSummary[];
+}
+
+export type CreatePurchaseLotBody = {
+  vendor_id: string;
+  lot_code?: string | null;
+  receipt_date: string;
+  due_date?: string | null;
+  payment_terms: string;
+  reference_no: string;
+  receipt_contact_email?: string | null;
+  memo: string;
+  currency?: string;
+  lines: {
+    item_name: string;
+    category: string;
+    lot_details: string;
+    line_type: string;
+    quantity: number;
+    uom: string;
+    pieces: number;
+    rate: number;
+  }[];
+};
+
+export async function createPurchaseLot(body: CreatePurchaseLotBody): Promise<PurchaseLotDetail> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as PurchaseLotDetail;
+}
+
+export async function getPurchaseLotByCode(lotCode: string): Promise<PurchaseLotDetail> {
+  const enc = encodeURIComponent(lotCode.trim());
+  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/by-code/${enc}`, { headers: authHeaders() });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as PurchaseLotDetail;
+}
+
+export type PatchPurchaseLotBody = {
+  vendor_id?: string;
+  lot_code?: string;
+  receipt_date?: string;
+  due_date?: string | null;
+  payment_terms?: string;
+  reference_no?: string;
+  receipt_contact_email?: string | null;
+  memo?: string;
+  currency?: string;
+  lines?: CreatePurchaseLotBody["lines"];
+};
+
+export async function patchPurchaseLot(lotId: string, body: PatchPurchaseLotBody): Promise<PurchaseLotDetail> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/${lotId}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as PurchaseLotDetail;
+}
+
+export type AddLotPaymentBody = {
+  amount: number;
+  payment_method: string;
+  paid_from: string;
+  paid_to: string;
+  bank_account: string;
+  pay_date: string;
+  reference_no: string;
+  notes: string;
+};
+
+export async function deletePurchaseLot(lotId: string): Promise<void> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/${lotId}`, {
+    method: "DELETE",
+    headers: authBearerOnly(),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+export async function addPurchaseLotPayment(lotId: string, body: AddLotPaymentBody): Promise<PurchaseLotDetail> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/${lotId}/payments`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as PurchaseLotDetail;
+}
+
+/** Options for inventory “rough lot” dropdown. */
+export async function fetchRoughLotPickerOptions(): Promise<{ code: string; supplier: string }[]> {
+  const rows = await listPurchaseLotSummaries();
+  return rows.map((r) => ({ code: r.code, supplier: r.supplier }));
+}

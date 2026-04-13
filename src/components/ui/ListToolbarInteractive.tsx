@@ -67,6 +67,8 @@ type ListToolbarInteractiveProps = {
   filterChildren: ReactNode;
   onResetFilters: () => void;
   hasActiveFilters: boolean;
+  /** When true, search/sort/filter controls are non-interactive (e.g. list is still loading). */
+  disabled?: boolean;
 };
 
 export function ListToolbarInteractive({
@@ -79,6 +81,7 @@ export function ListToolbarInteractive({
   filterChildren,
   onResetFilters,
   hasActiveFilters,
+  disabled = false,
 }: ListToolbarInteractiveProps) {
   const [sortOpen, setSortOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -233,7 +236,13 @@ export function ListToolbarInteractive({
 
   return (
     <>
-      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-stretch sm:justify-between sm:gap-4 sm:p-6 md:items-center">
+      <div
+        className={cx(
+          "flex flex-col gap-3 p-4 sm:flex-row sm:items-stretch sm:justify-between sm:gap-4 sm:p-6 md:items-center",
+          disabled && "pointer-events-none select-none opacity-55",
+        )}
+        aria-busy={disabled || undefined}
+      >
         <div className="relative min-w-0 w-full max-w-md flex-1 md:max-w-xl">
           <svg
             className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
@@ -250,7 +259,8 @@ export function ListToolbarInteractive({
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={placeholder}
-            className="w-full rounded-full border border-slate-200/90 bg-slate-50/80 py-2.5 pl-10 pr-4 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:ring-2 focus:ring-[var(--gs-accent)]/15"
+            disabled={disabled}
+            className="w-full rounded-full border border-slate-200/90 bg-slate-50/80 py-2.5 pl-10 pr-4 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:ring-2 focus:ring-[var(--gs-accent)]/15 disabled:cursor-not-allowed"
             aria-label="Search"
           />
         </div>
@@ -260,10 +270,12 @@ export function ListToolbarInteractive({
             <button
               type="button"
               onClick={() => {
+                if (disabled) return;
                 setFilterOpen(false);
                 setSortOpen((o) => !o);
               }}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+              disabled={disabled}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed"
               aria-expanded={sortOpen}
               aria-haspopup="listbox"
               aria-label="Sort by"
@@ -277,13 +289,16 @@ export function ListToolbarInteractive({
             <button
               type="button"
               onClick={() => {
+                if (disabled) return;
                 setSortOpen(false);
                 setFilterOpen((o) => !o);
               }}
+              disabled={disabled}
               className={cx(
                 "inline-flex h-10 w-10 items-center justify-center rounded-full text-white shadow-sm transition",
                 "bg-[var(--gs-navy)] hover:bg-slate-800",
                 hasActiveFilters && "ring-2 ring-[var(--gs-accent)]/50 ring-offset-2",
+                disabled && "cursor-not-allowed",
               )}
               aria-expanded={filterOpen}
               aria-label="Filter"
