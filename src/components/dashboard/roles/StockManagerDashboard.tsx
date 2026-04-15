@@ -16,7 +16,7 @@ const movements = [
 
 export function StockManagerDashboard() {
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
       <RoleDashboardIntro role={roleDef} />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -94,7 +94,7 @@ export function StockManagerDashboard() {
                 <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--gs-border)]">
+            <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
               {movements.map((row) => (
                 <tr key={row.lot + row.when} className="hover:bg-[var(--gs-hover)]/80">
                   <td className="px-6 py-3.5 text-[var(--gs-muted)]">{row.when}</td>

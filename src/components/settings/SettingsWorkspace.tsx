@@ -26,7 +26,7 @@ export function SettingsWorkspace() {
   const [baseCurrency, setBaseCurrency] = useState("PKR");
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
       <p className="text-sm leading-relaxed text-[var(--gs-muted)]">
         Company profile, fiscal calendar, tax & currency, account types, workflow, and integrations — front-end only until APIs are wired.
       </p>
@@ -156,7 +156,7 @@ export function SettingsWorkspace() {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                 {["Operating bank", "Trade payables", "Sales revenue"].map((name, i) => (
                   <tr key={name}>
                     <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{name}</td>

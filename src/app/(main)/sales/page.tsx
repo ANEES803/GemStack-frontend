@@ -59,13 +59,13 @@ const METHODS = ["PayPal", "Bank", "Cash", "Wire (SWIFT)", "Other"] as const;
 function pill(status: DemoInvoiceRow["status"]) {
   if (status === "Paid") {
     return (
-      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-[var(--gs-text)] ring-1 ring-emerald-100">
+      <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-200 dark:bg-emerald-900/90 dark:text-emerald-50 dark:ring-emerald-600">
         Paid
       </span>
     );
   }
   return (
-    <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-100">
+    <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-950 ring-1 ring-amber-200 dark:bg-amber-950/85 dark:text-amber-100 dark:ring-amber-700">
       Pending
     </span>
   );
@@ -73,7 +73,7 @@ function pill(status: DemoInvoiceRow["status"]) {
 
 function methodPill(method: string) {
   return (
-    <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-900 ring-1 ring-sky-100/90">
+    <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-950 ring-1 ring-sky-200 dark:bg-sky-950/85 dark:text-sky-100 dark:ring-sky-700">
       {method}
     </span>
   );
@@ -260,7 +260,7 @@ function SalesPageContent() {
             <h2 className="text-lg font-bold text-[var(--gs-text)]">Customers</h2>
             <p className="mt-1 text-sm text-[var(--gs-muted)]">Customer list and profiles  demo data from browser storage.</p>
           </div>
-          <div className="overflow-x-auto">
+          <div className="gs-table-scroll overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                 <tr>
@@ -270,7 +270,7 @@ function SalesPageContent() {
                   <th className="px-5 py-3">Notes</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                 {customers.map((c) => (
                   <tr key={c.id} className="hover:bg-[var(--gs-hover)]/80">
                     <td className="px-5 py-3 font-medium text-[var(--gs-text)]">{c.name}</td>
@@ -397,7 +397,7 @@ function SalesPageContent() {
         />
       }
     >
-      <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+      <div className="gs-table-scroll overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
             <tr className="border-b border-[var(--gs-border)]/80 bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
@@ -410,7 +410,7 @@ function SalesPageContent() {
               <th className="px-5 py-3.5 text-right sm:px-6 sm:py-4">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[var(--gs-border)]">
+          <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
             {filteredSorted.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-5 py-12 text-center text-sm text-[var(--gs-muted)] sm:px-6 sm:py-14">
@@ -421,7 +421,7 @@ function SalesPageContent() {
               filteredSorted.map((row) => {
                 const customerLines = customerTitleLines(row.customer);
                 return (
-                <tr key={row.id} className="bg-[var(--gs-card)] hover:bg-[var(--gs-hover)]/80">
+                <tr key={row.id} className="hover:bg-[var(--gs-hover)]">
                   <td className="whitespace-nowrap px-5 py-4 font-mono text-sm font-semibold text-[var(--gs-text)] sm:px-6 sm:py-5">{row.id}</td>
                   <td className="px-5 py-4 sm:px-6 sm:py-5">
                     <div className="flex items-start gap-3">

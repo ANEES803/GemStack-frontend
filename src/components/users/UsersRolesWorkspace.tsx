@@ -67,10 +67,18 @@ const INITIAL_USERS: UserRow[] = [
 
 function statusPill(status: UserStatus) {
   if (status === "active") {
-    return <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-[var(--gs-text)] ring-1 ring-emerald-100">Active</span>;
+    return (
+      <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-950 ring-1 ring-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-100 dark:ring-emerald-700">
+        Active
+      </span>
+    );
   }
   if (status === "invited") {
-    return <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-800 ring-1 ring-sky-100">Invited</span>;
+    return (
+      <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-950 ring-1 ring-sky-200 dark:bg-sky-950/85 dark:text-sky-100 dark:ring-sky-700">
+        Invited
+      </span>
+    );
   }
   return <span className="inline-flex rounded-full bg-[var(--gs-hover)] px-2.5 py-0.5 text-xs font-semibold text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)]">Disabled</span>;
 }
@@ -205,7 +213,7 @@ export function UsersRolesWorkspace() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
       <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm sm:p-6">
         <h2 className="text-lg font-bold text-[var(--gs-text)]">User &amp; access control (SRS)</h2>
         <p className="mt-2 text-sm leading-relaxed text-[var(--gs-muted)]">
@@ -249,7 +257,7 @@ export function UsersRolesWorkspace() {
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--gs-border)]">
+            <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-[var(--gs-hover)]/80">
                   <td className="px-5 py-3 font-medium text-[var(--gs-text)]">{u.name}</td>
@@ -301,7 +309,7 @@ export function UsersRolesWorkspace() {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--gs-border)]">
+            <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
               {ACCESS_MATRIX.map((row) => (
                 <tr key={row.key}>
                   <td className="py-3 pr-4 text-left font-medium text-[var(--gs-text)]">{row.label}</td>

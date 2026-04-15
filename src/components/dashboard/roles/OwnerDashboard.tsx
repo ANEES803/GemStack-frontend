@@ -40,7 +40,7 @@ function statusPill(status: "Paid" | "Pending") {
 
 export function OwnerDashboard() {
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
       <RoleDashboardIntro role={ownerRole} />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -188,9 +188,9 @@ export function OwnerDashboard() {
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--gs-border)]">
+            <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
               {invoiceRows.map((row) => (
-                <tr key={row.id} className="odd:bg-[var(--gs-table-row)] even:bg-[var(--gs-table-row-alt)] hover:bg-[var(--gs-hover)]">
+                <tr key={row.id} className="hover:bg-[var(--gs-hover)]">
                   <td className="whitespace-nowrap px-6 py-4 font-mono text-sm font-medium text-[var(--gs-text)]">{row.id}</td>
                   <td className="px-6 py-4 text-[var(--gs-text)]">{row.channel}</td>
                   <td className="px-6 py-4 text-[var(--gs-muted)]">{row.fep}</td>

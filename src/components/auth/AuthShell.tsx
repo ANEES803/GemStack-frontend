@@ -18,7 +18,7 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
         }}
         aria-hidden
       />
-      <div className="relative w-full max-w-[420px]">
+      <div className="relative w-full max-w-[420px] sm:max-w-[520px]">
         <Link
           href="/dashboard"
           className="mb-8 flex items-center justify-center gap-2 rounded-xl outline-none ring-offset-2 transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)]"
@@ -36,9 +36,9 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
           </span>
         </Link>
 
-        <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)]/95 p-6 shadow-[0_8px_40px_rgba(15,23,42,0.08)] sm:p-8">
-          <h1 className="text-center text-2xl font-bold tracking-tight text-[var(--gs-text)]">{title}</h1>
-          {subtitle ? <p className="mt-2 text-center text-sm leading-relaxed text-[var(--gs-muted)]">{subtitle}</p> : null}
+        <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)]/95 p-6 shadow-[0_8px_40px_rgba(15,23,42,0.08)] sm:p-8 md:p-10">
+          <h1 className="text-center text-2xl font-bold tracking-tight text-[var(--gs-text)] md:text-3xl">{title}</h1>
+          {subtitle ? <p className="mt-2 text-center text-sm leading-relaxed text-[var(--gs-muted)] md:text-base">{subtitle}</p> : null}
           <div className="mt-6">{children}</div>
           {footer ? <div className="mt-6 border-t border-[var(--gs-border)] pt-5 text-center text-sm text-[var(--gs-muted)]">{footer}</div> : null}
         </div>

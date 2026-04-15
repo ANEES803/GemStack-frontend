@@ -140,7 +140,7 @@ export function TrialBalanceTable({
       <tr
         key={r.id}
         onClick={() => onRowClick(r)}
-        className={`cursor-pointer border-b border-[var(--gs-border)] transition-colors hover:bg-[var(--gs-accent-soft)]/60 ${zebraIdx % 2 === 1 ? "bg-[var(--gs-hover)]/70" : "bg-[var(--gs-card)]"}`}
+        className={`cursor-pointer border-b border-[var(--gs-border)] transition-colors hover:bg-[var(--gs-hover)] ${zebraIdx % 2 === 1 ? "bg-[var(--gs-table-row-alt)]" : "bg-[var(--gs-table-row)]"}`}
       >
         {visibleColumns.code && <td className={`${cell} font-mono text-sm font-semibold text-[var(--gs-text)]`}>{r.code}</td>}
         {visibleColumns.name && <td className={`${cell} font-medium text-[var(--gs-text)]`}>{r.name}</td>}
@@ -155,7 +155,7 @@ export function TrialBalanceTable({
           <td className={`${cell} text-right font-mono text-sm text-[var(--gs-text)]`}>{r.debit > 0 ? formatMoney(r.debit, displayCurrency) : ""}</td>
         )}
         {visibleColumns.credit && (
-          <td className={`${cell} text-right font-mono text-sm text-rose-900`}>{r.credit > 0 ? formatMoney(r.credit, displayCurrency) : ""}</td>
+          <td className={`${cell} text-right font-mono text-sm text-rose-900 dark:text-rose-200`}>{r.credit > 0 ? formatMoney(r.credit, displayCurrency) : ""}</td>
         )}
         {showComparison && visibleColumns.priorDebit && (
           <td className={`${cell} text-right font-mono text-xs text-[var(--gs-muted)]`}>
@@ -271,7 +271,7 @@ export function TrialBalanceTable({
           </p>
         </div>
 
-        <div className="max-h-[min(520px,62vh)] overflow-auto">
+        <div className="gs-table-scroll max-h-[min(520px,62vh)] overflow-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="sticky top-0 z-[1] border-b border-[var(--gs-border)] bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)] shadow-sm">
               <tr>
@@ -319,21 +319,23 @@ export function TrialBalanceTable({
                   <td className={`${cell} text-right font-mono text-[var(--gs-text)]`}>{formatMoney(footerTotals.debit, displayCurrency)}</td>
                 )}
                 {visibleColumns.credit && (
-                  <td className={`${cell} text-right font-mono text-rose-900`}>{formatMoney(footerTotals.credit, displayCurrency)}</td>
+                  <td className={`${cell} text-right font-mono text-rose-900 dark:text-rose-200`}>
+                    {formatMoney(footerTotals.credit, displayCurrency)}
+                  </td>
                 )}
                 {showComparison && visibleColumns.priorDebit && <td className={`${cell} text-right text-xs text-[var(--gs-muted)]`}></td>}
                 {showComparison && visibleColumns.priorCredit && <td className={`${cell} text-right text-xs text-[var(--gs-muted)]`}></td>}
               </tr>
-              <tr className={`border-t border-[var(--gs-border)] ${diffBad ? "bg-red-50/90" : "bg-[var(--gs-card)]"}`}>
+              <tr className={`border-t border-[var(--gs-border)] ${diffBad ? "bg-red-50/90 dark:bg-red-950/45" : "bg-[var(--gs-table-head)]"}`}>
                 <td
                   colSpan={labelColSpan}
-                  className={`${cell} text-sm ${diffBad ? "font-bold text-red-800" : "text-[var(--gs-muted)]"}`}
+                  className={`${cell} text-sm ${diffBad ? "font-bold text-red-900 dark:text-red-100" : "font-medium text-[var(--gs-text)]"}`}
                 >
                   Difference (debit → credit)
                 </td>
                 <td
                   colSpan={Math.max(1, moneyColCount)}
-                  className={`${cell} text-right font-mono text-sm ${diffBad ? "font-bold text-red-700" : "text-[var(--gs-text)]"}`}
+                  className={`${cell} text-right font-mono text-sm ${diffBad ? "font-bold text-red-800 dark:text-red-100" : "font-semibold text-[var(--gs-text)]"}`}
                 >
                   {formatMoney(footerTotals.difference, displayCurrency)}
                 </td>

@@ -175,7 +175,7 @@ export function ThemeToggleIconButton() {
   }, [mode, updateMode]);
 
   if (!mounted) {
-    return <div className="h-9 px-3" aria-hidden />;
+    return <div className="h-10 px-3" aria-hidden />;
   }
 
   const label =

@@ -26,17 +26,58 @@ import {
 } from "@/lib/glApi";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
-type TabId = "coa" | "opening" | "journal_list" | "banking";
+type AccountType = "Asset" | "Liability" | "Equity" | "Revenue" | "Expense";
 
-/** Doc: Accounting → Setup (COA, opening) · Transactions (journals, banking). Tax, currency, parties & items live under Settings / Sales / Inventory. */
+type TabId = "coa" | "gl_posting" | "opening" | "journal_list" | "banking";
+
+/** Doc: Accounting → Setup (COA, GL defaults, opening) · Transactions (journals, banking). */
 const TABS: { id: TabId; label: string; group: "setup" | "transactions" }[] = [
   { id: "coa", label: "Chart of accounts", group: "setup" },
+  { id: "gl_posting", label: "GL posting defaults", group: "setup" },
   { id: "opening", label: "Opening balances", group: "setup" },
   { id: "journal_list", label: "Journal entries", group: "transactions" },
   { id: "banking", label: "Banking", group: "transactions" },
 ];
 
-type AccountType = "Asset" | "Liability" | "Equity" | "Revenue" | "Expense";
+const COA_TYPE_ORDER: AccountType[] = ["Asset", "Liability", "Equity", "Revenue", "Expense"];
+
+/** Group (structural) rows: row tint + encircled name — full strings for Tailwind JIT. */
+const COA_GROUP_ROW: Record<AccountType, string> = {
+  Asset:
+    "!bg-sky-500/14 shadow-[inset_4px_0_0_0] shadow-sky-500 hover:!bg-sky-500/22 dark:!bg-sky-400/18 dark:shadow-sky-400 dark:hover:!bg-sky-400/26",
+  Liability:
+    "!bg-amber-500/14 shadow-[inset_4px_0_0_0] shadow-amber-500 hover:!bg-amber-500/22 dark:!bg-amber-400/18 dark:shadow-amber-400 dark:hover:!bg-amber-400/26",
+  Equity:
+    "!bg-violet-500/14 shadow-[inset_4px_0_0_0] shadow-violet-500 hover:!bg-violet-500/22 dark:!bg-violet-400/18 dark:shadow-violet-400 dark:hover:!bg-violet-400/26",
+  Revenue:
+    "!bg-emerald-500/14 shadow-[inset_4px_0_0_0] shadow-emerald-500 hover:!bg-emerald-500/22 dark:!bg-emerald-400/18 dark:shadow-emerald-400 dark:hover:!bg-emerald-400/26",
+  Expense:
+    "!bg-rose-500/14 shadow-[inset_4px_0_0_0] shadow-rose-500 hover:!bg-rose-500/22 dark:!bg-rose-400/18 dark:shadow-rose-400 dark:hover:!bg-rose-400/26",
+};
+
+const COA_GROUP_NAME_PILL: Record<AccountType, string> = {
+  Asset:
+    "rounded-full bg-sky-500/35 px-3 py-1 text-sm font-semibold text-sky-950 ring-2 ring-sky-600/50 dark:bg-sky-400/25 dark:text-sky-50 dark:ring-sky-300/45",
+  Liability:
+    "rounded-full bg-amber-500/35 px-3 py-1 text-sm font-semibold text-amber-950 ring-2 ring-amber-600/50 dark:bg-amber-400/25 dark:text-amber-50 dark:ring-amber-300/45",
+  Equity:
+    "rounded-full bg-violet-500/35 px-3 py-1 text-sm font-semibold text-violet-950 ring-2 ring-violet-600/50 dark:bg-violet-400/25 dark:text-violet-50 dark:ring-violet-300/45",
+  Revenue:
+    "rounded-full bg-emerald-500/35 px-3 py-1 text-sm font-semibold text-emerald-950 ring-2 ring-emerald-600/50 dark:bg-emerald-400/25 dark:text-emerald-50 dark:ring-emerald-300/45",
+  Expense:
+    "rounded-full bg-rose-500/35 px-3 py-1 text-sm font-semibold text-rose-950 ring-2 ring-rose-600/50 dark:bg-rose-400/25 dark:text-rose-50 dark:ring-rose-300/45",
+};
+
+type CoaRibbonChip = { type: AccountType | "All"; label: string; ring: string; bg: string; activeBg: string };
+
+const COA_CATEGORY_RIBBON: CoaRibbonChip[] = [
+  { type: "All", label: "All", ring: "ring-zinc-400/40", bg: "bg-[var(--gs-hover)]", activeBg: "bg-[var(--gs-navy)] text-white dark:bg-zinc-100 dark:text-zinc-900" },
+  { type: "Asset", label: "Assets", ring: "ring-sky-500/50", bg: "bg-sky-500/10 dark:bg-sky-950/50", activeBg: "bg-sky-600 text-white dark:bg-sky-500" },
+  { type: "Liability", label: "Liabilities", ring: "ring-amber-500/50", bg: "bg-amber-500/10 dark:bg-amber-950/40", activeBg: "bg-amber-600 text-white dark:bg-amber-500" },
+  { type: "Equity", label: "Equity", ring: "ring-violet-500/50", bg: "bg-violet-500/10 dark:bg-violet-950/40", activeBg: "bg-violet-600 text-white dark:bg-violet-500" },
+  { type: "Revenue", label: "Revenue", ring: "ring-emerald-500/50", bg: "bg-emerald-500/10 dark:bg-emerald-950/40", activeBg: "bg-emerald-600 text-white dark:bg-emerald-500" },
+  { type: "Expense", label: "Expenses", ring: "ring-rose-500/50", bg: "bg-rose-500/10 dark:bg-rose-950/40", activeBg: "bg-rose-600 text-white dark:bg-rose-500" },
+];
 
 type CoaRow = {
   id: string;
@@ -51,7 +92,17 @@ type CoaRow = {
 };
 
 function mapDtoToCoaRow(a: GlAccountDto): CoaRow {
-  const t = (a.account_type || "Asset") as AccountType;
+  const raw = (a.account_type || "asset").trim().toLowerCase();
+  const t: AccountType =
+    raw === "liability"
+      ? "Liability"
+      : raw === "equity"
+        ? "Equity"
+        : raw === "revenue"
+          ? "Revenue"
+          : raw === "expense"
+            ? "Expense"
+            : "Asset";
   return {
     id: a.id,
     code: a.code,
@@ -280,7 +331,7 @@ export function AccountingWorkspace() {
   }, [tab]);
 
   useEffect(() => {
-    if (tab !== "coa") return;
+    if (tab !== "gl_posting") return;
     let cancelled = false;
     (async () => {
       setGlPostingLoad(true);
@@ -335,6 +386,36 @@ export function AccountingWorkspace() {
       return true;
     });
   }, [coaSorted, coaSearch, coaTypeFilter, coaStatusFilter]);
+
+  const coaCountsByType = useMemo(() => {
+    const q = coaSearch.trim().toLowerCase();
+    const counts: Record<AccountType, number> = {
+      Asset: 0,
+      Liability: 0,
+      Equity: 0,
+      Revenue: 0,
+      Expense: 0,
+    };
+    for (const row of coaSorted) {
+      if (coaStatusFilter !== "All" && row.status !== coaStatusFilter) continue;
+      if (q && !`${row.code} ${row.name}`.toLowerCase().includes(q)) continue;
+      counts[row.type] += 1;
+    }
+    return counts;
+  }, [coaSorted, coaSearch, coaStatusFilter]);
+
+  const coaGroupedSections = useMemo(() => {
+    const types: readonly AccountType[] = coaTypeFilter === "All" ? COA_TYPE_ORDER : [coaTypeFilter];
+    return types
+      .map((type) => ({
+        type,
+        rows: coaFiltered
+          .filter((r) => r.type === type)
+          .slice()
+          .sort((a, b) => a.code.localeCompare(b.code)),
+      }))
+      .filter((s) => s.rows.length > 0);
+  }, [coaFiltered, coaTypeFilter]);
 
   const jeBalanced = useMemo(() => {
     const d = jeLines.reduce((s, l) => s + l.debit, 0);
@@ -577,38 +658,55 @@ export function AccountingWorkspace() {
 
   const selectedBank = bankCards.find((b) => b.id === bankDetailId) ?? null;
 
+  const coaRibbonTotal = COA_TYPE_ORDER.reduce((sum, t) => sum + coaCountsByType[t], 0);
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <div className="flex flex-col gap-3 rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-3">
-        <div className="flex flex-wrap gap-1">
-          <span className="w-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)] sm:w-auto">Setup</span>
-          {TABS.filter((t) => t.group === "setup").map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => pushTab(t.id)}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
-                tab === t.id ? "bg-[var(--gs-accent)] text-white" : "text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+    <div className="mx-auto max-w-screen-2xl space-y-6 px-4 sm:px-6 lg:px-10">
+      <div className="flex flex-col gap-5 rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4 shadow-sm sm:flex-row sm:items-stretch sm:gap-0 sm:p-5">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:pr-6">
+          <div className="flex items-center gap-2">
+            <span className="rounded-md bg-[var(--gs-pill-active-bg)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--gs-pill-active-text)] ring-1 ring-[var(--gs-border)]">
+              Setup
+            </span>
+          </div>
+          <p className="text-xs leading-snug text-[var(--gs-muted)]">Chart of accounts, GL posting defaults for purchases, and opening balances.</p>
+          <div className="flex flex-wrap gap-2">
+            {TABS.filter((t) => t.group === "setup").map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => pushTab(t.id)}
+                className={`rounded-full px-3 py-2 text-xs font-semibold transition sm:text-sm ${
+                  tab === t.id ? "bg-[var(--gs-accent)] text-white shadow-sm" : "text-[var(--gs-text)] ring-1 ring-[var(--gs-border)] hover:bg-[var(--gs-hover)]"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1 border-t border-[var(--gs-border)] pt-2 sm:border-t-0 sm:pt-0">
-          <span className="w-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)] sm:w-auto">Transactions</span>
-          {TABS.filter((t) => t.group === "transactions").map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => pushTab(t.id)}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
-                tab === t.id ? "bg-[var(--gs-accent)] text-white" : "text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="hidden w-px shrink-0 bg-[var(--gs-border)] sm:block" aria-hidden />
+        <div className="flex min-w-0 flex-1 flex-col gap-2 border-t border-[var(--gs-border)] pt-5 sm:border-t-0 sm:pl-6 sm:pt-0">
+          <div className="flex items-center gap-2">
+            <span className="rounded-md bg-[var(--gs-hover)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--gs-text)] ring-1 ring-[var(--gs-border)]">
+              Transactions
+            </span>
+          </div>
+          <p className="text-xs leading-snug text-[var(--gs-muted)]">Journal vouchers and bank-style activity (demo banking).</p>
+          <div className="flex flex-wrap gap-2">
+            {TABS.filter((t) => t.group === "transactions").map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => pushTab(t.id)}
+                className={`rounded-full px-3 py-2 text-xs font-semibold transition sm:text-sm ${
+                  tab === t.id ? "bg-[var(--gs-accent)] text-white shadow-sm" : "text-[var(--gs-text)] ring-1 ring-[var(--gs-border)] hover:bg-[var(--gs-hover)]"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -619,6 +717,9 @@ export function AccountingWorkspace() {
               <h2 className="text-lg font-bold text-[var(--gs-text)]">Chart of accounts</h2>
               <p className="mt-0.5 text-sm text-[var(--gs-muted)]">
                 Balances are running totals from <strong>posted</strong> journals (as of today). Group accounts are for structure only.
+              </p>
+              <p className="mt-2 text-xs text-[var(--gs-muted)]">
+                Use the category chips to filter and see counts; the list is ordered by type (Asset through Expense) without a second heading in the table.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -655,6 +756,34 @@ export function AccountingWorkspace() {
               <LoadingBlock label="Loading chart of accounts…" className="py-10" />
             </div>
           ) : null}
+          <div className="border-b border-[var(--gs-border)] px-4 py-3 sm:px-5">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Categories</p>
+            <div className="flex flex-wrap gap-2">
+              {COA_CATEGORY_RIBBON.map((chip) => {
+                const count = chip.type === "All" ? coaRibbonTotal : coaCountsByType[chip.type];
+                const active = coaTypeFilter === chip.type;
+                return (
+                  <button
+                    key={chip.type === "All" ? "all" : chip.type}
+                    type="button"
+                    onClick={() => setCoaTypeFilter(chip.type)}
+                    className={`flex min-w-[5.5rem] flex-col rounded-xl border px-3 py-2 text-left text-xs font-semibold ring-1 transition sm:min-w-[6.5rem] sm:px-4 sm:text-sm ${
+                      active ? `${chip.activeBg} border-transparent ring-transparent` : `${chip.bg} border-[var(--gs-border)] text-[var(--gs-text)] ${chip.ring} hover:opacity-95`
+                    }`}
+                  >
+                    <span>{chip.label}</span>
+                    <span
+                      className={`mt-0.5 font-mono text-[10px] font-normal ${
+                        active ? "text-white/90 dark:text-zinc-900/80" : "text-[var(--gs-muted)]"
+                      }`}
+                    >
+                      {count} {count === 1 ? "account" : "accounts"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="flex flex-col gap-3 border-b border-[var(--gs-border)] p-4 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="min-w-[180px] flex-1">
               <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Search</label>
@@ -662,30 +791,15 @@ export function AccountingWorkspace() {
                 value={coaSearch}
                 onChange={(e) => setCoaSearch(e.target.value)}
                 placeholder="Code or name"
-                className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                className="gs-field"
               />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Account type</label>
-              <select
-                value={coaTypeFilter}
-                onChange={(e) => setCoaTypeFilter(e.target.value as AccountType | "All")}
-                className="mt-1 rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
-              >
-                <option value="All">All</option>
-                <option>Asset</option>
-                <option>Liability</option>
-                <option>Equity</option>
-                <option>Revenue</option>
-                <option>Expense</option>
-              </select>
             </div>
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Status</label>
               <select
                 value={coaStatusFilter}
                 onChange={(e) => setCoaStatusFilter(e.target.value as typeof coaStatusFilter)}
-                className="mt-1 rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                className="gs-field"
               >
                 <option>All</option>
                 <option>Active</option>
@@ -704,79 +818,115 @@ export function AccountingWorkspace() {
               Reset filters
             </button>
           </div>
-          <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
-            <table className="min-w-full text-left text-sm">
+          <div className="gs-table-scroll overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+            <table className="w-full min-w-[960px] text-left text-sm lg:min-w-full">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                 <tr>
                   <th className="px-5 py-3">Account code</th>
-                  <th className="px-5 py-3">Account name</th>
+                  <th className="min-w-[200px] px-5 py-3">Account name</th>
                   <th className="px-5 py-3">Type</th>
-                  <th className="px-5 py-3">Parent</th>
+                  <th className="min-w-[140px] px-5 py-3">Parent</th>
                   <th className="px-5 py-3 text-right">Balance</th>
                   <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--gs-border)]">
-                {coaFiltered.map((row) => {
-                  const depth = coaDepth(coaRows, row.id);
-                  return (
-                    <tr
-                      key={row.id}
-                      className="cursor-pointer hover:bg-[var(--gs-hover)]/80"
-                      onClick={() => {
-                        setCoaDetailTab("overview");
-                        setCoaDetail(row);
-                      }}
-                    >
-                      <td className="px-5 py-3 font-mono text-[var(--gs-text)]">{row.code}</td>
-                      <td className="px-5 py-3 text-[var(--gs-text)]">
-                        <span style={{ paddingLeft: `${depth * 16}px` }} className="inline-block">
-                          {depth > 0 ? <span className="mr-2 text-[var(--gs-muted)]">└</span> : null}
-                          {row.name}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-[var(--gs-muted)]">{row.type}</td>
-                      <td className="px-5 py-3 text-[var(--gs-muted)]">{parentLabel(coaRows, row.parentId)}</td>
-                      <td className="px-5 py-3 text-right font-mono text-[var(--gs-text)]">{formatMoney(row.balance, functionalCurrency)}</td>
-                      <td className="px-5 py-3">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${
-                            row.status === "Active"
-                              ? "bg-emerald-50 text-[var(--gs-text)] ring-emerald-100"
-                              : "bg-[var(--gs-hover)] text-[var(--gs-muted)] ring-[var(--gs-border)]"
-                          }`}
-                        >
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-2">
-                          <RowActionsMenu
-                            actions={[
-                              { label: "View / edit", onSelect: () => openCoaEdit(row), tone: "accent" },
-                              { label: "Deactivate", onSelect: () => deactivateCoa(row), tone: "danger" },
-                            ]}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
+              {!coaLoading && coaGroupedSections.length === 0 ? (
+                <tbody>
+                  <tr>
+                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-[var(--gs-muted)]">
+                      No accounts match your filters.
+                    </td>
+                  </tr>
+                </tbody>
+              ) : (
+                coaGroupedSections.map(({ type: sectionType, rows }, sectionIdx) => (
+                  <tbody
+                    key={sectionType}
+                    className={`gs-striped-rows divide-y divide-[var(--gs-border)]${sectionIdx > 0 ? " border-t-2 border-[var(--gs-border)]" : ""}`}
+                  >
+                    {rows.map((row) => {
+                        const depth = coaDepth(coaRows, row.id);
+                        const treePad = depth * 16;
+                        const isHeader = row.isGroup;
+                        return (
+                          <tr
+                            key={row.id}
+                            className={`cursor-pointer ${isHeader ? `coa-chart-group ${COA_GROUP_ROW[row.type]}` : "hover:bg-[var(--gs-hover)]/80"}`}
+                            onClick={() => {
+                              setCoaDetailTab("overview");
+                              setCoaDetail(row);
+                            }}
+                          >
+                            <td
+                              className="px-5 py-3 font-mono text-[var(--gs-text)]"
+                              style={{ paddingLeft: `${20 + treePad}px` }}
+                            >
+                              {row.code}
+                            </td>
+                            <td className="px-5 py-3 text-[var(--gs-text)]">
+                              <span style={{ paddingLeft: `${treePad}px` }} className="inline-flex flex-wrap items-center gap-2">
+                                {depth > 0 ? <span className="shrink-0 text-[var(--gs-muted)]">└</span> : null}
+                                {isHeader ? (
+                                  <span className={COA_GROUP_NAME_PILL[row.type]}>{row.name}</span>
+                                ) : (
+                                  row.name
+                                )}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-[var(--gs-muted)]">{row.type}</td>
+                            <td className="px-5 py-3 text-[var(--gs-muted)]">{parentLabel(coaRows, row.parentId)}</td>
+                            <td className="px-5 py-3 text-right font-mono text-[var(--gs-text)]">
+                              {formatMoney(row.balance, functionalCurrency)}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span
+                                className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${
+                                  row.status === "Active"
+                                    ? "bg-emerald-100 text-emerald-950 ring-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-100 dark:ring-emerald-700"
+                                    : "bg-zinc-200 text-zinc-800 ring-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:ring-zinc-500"
+                                }`}
+                              >
+                                {row.status}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-2">
+                                <RowActionsMenu
+                                  actions={[
+                                    { label: "View / edit", onSelect: () => openCoaEdit(row), tone: "accent" },
+                                    { label: "Deactivate", onSelect: () => deactivateCoa(row), tone: "danger" },
+                                  ]}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                ))
+              )}
             </table>
           </div>
+        </section>
+      )}
 
-          <div className="border-t border-[var(--gs-border)] p-5">
-            <h3 className="text-base font-bold text-[var(--gs-text)]">Purchase lot posting (GL)</h3>
+      {tab === "gl_posting" && (
+        <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
+          <div className="border-b border-[var(--gs-border)] p-5">
+            <h2 className="text-lg font-bold text-[var(--gs-text)]">GL posting defaults</h2>
             <p className="mt-1 text-sm text-[var(--gs-muted)]">
-              Map system roles to chart accounts. Receipts and payments post automatically when enabled.
+              Choose which chart accounts receive <strong>inventory</strong>, <strong>purchases</strong>, <strong>accounts payable</strong>, and{" "}
+              <strong>bank / cash</strong> postings when purchase receipts and vendor payments are recorded. When auto-post is on, those
+              vouchers create journal entries against these accounts.
             </p>
-            {glPostingErr ? <p className="mt-2 text-sm text-red-700">{glPostingErr}</p> : null}
+          </div>
+          {glPostingErr ? <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-800">{glPostingErr}</div> : null}
+          <div className="p-5">
             {glPostingLoad || !glPostingSettings ? (
-              <p className="mt-3 text-sm text-[var(--gs-muted)]">Loading settings…</p>
+              <LoadingBlock label="Loading GL settings…" className="py-10" />
             ) : (
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="block text-sm">
                   <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Functional currency</span>
                   <input
@@ -785,23 +935,23 @@ export function AccountingWorkspace() {
                       setGlPostingSettings((p) => (p ? { ...p, functional_currency: e.target.value.toUpperCase().slice(0, 3) } : p))
                     }
                     maxLength={3}
-                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 font-mono text-sm"
+                    className="gs-field font-mono"
                   />
                 </label>
                 <label className="block text-sm sm:col-span-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Receipt mode</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Purchase receipt mode</span>
                   <select
                     value={glPostingSettings.purchase_receipt_mode}
                     onChange={(e) =>
                       setGlPostingSettings((p) => (p ? { ...p, purchase_receipt_mode: e.target.value } : p))
                     }
-                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    className="gs-field"
                   >
-                    <option value="inventory">Debit inventory</option>
+                    <option value="inventory">Debit inventory (asset)</option>
                     <option value="expense">Debit purchases (expense)</option>
                   </select>
                 </label>
-                <label className="flex items-center gap-2 text-sm sm:col-span-3">
+                <label className="flex items-center gap-2 text-sm text-[var(--gs-text)] sm:col-span-3">
                   <input
                     type="checkbox"
                     checked={glPostingSettings.auto_post_purchase_lots}
@@ -809,7 +959,7 @@ export function AccountingWorkspace() {
                       setGlPostingSettings((p) => (p ? { ...p, auto_post_purchase_lots: e.target.checked } : p))
                     }
                   />
-                  Auto-post purchase receipts and payments to the general ledger
+                  Auto-post purchase receipts and vendor payments to the general ledger
                 </label>
                 <label className="block text-sm">
                   <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Inventory (asset)</span>
@@ -820,7 +970,7 @@ export function AccountingWorkspace() {
                         p ? { ...p, account_inventory_id: e.target.value || null } : p,
                       )
                     }
-                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    className="gs-field"
                   >
                     <option value="">— None —</option>
                     {glPostingAccounts
@@ -841,7 +991,7 @@ export function AccountingWorkspace() {
                         p ? { ...p, account_purchases_id: e.target.value || null } : p,
                       )
                     }
-                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    className="gs-field"
                   >
                     <option value="">— None —</option>
                     {glPostingAccounts
@@ -860,7 +1010,7 @@ export function AccountingWorkspace() {
                     onChange={(e) =>
                       setGlPostingSettings((p) => (p ? { ...p, account_ap_id: e.target.value || null } : p))
                     }
-                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    className="gs-field"
                   >
                     <option value="">— None —</option>
                     {glPostingAccounts
@@ -881,7 +1031,7 @@ export function AccountingWorkspace() {
                         p ? { ...p, account_default_bank_id: e.target.value || null } : p,
                       )
                     }
-                    className="mt-1 w-full max-w-md rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    className="gs-field max-w-md"
                   >
                     <option value="">— None —</option>
                     {glPostingAccounts
@@ -976,7 +1126,7 @@ export function AccountingWorkspace() {
             {journalsLoading ? (
               <LoadingBlock label="Loading journal entries…" className="py-12" />
             ) : (
-              <div className="overflow-x-auto">
+              <div className="gs-table-scroll overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                     <tr>
@@ -990,7 +1140,7 @@ export function AccountingWorkspace() {
                       <th className="px-4 py-3 text-right"> </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--gs-border)]">
+                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                     {journalRows.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="px-4 py-8 text-center text-[var(--gs-muted)]">
@@ -1136,9 +1286,9 @@ export function AccountingWorkspace() {
               </div>
             </div>
             {jeError ? <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{jeError}</div> : null}
-            <div className="mt-6 overflow-x-auto">
+            <div className="gs-table-scroll mt-6 overflow-x-auto rounded-xl border border-[var(--gs-border)]">
               <table className="min-w-full text-left text-sm">
-                <thead className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                   <tr>
                     <th className="py-2 pr-4">Account</th>
                     <th className="py-2 pr-4">Line description</th>
@@ -1147,7 +1297,7 @@ export function AccountingWorkspace() {
                     <th className="py-2 text-right">Remove</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--gs-border)]">
+                <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                   {jeLines.map((l) => (
                     <tr key={l.id}>
                       <td className="py-2 pr-4">
@@ -1208,19 +1358,21 @@ export function AccountingWorkspace() {
             </button>
             <div
               className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
-                jeBalanced.ok ? "border-emerald-200 bg-emerald-50/80" : "border-amber-200 bg-amber-50/80"
+                jeBalanced.ok
+                  ? "border-emerald-200 bg-emerald-50/80 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100"
+                  : "border-amber-200 bg-amber-50/80 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
               }`}
             >
               <span>
                 Total debit: <strong>{formatMoney(jeBalanced.debit, functionalCurrency)}</strong> · Total credit:{" "}
                 <strong>{formatMoney(jeBalanced.credit, functionalCurrency)}</strong>
                 {!jeBalanced.ok ? (
-                  <span className="ml-2 text-amber-800">
+                  <span className="ml-2 text-amber-900 dark:text-amber-200">
                     · Difference {formatMoney(Math.abs(jeBalanced.debit - jeBalanced.credit), functionalCurrency)}
                   </span>
                 ) : null}
               </span>
-              <span className={jeBalanced.ok ? "font-semibold text-[var(--gs-text)]" : "font-semibold text-amber-800"}>
+              <span className={jeBalanced.ok ? "font-semibold text-emerald-900 dark:text-emerald-100" : "font-semibold text-amber-900 dark:text-amber-100"}>
                 {jeBalanced.ok ? "Balanced" : "Not balanced"}
               </span>
             </div>
@@ -1335,12 +1487,26 @@ export function AccountingWorkspace() {
       ) : null}
 
       {coaModal ? (
-        <div className="fixed inset-0 z-[55] flex justify-end bg-black/40">
-          <div className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-[var(--gs-border)] bg-[var(--gs-card)] shadow-2xl">
+        <div
+          className="fixed inset-0 z-[55] flex items-center justify-center bg-black/40 p-4"
+          role="presentation"
+          onClick={() => setCoaModal(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="coa-modal-title"
+            className="flex max-h-[min(90vh,44rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between gap-3 border-b border-[var(--gs-border)] p-6">
               <div>
-                <h3 className="text-lg font-bold text-[var(--gs-text)]">{coaModal === "add" ? "New account" : "Edit account"}</h3>
-                <p className="mt-1 text-xs text-[var(--gs-muted)]">Right drawer  doc layout</p>
+                <h3 id="coa-modal-title" className="text-lg font-bold text-[var(--gs-text)]">
+                  {coaModal === "add" ? "New account" : "Edit account"}
+                </h3>
+                <p className="mt-1 text-xs text-[var(--gs-muted)]">
+                  {coaModal === "add" ? "Add a code and name, then save. Parent must be a group account." : "Code and account type cannot be changed after creation."}
+                </p>
               </div>
               <button type="button" onClick={() => setCoaModal(null)} className="rounded-full p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]" aria-label="Close">
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
@@ -1348,13 +1514,13 @@ export function AccountingWorkspace() {
                 </svg>
               </button>
             </div>
-            <div className="flex-1 space-y-4 p-6">
+            <div className="flex-1 space-y-4 overflow-y-auto p-6">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Account name *</label>
                 <input
                   value={coaForm.name}
                   onChange={(e) => setCoaForm((f) => ({ ...f, name: e.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="gs-field"
                 />
               </div>
               <div>
@@ -1363,15 +1529,16 @@ export function AccountingWorkspace() {
                   value={coaForm.code}
                   readOnly={coaModal !== "add"}
                   onChange={(e) => setCoaForm((f) => ({ ...f, code: e.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 font-mono text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2 read-only:bg-[var(--gs-hover)]"
+                  className="gs-field font-mono read-only:opacity-80"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Account type *</label>
                 <select
                   value={coaForm.type}
+                  disabled={coaModal !== "add"}
                   onChange={(e) => setCoaForm((f) => ({ ...f, type: e.target.value as AccountType }))}
-                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="gs-field disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option>Asset</option>
                   <option>Liability</option>
@@ -1385,14 +1552,17 @@ export function AccountingWorkspace() {
                 <select
                   value={coaForm.parentId}
                   onChange={(e) => setCoaForm((f) => ({ ...f, parentId: e.target.value as string | "none" }))}
-                  className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-4 py-3 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+                  className="gs-field"
                 >
-                  <option value="none"> None (top level) </option>
-                  {coaRows.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.code}  {r.name}
-                    </option>
-                  ))}
+                  <option value="none">None (top level)</option>
+                  {coaRows
+                    .filter((r) => r.isGroup)
+                    .filter((r) => !(typeof coaModal === "object" && coaModal.edit.id === r.id))
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.code} {r.name}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div className="flex flex-col gap-3 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-4">
@@ -1400,26 +1570,34 @@ export function AccountingWorkspace() {
                   <input
                     type="checkbox"
                     checked={coaForm.isGroup}
-                    onChange={(e) => setCoaForm((f) => ({ ...f, isGroup: e.target.checked }))}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setCoaForm((f) => ({
+                        ...f,
+                        isGroup: checked,
+                        allowTransactions: checked ? false : true,
+                      }));
+                    }}
                     className="rounded border-[var(--gs-border-strong)]"
                   />
                   Is group account
                 </label>
-                <label className="flex items-center gap-2 text-sm font-medium text-[var(--gs-text)]">
+                <label className={`flex items-center gap-2 text-sm font-medium ${coaForm.isGroup ? "text-[var(--gs-muted)]" : "text-[var(--gs-text)]"}`}>
                   <input
                     type="checkbox"
                     checked={coaForm.allowTransactions}
+                    disabled={coaForm.isGroup}
                     onChange={(e) => setCoaForm((f) => ({ ...f, allowTransactions: e.target.checked }))}
-                    className="rounded border-[var(--gs-border-strong)]"
+                    className="rounded border-[var(--gs-border-strong)] disabled:cursor-not-allowed"
                   />
-                  Allow transactions
+                  Allow transactions {coaForm.isGroup ? "(off for group accounts)" : ""}
                 </label>
                 <div>
                   <span className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Status</span>
                   <select
                     value={coaForm.status}
                     onChange={(e) => setCoaForm((f) => ({ ...f, status: e.target.value as "Active" | "Inactive" }))}
-                    className="mt-2 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-sm"
+                    className="gs-field bg-[var(--gs-card)]"
                   >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
@@ -1435,16 +1613,18 @@ export function AccountingWorkspace() {
               <button type="button" onClick={() => setCoaModal(null)} className="rounded-full border border-[var(--gs-border)] px-4 py-2.5 text-sm font-semibold text-[var(--gs-text)]">
                 Cancel
               </button>
-              <button type="button" onClick={() => saveCoa(false)} className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white">
+              <button type="button" onClick={() => void saveCoa(false)} className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white">
                 Save
               </button>
-              <button
-                type="button"
-                onClick={() => saveCoa(true)}
-                className="rounded-full border border-orange-200 bg-[var(--gs-accent-soft)] px-5 py-2.5 text-sm font-semibold text-orange-900"
-              >
-                Save &amp; new
-              </button>
+              {coaModal === "add" ? (
+                <button
+                  type="button"
+                  onClick={() => void saveCoa(true)}
+                  className="rounded-full border border-orange-200 bg-[var(--gs-accent-soft)] px-5 py-2.5 text-sm font-semibold text-orange-900 dark:text-orange-100"
+                >
+                  Save &amp; new
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1470,7 +1650,7 @@ export function AccountingWorkspace() {
               </button>
             </div>
             {openingSub === "trial" ? (
-              <div className="mt-8 overflow-x-auto rounded-2xl border border-[var(--gs-border)]">
+              <div className="gs-table-scroll mt-8 overflow-x-auto rounded-2xl border border-[var(--gs-border)]">
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase text-[var(--gs-muted)]">
                     <tr>
@@ -1479,7 +1659,7 @@ export function AccountingWorkspace() {
                       <th className="px-4 py-3 text-right">Credit</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--gs-border)]">
+                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                     <tr>
                       <td className="px-4 py-3">1100  Cash</td>
                       <td className="px-4 py-3 text-right font-mono">{formatMoney(50000, "PKR")}</td>
@@ -1503,7 +1683,7 @@ export function AccountingWorkspace() {
               </div>
             ) : null}
             {openingSub === "customer" ? (
-              <div className="mt-8 overflow-x-auto rounded-2xl border border-[var(--gs-border)]">
+              <div className="gs-table-scroll mt-8 overflow-x-auto rounded-2xl border border-[var(--gs-border)]">
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase text-[var(--gs-muted)]">
                     <tr>
@@ -1513,7 +1693,7 @@ export function AccountingWorkspace() {
                       <th className="px-4 py-3 text-right">Amount</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                     <tr>
                       <td className="px-4 py-3">Gem Traders LLC</td>
                       <td className="px-4 py-3 font-mono text-xs">INV-OPEN-1</td>
@@ -1533,7 +1713,7 @@ export function AccountingWorkspace() {
               </div>
             ) : null}
             {openingSub === "vendor" ? (
-              <div className="mt-8 overflow-x-auto rounded-2xl border border-[var(--gs-border)]">
+              <div className="gs-table-scroll mt-8 overflow-x-auto rounded-2xl border border-[var(--gs-border)]">
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase text-[var(--gs-muted)]">
                     <tr>
@@ -1543,7 +1723,7 @@ export function AccountingWorkspace() {
                       <th className="px-4 py-3 text-right">Amount</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                     <tr>
                       <td className="px-4 py-3">Sapphire Co.</td>
                       <td className="px-4 py-3 font-mono text-xs">BILL-OPEN-1</td>
@@ -1564,7 +1744,7 @@ export function AccountingWorkspace() {
             ) : null}
             {openingSub === "inventory" ? (
               <div className="mt-8 space-y-4">
-                <div className="overflow-x-auto rounded-2xl border border-[var(--gs-border)]">
+                <div className="gs-table-scroll overflow-x-auto rounded-2xl border border-[var(--gs-border)]">
                   <table className="min-w-full text-left text-sm">
                     <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase text-[var(--gs-muted)]">
                       <tr>
@@ -1574,7 +1754,7 @@ export function AccountingWorkspace() {
                         <th className="px-4 py-3 text-right">Total</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                       <tr>
                         <td className="px-4 py-3">Emerald parcel</td>
                         <td className="px-4 py-3 text-right">42</td>
@@ -1637,14 +1817,14 @@ export function AccountingWorkspace() {
             <div className="flex-1 p-6">
               {bankDetailTab === "transactions" ? (
                 <table className="w-full text-left text-sm">
-                  <thead className="text-xs font-bold uppercase text-[var(--gs-muted)]">
+                  <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase text-[var(--gs-muted)]">
                     <tr>
                       <th className="py-2">Date</th>
                       <th className="py-2">Description</th>
                       <th className="py-2 text-right">Amount</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--gs-border)]">
+                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                     <tr>
                       <td className="py-2">2026-03-14</td>
                       <td className="py-2">Wire in</td>
@@ -1834,7 +2014,7 @@ export function AccountingWorkspace() {
             <div className="border-b border-[var(--gs-border)] p-4 md:border-b-0 md:border-r">
               <p className="text-xs font-bold uppercase text-[var(--gs-muted)]">Bank statement</p>
               <table className="mt-3 w-full text-left text-sm">
-                <thead>
+                <thead className="bg-[var(--gs-table-head)]">
                   <tr className="text-xs text-[var(--gs-muted)]">
                     <th className="py-1" aria-label="Select" />
                     <th>Date</th>
@@ -1842,7 +2022,7 @@ export function AccountingWorkspace() {
                     <th className="text-right">Amount</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                   <tr>
                     <td>
                       <input type="checkbox" />
@@ -1857,7 +2037,7 @@ export function AccountingWorkspace() {
             <div className="p-4">
               <p className="text-xs font-bold uppercase text-[var(--gs-muted)]">System records</p>
               <table className="mt-3 w-full text-left text-sm">
-                <thead>
+                <thead className="bg-[var(--gs-table-head)]">
                   <tr className="text-xs text-[var(--gs-muted)]">
                     <th className="py-1" aria-label="Select" />
                     <th>Date</th>
@@ -1865,7 +2045,7 @@ export function AccountingWorkspace() {
                     <th className="text-right">Amount</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                   <tr>
                     <td>
                       <input type="checkbox" />
@@ -1969,7 +2149,7 @@ export function AccountingWorkspace() {
                 Status: <span className="font-semibold text-[var(--gs-text)]">{journalViewerDetail.status}</span>
               </p>
             </div>
-            <div className="overflow-x-auto rounded-lg border border-[var(--gs-border)]">
+            <div className="gs-table-scroll overflow-x-auto rounded-lg border border-[var(--gs-border)]">
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                   <tr>
@@ -1979,7 +2159,7 @@ export function AccountingWorkspace() {
                     <th className="px-3 py-2 text-right">Credit</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--gs-border)]">
+                <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                   {journalViewerDetail.lines.map((ln) => (
                     <tr key={ln.id}>
                       <td className="px-3 py-2 font-mono text-[var(--gs-text)]">

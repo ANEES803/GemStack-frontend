@@ -298,7 +298,7 @@ export default function LotsPage() {
         />
       }
     >
-      <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+      <div className="gs-table-scroll overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[720px] table-fixed border-collapse text-sm">
           <thead>
             <tr className="border-b border-[var(--gs-border)]/80 bg-[var(--gs-table-head)]">
@@ -311,7 +311,7 @@ export default function LotsPage() {
               <th className={`${thBase} text-center`}>Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[var(--gs-border)]">
+          <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
             {!listReady ? (
               <tr>
                 <td colSpan={7} className="p-0">

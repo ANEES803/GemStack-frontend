@@ -95,27 +95,27 @@ function CreateMenu() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 rounded-full bg-[var(--gs-accent)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
+        className="inline-flex min-h-10 items-center gap-2 rounded-full bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)] active:scale-[0.98]"
         aria-expanded={open}
         aria-haspopup="menu"
       >
         <span className="text-base leading-none">+</span>
         Create
-        <svg className="h-3.5 w-3.5 opacity-90" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden>
+        <svg className="h-4 w-4 opacity-90" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
         </svg>
       </button>
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-1 min-w-[7.2rem] rounded-md border border-[var(--gs-border)] bg-[var(--gs-card)] py-0.5 shadow-lg ring-1 ring-[var(--gs-border)]"
+          className="absolute right-0 z-50 mt-2 min-w-[10rem] rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-lg ring-1 ring-[var(--gs-border)]"
         >
           {items.map((it) => (
             <Link
               key={it.href + it.label}
               href={it.href}
               role="menuitem"
-              className="block px-2 py-1 text-[10px] font-semibold leading-tight text-[var(--gs-text)] transition-colors hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
+              className="block px-3 py-2 text-xs font-semibold leading-snug text-[var(--gs-text)] transition-colors hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
               onClick={() => setOpen(false)}
             >
               {it.label}
@@ -145,17 +145,17 @@ function AccountMenu() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded-full py-0.5 pl-0.5 pr-1.5 transition hover:bg-[var(--gs-topbar-icon-hover)]"
+        className="flex min-h-10 items-center gap-2 rounded-full py-1 pl-1 pr-2 transition hover:bg-[var(--gs-topbar-icon-hover)]"
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label="Account and settings"
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--gs-hover)] text-[11px] font-semibold text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)]">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--gs-hover)] text-xs font-semibold text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)]">
           GS
         </span>
-        <span className="hidden text-xs font-medium text-[var(--gs-text)] sm:inline">Account</span>
+        <span className="hidden text-sm font-medium text-[var(--gs-text)] sm:inline">Account</span>
         <svg
-          className={cx("hidden h-3.5 w-3.5 text-[var(--gs-muted)] transition sm:block", open && "rotate-180")}
+          className={cx("hidden h-4 w-4 text-[var(--gs-muted)] transition sm:block", open && "rotate-180")}
           fill="none"
           viewBox="0 0 24 24"
           strokeWidth={2}
@@ -213,10 +213,10 @@ function TopBarActionIcons() {
     <>
       <button
         type="button"
-        className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--gs-muted)] transition hover:bg-[var(--gs-topbar-icon-hover)] hover:text-[var(--gs-text)]"
+        className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--gs-muted)] transition hover:bg-[var(--gs-topbar-icon-hover)] hover:text-[var(--gs-text)]"
         aria-label="Messages"
       >
-        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
+        <svg className="h-[1.125rem] w-[1.125rem]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -226,10 +226,10 @@ function TopBarActionIcons() {
       </button>
       <button
         type="button"
-        className="relative flex h-7 w-7 items-center justify-center rounded-full text-[var(--gs-muted)] transition hover:bg-[var(--gs-topbar-icon-hover)] hover:text-[var(--gs-text)]"
+        className="relative flex h-10 w-10 items-center justify-center rounded-full text-[var(--gs-muted)] transition hover:bg-[var(--gs-topbar-icon-hover)] hover:text-[var(--gs-text)]"
         aria-label="Notifications"
       >
-        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
+        <svg className="h-[1.125rem] w-[1.125rem]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -332,7 +332,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (pathname === "/") {
     return (
       <DateFormatProvider>
-        <div className="min-h-screen bg-white text-neutral-950 dark:bg-[#020617] dark:text-white">{children}</div>
+        <div className="min-h-screen bg-[var(--gs-page-bg)] text-[var(--gs-text)]">{children}</div>
       </DateFormatProvider>
     );
   }
@@ -343,13 +343,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     !PATHS_WITH_PAGE_OWNED_TITLE.has(pathname) &&
     !/^\/dashboard\/.+/.test(pathname) &&
     !pathname.startsWith("/lots/edit");
-  const collapsedSidebarWidth = "6%";
+  /** At least ~52px so icons stay tappable; scales on larger viewports */
+  const collapsedSidebarWidth = "max(3.25rem, 6vw)";
   const expandedSidebarWidth = "16rem";
 
   return (
     <DateFormatProvider>
     <div
-      className="flex min-h-screen overflow-x-hidden bg-white text-neutral-950 transition-colors duration-200 ease-out dark:bg-[#020617] dark:text-white"
+      className="flex min-h-screen overflow-x-hidden bg-[var(--gs-page-bg)] text-[var(--gs-text)] transition-colors duration-200 ease-out"
       suppressHydrationWarning
     >
       <aside
@@ -358,7 +359,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onMouseLeave={() => setSidebarHovered(false)}
         style={{ width: sidebarExpanded ? expandedSidebarWidth : collapsedSidebarWidth }}
         className={cx(
-          "fixed inset-y-0 left-0 z-40 flex flex-col overflow-visible border-r border-neutral-200 bg-white shadow-[4px_0_32px_rgba(15,23,42,0.04)] transition-[width,background-color,border-color] duration-200 ease-out dark:border-[#1f2937] dark:bg-[#020617] dark:shadow-[4px_0_32px_rgba(0,0,0,0.35)]",
+          "fixed inset-y-0 left-0 z-40 flex flex-col overflow-visible border-r border-[var(--gs-border)] bg-[var(--gs-sidebar)] shadow-[4px_0_32px_rgba(15,23,42,0.06)] transition-[width,background-color,border-color] duration-200 ease-out dark:shadow-[4px_0_32px_rgba(0,0,0,0.25)]",
         )}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -385,7 +386,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           aria-controls="app-sidebar"
           aria-label={sidebarExpanded ? "Collapse side menu (icons only)" : "Expand side menu"}
           className={cx(
-            "absolute right-0 top-1/2 z-50 flex h-8 w-8 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-sidebar-edge)] text-[var(--gs-muted)] shadow-sm transition-[opacity,box-shadow,background-color] duration-[200ms] ease-out hover:border-[var(--gs-border-strong)] hover:bg-[var(--gs-card)] hover:text-[var(--gs-text)] hover:shadow-md focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)] focus-visible:ring-offset-2",
+            "absolute right-0 top-1/2 z-50 flex h-8 w-8 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-sidebar-edge)] text-[var(--gs-muted)] shadow-sm transition-[opacity,box-shadow,background-color] duration-[200ms] ease-out hover:border-[var(--gs-border-strong)] hover:bg-[var(--gs-card)] hover:text-[var(--gs-text)] hover:shadow-md focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--gs-sidebar)]",
             sidebarHovered ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
           )}
         >
@@ -404,38 +405,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
         suppressHydrationWarning
       >
-        <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/95 text-neutral-950 backdrop-blur-xl transition-colors duration-200 dark:border-[#1f2937] dark:bg-[#020617]/95 dark:text-white">
-          <div className="grid min-h-[2.45rem] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-4 sm:py-2">
+        <header className="sticky top-0 z-30 border-b border-[var(--gs-border)] bg-[var(--gs-shell-header)] text-[var(--gs-text)] shadow-[0_1px_0_rgba(0,0,0,0.04)] backdrop-blur-xl transition-colors duration-200 dark:shadow-[0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="grid min-h-14 w-full grid-cols-1 items-center gap-3 px-4 py-3 sm:gap-4 sm:px-5 md:min-h-[3.75rem] md:grid-cols-[auto_minmax(0,1fr)_auto] md:py-3.5">
             <Link
               href="/dashboard"
-              className="group flex min-w-0 max-w-[min(18rem,calc(100vw-10rem))] shrink-0 items-center gap-1.5 rounded-lg py-0.5 outline-none ring-offset-2 transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)]"
+              className="group flex min-w-0 max-w-[min(20rem,calc(100vw-10rem))] shrink-0 items-center gap-2.5 rounded-xl py-1 outline-none ring-offset-2 ring-offset-[var(--gs-shell-header)] transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)]"
               title="GemStack — Home"
             >
-              <span className="relative flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-[var(--gs-card)] text-[var(--gs-accent)] shadow-sm ring-1 ring-[var(--gs-border)] transition-transform duration-200 ease-out will-change-transform group-hover:scale-[1.03]">
-                <span className="absolute inset-0 rounded-md bg-gradient-to-br from-[var(--gs-card)] via-[var(--gs-card)] to-[var(--gs-card)]" />
-                <svg className="relative h-[11px] w-[11px] drop-shadow-[0_4px_12px_rgba(241,90,36,0.2)]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--gs-card)] text-[var(--gs-accent)] shadow-sm ring-1 ring-[var(--gs-border)] transition-transform duration-200 ease-out will-change-transform group-hover:scale-[1.03]">
+                <span className="absolute inset-0 rounded-lg bg-gradient-to-br from-[var(--gs-card)] via-[var(--gs-card)] to-[var(--gs-card)]" />
+                <svg className="relative h-[14px] w-[14px] drop-shadow-[0_4px_12px_rgba(241,90,36,0.2)]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                   <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6L12 2z" />
                 </svg>
               </span>
               <span className="min-w-0">
-                <span className="flex flex-wrap items-center gap-1">
-                  <span className="text-[13px] font-black leading-tight tracking-tight">
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-base font-black leading-tight tracking-tight sm:text-[1.05rem]">
                     <span className="bg-gradient-to-r from-[var(--gs-text)] via-[var(--gs-muted)] to-[var(--gs-accent)] bg-clip-text text-transparent">
                       GemStack
                     </span>
                   </span>
-                  <span className="shrink-0 rounded-full bg-[var(--gs-accent-soft)] px-1 py-px text-[6.5px] font-bold uppercase tracking-wider text-[var(--gs-accent)] ring-1 ring-[var(--gs-border)]">
+                  <span className="shrink-0 rounded-full bg-[var(--gs-accent-soft)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--gs-accent)] ring-1 ring-[var(--gs-border)]">
                     Beta
                   </span>
                 </span>
               </span>
             </Link>
-            <div className="flex min-w-0 justify-center px-1 sm:px-2">
-              <div className="w-full max-w-xl">
+            <div className="flex min-w-0 justify-center px-0 sm:px-1">
+              <div className="w-full max-w-xl md:max-w-2xl">
                 <GlobalSearchBar />
               </div>
             </div>
-            <div className="flex shrink-0 items-center justify-end gap-1.5">
+            <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:gap-3 md:w-auto">
               <CreateMenu />
               <TopBarActionIcons />
             </div>
@@ -445,15 +446,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main
           className={cx(
-            "flex w-full min-w-0 flex-1 justify-center px-3 sm:px-5 md:px-10",
+            "flex w-full min-w-0 flex-1 justify-center px-4 sm:px-5 md:px-10 lg:px-12 xl:px-16 2xl:px-20",
             showShellPageTitle ? "py-5 sm:py-7 md:py-9" : "pb-6 pt-5 sm:pb-8 sm:pt-7 md:pb-10 md:pt-9",
           )}
         >
-          <div className="w-full min-w-0 max-w-[1600px]">
+          <div className="w-full min-w-0 max-w-[1600px] mx-auto 2xl:max-w-[1400px]">
             {showShellPageTitle ? (
               <div className="mb-4 sm:mb-6">
-                <h1 className="text-xl font-black tracking-tight text-[var(--gs-text)] sm:text-2xl">{title}</h1>
-                {sub ? <p className="mt-1 text-xs font-medium text-[var(--gs-muted)] sm:text-sm">{sub}</p> : null}
+                <h1 className="text-xl font-black tracking-tight text-[var(--gs-text)] sm:text-2xl md:text-3xl">{title}</h1>
+                {sub ? <p className="mt-1 text-xs font-medium text-[var(--gs-muted)] sm:text-sm md:text-base">{sub}</p> : null}
               </div>
             ) : null}
             {children}

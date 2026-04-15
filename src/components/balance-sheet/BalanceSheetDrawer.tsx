@@ -40,7 +40,7 @@ export function BalanceSheetDrawer({ open, accountLabel, transactions, onClose }
                   <th className="px-3 py-2 text-right">Amount</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                 {transactions.map((t) => (
                   <tr key={t.id}>
                     <td className="px-3 py-2 whitespace-nowrap text-[var(--gs-text)]">{t.date}</td>

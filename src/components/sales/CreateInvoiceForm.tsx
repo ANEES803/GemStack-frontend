@@ -194,7 +194,7 @@ export function CreateInvoiceForm() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 pb-32 no-print">
+    <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6 pb-32 no-print">
       <style jsx global>{`
         @media print {
           body * {

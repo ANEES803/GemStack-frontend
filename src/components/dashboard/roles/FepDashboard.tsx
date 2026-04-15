@@ -78,7 +78,7 @@ export function FepDashboard() {
                 <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--gs-border)]">
+            <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
               {myParcels.map((row) => (
                 <tr key={row.code} className="hover:bg-[var(--gs-hover)]/80">
                   <td className="px-6 py-3.5 font-mono text-sm font-semibold text-[var(--gs-text)]">{row.code}</td>

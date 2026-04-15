@@ -88,7 +88,7 @@ export function LedgerTable({
       <tr
         key={r.id}
         onClick={() => onRowClick(r)}
-        className={`cursor-pointer border-b border-[var(--gs-border)] transition-colors hover:bg-[var(--gs-accent-soft)]/60 ${idx % 2 === 1 ? "bg-[var(--gs-hover)]/70" : "bg-[var(--gs-card)]"}`}
+        className={`cursor-pointer border-b border-[var(--gs-border)] transition-colors hover:bg-[var(--gs-hover)] ${idx % 2 === 1 ? "bg-[var(--gs-table-row-alt)]" : "bg-[var(--gs-table-row)]"}`}
       >
         {visibleColumns.date && <td className={`${cell} whitespace-nowrap text-[var(--gs-text)]`}>{r.date}</td>}
         {visibleColumns.journalNo && (
@@ -113,7 +113,7 @@ export function LedgerTable({
           <td className={`${cell} text-right font-mono text-sm text-[var(--gs-text)]`}>{r.debit > 0 ? formatMoney(r.debit, cur) : ""}</td>
         )}
         {visibleColumns.credit && (
-          <td className={`${cell} text-right font-mono text-sm text-rose-800`}>{r.credit > 0 ? formatMoney(r.credit, cur) : ""}</td>
+          <td className={`${cell} text-right font-mono text-sm text-rose-800 dark:text-rose-200`}>{r.credit > 0 ? formatMoney(r.credit, cur) : ""}</td>
         )}
         {showRunningBalance && visibleColumns.runningBalance && (
           <td className={`${cell} text-right font-mono text-sm font-semibold text-[var(--gs-text)]`}>{formatMoney(r.runningBalance, cur)}</td>
@@ -183,7 +183,7 @@ export function LedgerTable({
         </p>
       </div>
 
-      <div className="max-h-[min(560px,65vh)] overflow-auto">
+      <div className="gs-table-scroll max-h-[min(560px,65vh)] overflow-auto">
         {groupBy !== "none" && grouped ? (
           <div className="divide-y divide-[var(--gs-border)]">
             {grouped.map(([gKey, gRows]) => {

@@ -40,6 +40,7 @@ export const navigation: NavModule[] = [
     href: "/accounting?tab=coa",
     children: [
       { label: "Chart of accounts", href: "/accounting?tab=coa" },
+      { label: "GL posting defaults", href: "/accounting?tab=gl_posting" },
       { label: "Journal entries", href: "/accounting?tab=journal_list" },
       { label: "Banking", href: "/accounting?tab=banking" },
       { label: "Opening balances", href: "/accounting?tab=opening" },

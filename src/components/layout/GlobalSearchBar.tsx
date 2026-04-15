@@ -77,8 +77,8 @@ export function GlobalSearchBar() {
         Search
       </label>
       <div className="relative">
-        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden>
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--gs-muted)]">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden>
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -104,7 +104,7 @@ export function GlobalSearchBar() {
             if (query.trim()) setOpen(true);
           }}
           onKeyDown={onKeyDown}
-          className="w-full rounded-full border border-slate-200 bg-slate-50/90 py-1.5 pl-8 pr-3 text-xs text-slate-900 outline-none ring-0 placeholder:text-slate-400 focus:border-[var(--gs-accent)] focus:bg-white focus:ring-2 focus:ring-orange-100"
+          className="min-h-10 w-full rounded-full border border-[var(--gs-input-border)] bg-[var(--gs-input-bg)] py-2 pl-10 pr-4 text-sm text-[var(--gs-text)] shadow-sm outline-none ring-0 placeholder:text-[var(--gs-muted)] focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
         />
       </div>
 
@@ -112,7 +112,7 @@ export function GlobalSearchBar() {
         <ul
           id={listId}
           role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-slate-900/5"
+          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-auto rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-xl ring-1 ring-[var(--gs-border)]"
         >
           {suggestions.map((e, i) => (
             <li key={e.id} role="presentation">
@@ -123,7 +123,9 @@ export function GlobalSearchBar() {
                 id={`${listId}-opt-${i}`}
                 className={cx(
                   "flex items-start gap-2 px-3 py-2 text-left text-xs transition",
-                  i === active ? "bg-orange-50 text-[var(--gs-navy)]" : "text-slate-800 hover:bg-slate-50",
+                  i === active
+                    ? "bg-[var(--gs-accent-soft)] text-[var(--gs-text)]"
+                    : "text-[var(--gs-text)] hover:bg-[var(--gs-hover)]",
                 )}
                 onMouseEnter={() => setActive(i)}
                 onClick={clearAfterNavigate}
@@ -131,25 +133,25 @@ export function GlobalSearchBar() {
                 <span
                   className={cx(
                     "mt-0.5 shrink-0 rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-wide",
-                    e.category === "Go to" && "bg-slate-100 text-slate-600",
-                    e.category === "Settings" && "bg-orange-50 text-orange-900",
-                    e.category === "Account" && "bg-violet-100 text-violet-800",
-                    e.category === "Invoice" && "bg-emerald-100 text-emerald-800",
-                    e.category === "Item" && "bg-amber-100 text-amber-900",
+                      e.category === "Go to" && "bg-[var(--gs-hover)] text-[var(--gs-muted)]",
+                      e.category === "Settings" && "bg-orange-50 text-orange-900 dark:bg-orange-900/50 dark:text-orange-200",
+                      e.category === "Account" && "bg-violet-100 text-violet-800 dark:bg-violet-900/50 dark:text-violet-200",
+                      e.category === "Invoice" && "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200",
+                      e.category === "Item" && "bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200",
                   )}
                 >
                   {e.category}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold leading-snug">{e.title}</span>
-                  {e.subtitle ? <span className="mt-0.5 block text-[11px] text-slate-500">{e.subtitle}</span> : null}
+                  {e.subtitle ? <span className="mt-0.5 block text-[11px] text-[var(--gs-muted)]">{e.subtitle}</span> : null}
                 </span>
               </Link>
             </li>
           ))}
         </ul>
       ) : query.trim().length > 0 && open ? (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-500 shadow-lg">
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2.5 text-xs text-[var(--gs-muted)] shadow-lg">
           No matches — try another word or check spelling.
         </div>
       ) : null}

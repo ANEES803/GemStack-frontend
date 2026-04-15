@@ -15,7 +15,7 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
-      <div className="max-h-[min(560px,70vh)] overflow-auto">
+      <div className="gs-table-scroll max-h-[min(560px,70vh)] overflow-auto">
         <table className="w-full min-w-[480px] border-collapse text-sm">
           <thead className="sticky top-0 z-[1] border-b border-[var(--gs-border)] bg-[var(--gs-table-head)] text-left text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
             <tr>
@@ -23,7 +23,7 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
               <th className="px-4 py-3 text-right">Amount</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="gs-striped-rows">
             {rows.map((row) => {
               const isDetail = row.kind === "detail";
               const isTotal = row.kind === "total";
@@ -48,7 +48,7 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
                   ? "font-bold tabular-nums text-[var(--gs-text)]"
                   : "tabular-nums text-[var(--gs-text)]";
 
-              const checkClass = showWarning ? "bg-red-50 font-bold text-red-800" : "bg-emerald-50/60 font-semibold text-[var(--gs-text)]";
+              const checkClass = showWarning ? "bg-red-50 font-bold text-red-800 dark:bg-red-950/50 dark:text-red-200" : "bg-emerald-100/90 font-semibold text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100";
 
               return (
                 <tr
@@ -56,7 +56,7 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
                   onClick={() => isDetail && onAccountClick(row)}
                   className={`border-b border-[var(--gs-border)] ${
                     isDetail ? "cursor-pointer hover:bg-[var(--gs-accent-soft)]/50" : ""
-                  } ${isCheck ? checkClass : "bg-[var(--gs-card)]"}`}
+                  } ${isCheck ? checkClass : ""}`}
                 >
                   <td className="px-4 py-2.5 align-top" style={{ paddingLeft: pad }}>
                     <span className={labelClass}>{row.label}</span>
@@ -85,11 +85,11 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
         </table>
       </div>
       {showWarning ? (
-        <p className="border-t border-red-100 bg-red-50/80 px-4 py-3 text-xs font-semibold text-red-800">
+        <p className="border-t border-red-200 bg-red-50/90 px-4 py-3 text-xs font-semibold text-red-900 dark:border-red-900 dark:bg-red-950/50 dark:text-red-100">
           Assets do not equal liabilities plus equity. Review the balance check line.
         </p>
       ) : (
-        <p className="border-t border-emerald-100 bg-emerald-50/50 px-4 py-3 text-xs font-medium text-[var(--gs-text)]">
+        <p className="border-t border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs font-medium text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100">
           Statement balances: total assets equal total liabilities plus equity.
         </p>
       )}

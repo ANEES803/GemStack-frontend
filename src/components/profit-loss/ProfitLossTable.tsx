@@ -117,7 +117,7 @@ export function ProfitLossTable({
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
-        <div className="max-h-[min(640px,70vh)] overflow-auto">
+        <div className="gs-table-scroll max-h-[min(640px,70vh)] overflow-auto">
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead className="sticky top-0 z-[1] border-b border-[var(--gs-border)] bg-[var(--gs-table-head)] text-left text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)] shadow-sm">
               <tr>
@@ -155,12 +155,12 @@ export function ProfitLossTable({
                         isSection
                           ? "bg-[var(--gs-hover)]/95"
                           : isMargin
-                            ? "bg-[var(--gs-card)]"
+                            ? "bg-[var(--gs-table-head)]"
                             : isDetail && vIdx % 2 === 1
-                              ? "bg-[var(--gs-hover)]/40 hover:bg-[var(--gs-accent-soft)]/50"
-                              : "bg-[var(--gs-card)] hover:bg-[var(--gs-accent-soft)]/50"
-                      } ${!isSection ? "cursor-pointer" : ""} ${netProfitRow && marginPositive ? "bg-emerald-50/40" : ""} ${
-                        netProfitRow && marginLoss ? "bg-red-50/40" : ""
+                              ? "bg-[var(--gs-table-row-alt)] hover:bg-[var(--gs-hover)]"
+                              : "bg-[var(--gs-table-row)] hover:bg-[var(--gs-hover)]"
+                      } ${!isSection ? "cursor-pointer" : ""} ${netProfitRow && marginPositive ? "bg-emerald-100/70 dark:bg-emerald-950/35" : ""} ${
+                        netProfitRow && marginLoss ? "bg-red-100/70 dark:bg-red-950/35" : ""
                       }`}
                     >
                       <td className={`${cell} align-middle`} style={{ paddingLeft: padLeft }}>
@@ -187,7 +187,7 @@ export function ProfitLossTable({
                                 : isSection
                                   ? "text-sm font-bold uppercase tracking-wide text-[var(--gs-text)]"
                                   : "font-medium text-[var(--gs-text)]"
-                            } ${isMargin && netProfitRow ? (marginPositive ? "text-green-900" : "text-red-800") : ""}`}
+                            } ${isMargin && netProfitRow ? (marginPositive ? "text-emerald-950 dark:text-emerald-100" : "text-red-900 dark:text-red-100") : ""}`}
                           >
                             {row.label}
                           </span>
@@ -197,7 +197,7 @@ export function ProfitLossTable({
                         className={`${cell} text-right font-mono tabular-nums ${
                           isTotal || isMargin ? "font-bold" : ""
                         } ${row.creditStyle && amtCur < 0 ? "text-[var(--gs-text)]" : "text-[var(--gs-text)]"} ${
-                          netProfitRow ? (marginPositive ? "text-green-900" : "text-red-800") : ""
+                          netProfitRow ? (marginPositive ? "text-emerald-950 dark:text-emerald-100" : "text-red-900 dark:text-red-100") : ""
                         }`}
                       >
                         {row.creditStyle && amtCur < 0 ? `(${formatPlAmount(Math.abs(amtCur), displayCurrency, rounding)})` : formatPlAmount(amtCur, displayCurrency, rounding)}

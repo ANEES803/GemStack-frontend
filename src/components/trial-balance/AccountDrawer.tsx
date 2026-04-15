@@ -58,7 +58,7 @@ export function AccountDrawer({ open, row, openingBalance, lines, onClose }: Pro
                     <th className="px-3 py-2 text-right">Cr</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--gs-border)]">
+                <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                   {lines.map((l) => (
                     <tr key={l.id}>
                       <td className="px-3 py-2 whitespace-nowrap text-[var(--gs-text)]">{l.date}</td>
@@ -67,7 +67,9 @@ export function AccountDrawer({ open, row, openingBalance, lines, onClose }: Pro
                         <div className="text-xs text-[var(--gs-muted)]">{l.memo}</div>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-[var(--gs-text)]">{l.debit > 0 ? formatMoney(l.debit, cur) : ""}</td>
-                      <td className="px-3 py-2 text-right font-mono text-rose-800">{l.credit > 0 ? formatMoney(l.credit, cur) : ""}</td>
+                      <td className="px-3 py-2 text-right font-mono text-rose-800 dark:text-rose-200">
+                        {l.credit > 0 ? formatMoney(l.credit, cur) : ""}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -44,7 +44,7 @@ function toneClass(tone: ActionTone) {
     case "accent":
       return "text-[var(--gs-accent)] hover:bg-[var(--gs-accent-soft)] active:bg-orange-100/60";
     case "success":
-      return "text-[var(--gs-text)] hover:bg-emerald-50 active:bg-emerald-100/70";
+      return "text-emerald-800 hover:bg-emerald-100 hover:text-emerald-950 active:bg-emerald-200/70 dark:text-emerald-200 dark:hover:bg-emerald-950/60 dark:hover:text-emerald-50";
     case "warning":
       return "text-amber-900 hover:bg-amber-50 active:bg-amber-100/70";
     case "info":

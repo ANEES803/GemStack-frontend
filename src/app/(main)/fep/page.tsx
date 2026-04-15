@@ -65,9 +65,9 @@ export default function FepPage() {
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Commission (demo)</p>
           <p className="mt-2 text-2xl font-bold text-[var(--gs-text)]">{formatMoney(monthlyTotal, "PKR")}</p>
         </div>
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-5 shadow-sm sm:col-span-2">
-          <p className="text-sm font-semibold text-[var(--gs-text)]">Rule</p>
-          <p className="mt-1 text-sm text-[var(--gs-text)]/90">Commission = 4% × COGS per sale; payment clears FEP payable.</p>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/35 sm:col-span-2">
+          <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">Rule</p>
+          <p className="mt-1 text-sm text-emerald-900 dark:text-emerald-100/90">Commission = 4% × COGS per sale; payment clears FEP payable.</p>
         </div>
       </div>
 
@@ -75,7 +75,7 @@ export default function FepPage() {
         <div className="border-b border-[var(--gs-border)] px-5 py-4">
           <h2 className="text-lg font-bold text-[var(--gs-text)]">FEP commission</h2>
         </div>
-        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+        <div className="gs-table-scroll overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
               <tr>
@@ -86,7 +86,7 @@ export default function FepPage() {
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--gs-border)]">
+            <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
               {rows.map((r) => (
                 <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
                   <td className="px-5 py-3 font-medium text-[var(--gs-text)]">{r.name}</td>

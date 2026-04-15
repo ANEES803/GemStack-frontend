@@ -1194,7 +1194,7 @@ export function CreateLotForm() {
           </div>
         }
       >
-        <div className="max-h-[70vh] overflow-auto rounded-lg border border-black/20 bg-white p-6 text-black">
+        <div className="max-h-[70vh] overflow-auto rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 text-[var(--gs-text)]">
           <header className="flex items-start justify-between border-b border-black pb-5">
             <div>
               <h2 className="text-2xl font-bold">GemStack Trading Co.</h2>

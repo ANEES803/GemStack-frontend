@@ -65,7 +65,7 @@ export function PurchasesWorkspace() {
   }, [vendorSearch, vendorRows]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
       <p className="text-sm leading-relaxed text-[var(--gs-muted)]">
         Front-end shells for the purchase cycle (requisition → RFQ → PO → GRN → bill → return) and vendor payments. Connect API when ready.
       </p>
@@ -146,7 +146,7 @@ export function PurchasesWorkspace() {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                 {vendorRows.filter((v) => v.balance > 0).length === 0 ? (
                   <tr>
                     <td colSpan={3} className="px-4 py-6 text-center text-[var(--gs-muted)]">
@@ -212,7 +212,7 @@ export function PurchasesWorkspace() {
                   <th className="px-4 py-3 text-right">Open balance</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                 {vendors.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="px-4 py-6 text-center text-[var(--gs-muted)]">

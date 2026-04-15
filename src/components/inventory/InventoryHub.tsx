@@ -2857,7 +2857,7 @@ export function InventoryHub() {
                   <th className="w-12 px-2 py-3 text-right" aria-label="Actions" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                 {items.map((r) => (
                   <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
                     <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{r.itemName}</td>
@@ -2955,7 +2955,7 @@ export function InventoryHub() {
                   <th className="min-w-0 overflow-hidden px-2 py-2.5 text-center align-middle" aria-label="Actions" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                 {items.map((r) => {
                   const amt = lineAmount(r, customInventoryTypes);
                   const specText = formatSpecCell(r, customInventoryTypes);
@@ -3093,7 +3093,7 @@ export function InventoryHub() {
                       <th className="w-14 px-2 py-2 text-right"> </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--gs-border)]">
+                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                     {splitRows.map((row) => (
                       <tr key={row.id}>
                         <td className="px-2 py-1.5">
@@ -4418,7 +4418,7 @@ export function InventoryHub() {
                           <th className="px-3 py-2 text-right">Value</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-[var(--gs-border)]">
+                      <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                         {reportQtyByMonth.length === 0 ? (
                           <tr>
                             <td colSpan={3} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
@@ -4495,7 +4495,7 @@ export function InventoryHub() {
                         <th className="px-3 py-2 text-right">Value</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[var(--gs-border)]">
+                    <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                       {reportByItemName.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
@@ -4538,7 +4538,7 @@ export function InventoryHub() {
                       <th className="px-3 py-2 text-right">Value</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--gs-border)]">
+                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                     {reportByCustodian.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
@@ -4595,7 +4595,7 @@ export function InventoryHub() {
                                             <th className="px-2 py-1.5 text-right">Value</th>
                                           </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-[var(--gs-border)]">
+                                        <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                                           {detailLines.map((r) => (
                                             <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
                                               <td className="whitespace-nowrap px-2 py-1.5 font-mono text-[var(--gs-text)]">
@@ -4645,7 +4645,7 @@ export function InventoryHub() {
                       <th className="px-3 py-2 text-right">Value</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--gs-border)]">
+                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                     {reportByType.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
@@ -4721,7 +4721,7 @@ export function InventoryHub() {
                   <th className="px-2 py-2 text-center">Verified</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                 {inventoryStockRows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--gs-muted)]">

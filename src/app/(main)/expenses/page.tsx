@@ -116,7 +116,7 @@ export default function ExpensesPage() {
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--gs-border)]">
+            <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
               {rows.map((r) => (
                 <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
                   <td className="px-5 py-3 text-[var(--gs-text)]">{r.dateIso}</td>

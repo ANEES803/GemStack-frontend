@@ -16,7 +16,7 @@ const audits = [
 
 export function AdminDashboard() {
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
       <RoleDashboardIntro role={roleDef} />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -118,7 +118,7 @@ export function AdminDashboard() {
                 <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--gs-border)]">
+            <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
               {audits.map((a) => (
                 <tr key={a.when + a.action} className="hover:bg-[var(--gs-hover)]/80">
                   <td className="px-6 py-3.5 font-mono text-xs text-[var(--gs-text)]">{a.who}</td>

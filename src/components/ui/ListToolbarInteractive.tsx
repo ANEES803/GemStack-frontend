@@ -182,7 +182,7 @@ export function ListToolbarInteractive({
       <div
         data-gs-sort-panel
         style={sortStyle}
-        className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.18)] ring-1 ring-black/5"
+        className="flex flex-col overflow-hidden rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-[0_20px_50px_rgba(15,23,42,0.18)] ring-1 ring-[var(--gs-border)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.35)]"
         role="listbox"
       >
         <div className="h-1 shrink-0 rounded-t-xl bg-[var(--gs-navy)]" aria-hidden />
@@ -199,7 +199,7 @@ export function ListToolbarInteractive({
                   }}
                   className={cx(
                     "w-full px-4 py-2.5 text-left text-sm leading-snug transition",
-                    selected ? "font-semibold text-[var(--gs-navy)]" : "font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800",
+                    selected ? "font-semibold text-[var(--gs-accent)]" : "font-medium text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]",
                   )}
                 >
                   {opt.label}
@@ -216,10 +216,10 @@ export function ListToolbarInteractive({
       <div
         data-gs-filter-panel
         style={filterStyle}
-        className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.18)] ring-1 ring-black/5"
+        className="flex flex-col overflow-hidden rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-[0_20px_50px_rgba(15,23,42,0.18)] ring-1 ring-[var(--gs-border)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.35)]"
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
-          <span className="text-base font-bold text-slate-900">Filter</span>
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--gs-border)] px-4 py-3">
+          <span className="text-base font-bold text-[var(--gs-text)]">Filter</span>
           <button
             type="button"
             onClick={() => {
@@ -245,7 +245,7 @@ export function ListToolbarInteractive({
       >
         <div className="relative min-w-0 w-full max-w-md flex-1 md:max-w-xl">
           <svg
-            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--gs-muted)]"
             fill="none"
             viewBox="0 0 24 24"
             strokeWidth={1.5}
@@ -260,7 +260,7 @@ export function ListToolbarInteractive({
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={placeholder}
             disabled={disabled}
-            className="w-full rounded-full border border-slate-200/90 bg-slate-50/80 py-2.5 pl-10 pr-4 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:ring-2 focus:ring-[var(--gs-accent)]/15 disabled:cursor-not-allowed"
+            className="w-full rounded-full border border-[var(--gs-input-border)] bg-[var(--gs-input-bg)] py-2.5 pl-10 pr-4 text-sm text-[var(--gs-text)] shadow-sm outline-none transition placeholder:text-[var(--gs-muted)] focus:border-[var(--gs-accent)] focus:ring-2 focus:ring-[var(--gs-accent)]/15 disabled:cursor-not-allowed"
             aria-label="Search"
           />
         </div>
@@ -275,7 +275,7 @@ export function ListToolbarInteractive({
                 setSortOpen((o) => !o);
               }}
               disabled={disabled}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm transition hover:border-[var(--gs-border-strong)] hover:bg-[var(--gs-hover)] disabled:cursor-not-allowed"
               aria-expanded={sortOpen}
               aria-haspopup="listbox"
               aria-label="Sort by"
@@ -297,7 +297,7 @@ export function ListToolbarInteractive({
               className={cx(
                 "inline-flex h-10 w-10 items-center justify-center rounded-full text-white shadow-sm transition",
                 "bg-[var(--gs-navy)] hover:bg-slate-800",
-                hasActiveFilters && "ring-2 ring-[var(--gs-accent)]/50 ring-offset-2",
+                hasActiveFilters && "ring-2 ring-[var(--gs-accent)]/50 ring-offset-2 ring-offset-[var(--gs-page-bg)]",
                 disabled && "cursor-not-allowed",
               )}
               aria-expanded={filterOpen}
@@ -324,15 +324,15 @@ type FilterSectionProps = {
 export function FilterSection({ title, defaultOpen = true, children }: FilterSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-b border-slate-100 last:border-b-0">
+    <div className="border-b border-[var(--gs-border)] last:border-b-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
       >
-        <span className="text-sm font-bold text-slate-900">{title}</span>
+        <span className="text-sm font-bold text-[var(--gs-text)]">{title}</span>
         <svg
-          className={cx("h-4 w-4 shrink-0 text-slate-400 transition", open && "-rotate-180")}
+          className={cx("h-4 w-4 shrink-0 text-[var(--gs-muted)] transition", open && "-rotate-180")}
           fill="none"
           viewBox="0 0 24 24"
           strokeWidth={2}
@@ -355,14 +355,14 @@ type FilterCheckboxProps = {
 
 export function FilterCheckboxRow({ label, checked, onChange }: FilterCheckboxProps) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-transparent px-1.5 py-1 hover:border-slate-100 hover:bg-slate-50/80">
+    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-transparent px-1.5 py-1 hover:border-[var(--gs-border)] hover:bg-[var(--gs-hover)]">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-[var(--gs-accent)] focus:ring-[var(--gs-accent)]"
+        className="h-3.5 w-3.5 shrink-0 rounded border-[var(--gs-input-border)] text-[var(--gs-accent)] focus:ring-[var(--gs-accent)]"
       />
-      <span className="min-w-0 text-xs font-semibold leading-snug text-slate-700 sm:text-sm">{label}</span>
+      <span className="min-w-0 text-xs font-semibold leading-snug text-[var(--gs-text)] sm:text-sm">{label}</span>
     </label>
   );
 }
@@ -383,24 +383,24 @@ type FilterDateRangeProps = {
 export function FilterDateRangeRow({ title = "Date range", from, to, onFromChange, onToChange }: FilterDateRangeProps) {
   return (
     <div className="space-y-3">
-      {title ? <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{title}</p> : null}
+      {title ? <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">{title}</p> : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="block text-xs font-semibold text-slate-600">From</label>
+          <label className="block text-xs font-semibold text-[var(--gs-muted)]">From</label>
           <input
             type="date"
             value={from}
             onChange={(e) => onFromChange(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+            className="mt-1 w-full rounded-xl border border-[var(--gs-input-border)] bg-[var(--gs-input-bg)] px-3 py-2 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
           />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-600">To</label>
+          <label className="block text-xs font-semibold text-[var(--gs-muted)]">To</label>
           <input
             type="date"
             value={to}
             onChange={(e) => onToChange(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[var(--gs-accent)] focus:ring-2"
+            className="mt-1 w-full rounded-xl border border-[var(--gs-input-border)] bg-[var(--gs-input-bg)] px-3 py-2 text-sm text-[var(--gs-text)] outline-none focus:border-[var(--gs-accent)] focus:ring-2"
           />
         </div>
       </div>

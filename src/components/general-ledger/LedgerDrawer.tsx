@@ -79,7 +79,7 @@ export function LedgerDrawer({ open, data, onClose }: Props) {
                     <th className="px-3 py-2 text-right">Credit</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--gs-border)]">
+                <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                   {lines.map((l) => (
                     <tr key={l.id}>
                       <td className="px-3 py-2">

@@ -97,12 +97,11 @@ export function ProfitLossPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-[1100px] space-y-6 pb-10">
+    <div className="mx-auto max-w-[1100px] px-4 sm:px-6 lg:px-8 space-y-6 pb-10">
       <header className="flex flex-col gap-4 border-b border-[var(--gs-border)]/80 pb-6 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-text)] sm:text-3xl">Profit & Loss</h1>
-          <p className="mt-1 max-w-2xl text-sm text-[var(--gs-muted)]">Revenue, COGS, expenses, net profit</p>
-          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--gs-muted)]">
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--gs-text)] sm:text-3xl md:text-4xl">Profit & Loss</h1>
+          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--gs-muted)] md:mt-1 md:text-sm">
             <span>
               Period:{" "}
               <span className="font-mono font-semibold text-[var(--gs-text)]">

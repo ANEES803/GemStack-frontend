@@ -577,7 +577,7 @@ export function EditLotForm({ lotCode }: Props) {
                       <th className="px-2 py-2 text-right">Rate</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[var(--gs-border)]">
+                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
                     {lineRows.map((ln) => (
                       <tr key={ln.id}>
                         <td className="px-2 py-1.5">

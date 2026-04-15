@@ -16,66 +16,79 @@ type Props = {
   compact?: boolean;
 };
 
+type CardDef = {
+  label: string;
+  value: string;
+  sub: string;
+  icon: typeof TrendingUp;
+  leftBar: string;
+  iconWrap: string;
+  valueClass: string;
+};
+
 export function SummaryCards({ totalRevenue, grossProfit, netProfit, netProfitPct, currency, rounding, compact }: Props) {
   const pad = compact ? "p-4" : "p-5";
-  const cards = [
+  const cards: CardDef[] = [
     {
       label: "Total revenue",
       value: formatPlAmount(totalRevenue, currency, rounding),
       sub: "Period total",
       icon: TrendingUp,
-      tint: "from-emerald-50/90 to-white ring-emerald-200/55",
-      iconBg: "bg-emerald-100 text-[var(--gs-text)]",
+      leftBar: "border-l-emerald-500",
+      iconWrap:
+        "bg-emerald-500/12 text-emerald-800 ring-1 ring-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-400/20",
+      valueClass: "text-[var(--gs-text)]",
     },
     {
       label: "Gross profit",
       value: formatPlAmount(grossProfit, currency, rounding),
-      sub: "Revenue âˆ’ COGS",
+      sub: "Revenue − COGS",
       icon: Scale,
-      tint: "from-sky-50/90 to-white ring-sky-200/55",
-      iconBg: "bg-sky-100 text-sky-800",
+      leftBar: "border-l-sky-500",
+      iconWrap:
+        "bg-sky-500/12 text-sky-800 ring-1 ring-sky-500/25 dark:bg-sky-500/15 dark:text-sky-200 dark:ring-sky-400/20",
+      valueClass: "text-[var(--gs-text)]",
     },
     {
       label: "Net profit",
       value: formatPlAmount(netProfit, currency, rounding),
       sub: netProfit >= 0 ? "After all expenses" : "Net loss",
       icon: PiggyBank,
-      tint:
-        netProfit >= 0
-          ? "from-green-50/95 to-white ring-green-200/60"
-          : "from-red-50/95 to-white ring-red-200/70",
-      iconBg: netProfit >= 0 ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800",
-      valueClass: netProfit >= 0 ? "text-green-900" : "text-red-800",
+      leftBar: netProfit >= 0 ? "border-l-emerald-600" : "border-l-red-500",
+      iconWrap: netProfit >= 0
+        ? "bg-emerald-500/12 text-emerald-800 ring-1 ring-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-200 dark:ring-emerald-400/20"
+        : "bg-red-500/12 text-red-800 ring-1 ring-red-500/25 dark:bg-red-500/15 dark:text-red-200 dark:ring-red-400/20",
+      valueClass: netProfit >= 0 ? "text-emerald-900 dark:text-emerald-100" : "text-red-800 dark:text-red-100",
     },
     {
       label: "Net profit %",
       value: formatPlPercent(netProfitPct, rounding),
       sub: "Of total revenue",
       icon: Percent,
-      tint: "from-orange-50/90 to-white ring-orange-200/60",
-      iconBg: "bg-[var(--gs-accent-soft)] text-[var(--gs-accent)]",
-      valueClass: netProfitPct >= 0 ? "text-[var(--gs-text)]" : "text-red-700",
+      leftBar: "border-l-[var(--gs-accent)]",
+      iconWrap: "bg-[var(--gs-accent-soft)] text-[var(--gs-accent)] ring-1 ring-[var(--gs-accent)]/30",
+      valueClass: netProfitPct >= 0 ? "text-[var(--gs-text)]" : "text-red-800 dark:text-red-100",
     },
-  ] as const;
+  ];
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {cards.map((c) => (
         <div
           key={c.label}
-          className={`rounded-2xl border border-[var(--gs-border)] bg-gradient-to-br ${c.tint} shadow-sm ring-1 ${pad}`}
+          className={`rounded-2xl border border-[var(--gs-border)] border-l-4 bg-[var(--gs-card)] shadow-sm ${c.leftBar} ${pad}`}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">{c.label}</p>
               <p
-                className={`mt-2 font-mono font-bold tracking-tight ${"valueClass" in c ? c.valueClass : "text-[var(--gs-text)]"} ${compact ? "text-lg" : "text-xl"}`}
+                className={`mt-2 font-mono font-bold tracking-tight ${c.valueClass} ${compact ? "text-lg" : "text-xl"}`}
               >
                 {c.value}
               </p>
               <p className="mt-1 text-xs font-medium text-[var(--gs-muted)]">{c.sub}</p>
             </div>
-            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${c.iconBg}`}>
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${c.iconWrap}`}>
               <c.icon className="h-5 w-5" aria-hidden />
             </span>
           </div>
