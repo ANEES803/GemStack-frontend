@@ -1,16 +1,19 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppDialog } from "@/components/ui/AppDialog";
 import { LoadingBlock } from "@/components/ui/LoadingBlock";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { formatMoney } from "@/lib/format";
 import {
   createGlAccount,
   createJournalEntry,
   createJournalReversalDraft,
+  deleteGlAccount,
+  deleteJournalEntry,
   getGlSettings,
   getJournalEntry,
   listGlAccounts,
@@ -70,6 +73,11 @@ const COA_GROUP_NAME_PILL: Record<AccountType, string> = {
 
 type CoaRibbonChip = { type: AccountType | "All"; label: string; ring: string; bg: string; activeBg: string };
 
+/** Keep in sync with GemStack-Backend `gl_service._MAX_DEPTH`. */
+const COA_MAX_HIERARCHY_DEPTH = 8;
+
+const COA_EXPANDED_STORAGE_KEY = "gemstack-coa-expanded-ids";
+
 const COA_CATEGORY_RIBBON: CoaRibbonChip[] = [
   { type: "All", label: "All", ring: "ring-zinc-400/40", bg: "bg-[var(--gs-hover)]", activeBg: "bg-[var(--gs-navy)] text-white dark:bg-zinc-100 dark:text-zinc-900" },
   { type: "Asset", label: "Assets", ring: "ring-sky-500/50", bg: "bg-sky-500/10 dark:bg-sky-950/50", activeBg: "bg-sky-600 text-white dark:bg-sky-500" },
@@ -89,6 +97,7 @@ type CoaRow = {
   status: "Active" | "Inactive";
   isGroup: boolean;
   allowPosting: boolean;
+  accountSubtype: string | null;
 };
 
 function mapDtoToCoaRow(a: GlAccountDto): CoaRow {
@@ -113,19 +122,129 @@ function mapDtoToCoaRow(a: GlAccountDto): CoaRow {
     status: a.is_active ? "Active" : "Inactive",
     isGroup: a.is_group,
     allowPosting: a.allow_posting,
+    accountSubtype: a.account_subtype,
   };
-}
-
-function coaDepth(rows: CoaRow[], id: string): number {
-  const row = rows.find((r) => r.id === id);
-  if (!row || row.parentId === null) return 0;
-  return 1 + coaDepth(rows, row.parentId);
 }
 
 function parentLabel(rows: CoaRow[], parentId: string | null): string {
   if (!parentId) return "";
   const p = rows.find((r) => r.id === parentId);
   return p ? `${p.code}  ${p.name}` : "";
+}
+
+function parentBreadcrumb(rows: CoaRow[], parentId: string | null): string {
+  const parts: string[] = [];
+  let walk: string | null = parentId;
+  const guard = new Set<string>();
+  while (walk) {
+    if (guard.has(walk)) break;
+    guard.add(walk);
+    const p = rows.find((r) => r.id === walk);
+    if (!p) break;
+    parts.unshift(`${p.code} ${p.name}`);
+    walk = p.parentId;
+  }
+  return parts.join(" → ");
+}
+
+function coaChildrenByParent(rows: CoaRow[]): Map<string, CoaRow[]> {
+  const m = new Map<string, CoaRow[]>();
+  for (const r of rows) {
+    const key = r.parentId ?? "";
+    if (!m.has(key)) m.set(key, []);
+    m.get(key)!.push(r);
+  }
+  for (const arr of m.values()) arr.sort((a, b) => a.code.localeCompare(b.code));
+  return m;
+}
+
+function coaRootsForSection(rows: CoaRow[], sectionType: AccountType): CoaRow[] {
+  const idSet = new Set(rows.map((r) => r.id));
+  return rows
+    .filter((r) => r.type === sectionType && (r.parentId === null || !idSet.has(r.parentId)))
+    .slice()
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+function coaFlattenVisible(
+  roots: CoaRow[],
+  childrenByParent: Map<string, CoaRow[]>,
+  expanded: Set<string>,
+): { row: CoaRow; treeDepth: number }[] {
+  const out: { row: CoaRow; treeDepth: number }[] = [];
+  function walk(node: CoaRow, depth: number) {
+    out.push({ row: node, treeDepth: depth });
+    if (!node.isGroup || !expanded.has(node.id)) return;
+    for (const ch of childrenByParent.get(node.id) ?? []) walk(ch, depth + 1);
+  }
+  for (const r of roots) walk(r, 0);
+  return out;
+}
+
+function coaAccountPathLabel(rows: CoaRow[], id: string): string {
+  const chain: CoaRow[] = [];
+  let walk: string | null = id;
+  const guard = new Set<string>();
+  while (walk) {
+    if (guard.has(walk)) break;
+    guard.add(walk);
+    const p = rows.find((r) => r.id === walk);
+    if (!p) break;
+    chain.unshift(p);
+    walk = p.parentId;
+  }
+  return chain.map((p) => `${p.code} ${p.name}`).join(" → ");
+}
+
+/** Group parents for `<select>`: indented tree when search is empty; flat path labels when filtering. */
+function coaParentGroupDropdownOptions(
+  rows: CoaRow[],
+  type: AccountType,
+  editingId: string | null,
+  parentSearch: string,
+): { id: string; label: string }[] {
+  const groups = rows.filter((r) => r.isGroup && r.type === type && r.id !== editingId);
+  const q = parentSearch.trim().toLowerCase();
+  if (q) {
+    return groups
+      .filter((g) => `${g.code} ${g.name}`.toLowerCase().includes(q))
+      .sort((a, b) => a.code.localeCompare(b.code))
+      .map((g) => ({ id: g.id, label: coaAccountPathLabel(rows, g.id) }));
+  }
+  const idSet = new Set(groups.map((g) => g.id));
+  const cmap = new Map<string, CoaRow[]>();
+  for (const g of groups) {
+    const pk = g.parentId ?? "";
+    if (!cmap.has(pk)) cmap.set(pk, []);
+    cmap.get(pk)!.push(g);
+  }
+  for (const arr of cmap.values()) arr.sort((a, b) => a.code.localeCompare(b.code));
+  const roots = groups
+    .filter((g) => g.parentId === null || !idSet.has(g.parentId))
+    .slice()
+    .sort((a, b) => a.code.localeCompare(b.code));
+  const out: { id: string; label: string }[] = [];
+  function walk(g: CoaRow, depth: number) {
+    const pad = "\u00a0\u00a0".repeat(depth);
+    out.push({ id: g.id, label: `${pad}${g.code} — ${g.name}` });
+    for (const ch of cmap.get(g.id) ?? []) walk(ch, depth + 1);
+  }
+  for (const r of roots) walk(r, 0);
+  return out;
+}
+
+function formatCoaSaveError(message: string): string {
+  if (/hierarchy too deep|too deep/i.test(message)) {
+    return `${message} (Maximum ${COA_MAX_HIERARCHY_DEPTH} levels from the chart root to the parent you chose.)`;
+  }
+  return message;
+}
+
+function friendlyApiMessage(message: string): string {
+  const m = message.trim();
+  if (/session expired|not authenticated/i.test(m)) return "Your session ended. Please sign in again.";
+  if (/invalid token/i.test(m)) return "Your session is no longer valid. Please sign in again.";
+  return m;
 }
 
 function mapJournalSummaries(list: JournalSummaryDto[]) {
@@ -167,6 +286,13 @@ const VALID_TABS = new Set<TabId>(TABS.map((t) => t.id));
 
 export function AccountingWorkspace() {
   const todayIso = useHydratedTodayIso();
+  const { pushToast: appToast, confirm } = useAppNotifications();
+  const pushToast = useCallback(
+    (message: string, variant: "success" | "error" | "info" = "info") => {
+      appToast(variant === "error" ? friendlyApiMessage(message) : message, variant);
+    },
+    [appToast],
+  );
   const router = useRouter();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<TabId>("coa");
@@ -176,7 +302,12 @@ export function AccountingWorkspace() {
   const [coaLoading, setCoaLoading] = useState(false);
   const [coaError, setCoaError] = useState<string | null>(null);
   const [coaModal, setCoaModal] = useState<"add" | { edit: CoaRow } | null>(null);
-  const [coaDetail, setCoaDetail] = useState<CoaRow | null>(null);
+  const [coaSaving, setCoaSaving] = useState(false);
+  const [coaDetailModal, setCoaDetailModal] = useState<CoaRow | null>(null);
+  const [coaDetailTab, setCoaDetailTab] = useState<"overview" | "transactions">("overview");
+  const [coaExpandedIds, setCoaExpandedIds] = useState<Set<string>>(() => new Set());
+  const coaExpandInitRef = useRef(false);
+  const [coaParentSearch, setCoaParentSearch] = useState("");
   const [coaSearch, setCoaSearch] = useState("");
   const [coaTypeFilter, setCoaTypeFilter] = useState<AccountType | "All">("All");
   const [coaStatusFilter, setCoaStatusFilter] = useState<"All" | "Active" | "Inactive">("All");
@@ -188,9 +319,8 @@ export function AccountingWorkspace() {
     isGroup: false,
     allowTransactions: true,
     status: "Active" as "Active" | "Inactive",
+    accountSubtype: "",
   });
-
-  const [coaDetailTab, setCoaDetailTab] = useState<"overview" | "transactions">("overview");
 
   const [openingSub, setOpeningSub] = useState<null | "trial" | "customer" | "vendor" | "inventory">(null);
 
@@ -199,7 +329,9 @@ export function AccountingWorkspace() {
   const [jeMemo, setJeMemo] = useState("");
   const [jeSaving, setJeSaving] = useState(false);
   const [jeError, setJeError] = useState<string | null>(null);
+  const [jeAccountsError, setJeAccountsError] = useState<string | null>(null);
   const [postableAccounts, setPostableAccounts] = useState<GlAccountDto[]>([]);
+  const [journalDeleteBusyId, setJournalDeleteBusyId] = useState<string | null>(null);
   const [jeLines, setJeLines] = useState<{ id: string; accountId: string; lineDesc: string; debit: number; credit: number }[]>([
     { id: "j1", accountId: "", lineDesc: "", debit: 0, credit: 0 },
     { id: "j2", accountId: "", lineDesc: "", debit: 0, credit: 0 },
@@ -233,6 +365,7 @@ export function AccountingWorkspace() {
   const [glPostingAccounts, setGlPostingAccounts] = useState<GlAccountDto[]>([]);
   const [glPostingLoad, setGlPostingLoad] = useState(false);
   const [glPostingSave, setGlPostingSave] = useState(false);
+  const [glPostingSaveFlash, setGlPostingSaveFlash] = useState<string | null>(null);
   const [glPostingErr, setGlPostingErr] = useState<string | null>(null);
 
   const [bankCards] = useState([
@@ -260,24 +393,61 @@ export function AccountingWorkspace() {
     setJeDate((p) => p || todayIso);
   }, [todayIso]);
 
-  async function refreshCoa() {
-    setCoaLoading(true);
-    setCoaError(null);
+  async function refreshCoa(options?: { silent?: boolean }) {
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      setCoaLoading(true);
+      setCoaError(null);
+    }
     try {
       const iso = todayIso || new Date().toISOString().slice(0, 10);
       const rows = await listGlAccounts(iso);
       setCoaRows(rows.map(mapDtoToCoaRow));
+      if (!silent) setCoaError(null);
     } catch (e) {
-      setCoaError(e instanceof Error ? e.message : "Could not load chart of accounts");
+      const msg = e instanceof Error ? e.message : "Could not load chart of accounts";
+      if (silent) pushToast(msg, "error");
+      else setCoaError(msg);
     } finally {
-      setCoaLoading(false);
+      if (!silent) setCoaLoading(false);
     }
   }
 
   useEffect(() => {
     if (tab !== "coa") return;
     void refreshCoa();
-  }, [tab, todayIso]);
+  }, [tab, todayIso, pushToast]);
+
+  const toggleCoaExpanded = useCallback((id: string) => {
+    setCoaExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        sessionStorage.setItem(COA_EXPANDED_STORAGE_KEY, JSON.stringify([...next]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (coaRows.length === 0 || coaExpandInitRef.current) return;
+    try {
+      const raw = sessionStorage.getItem(COA_EXPANDED_STORAGE_KEY);
+      if (raw) {
+        const ids = JSON.parse(raw) as string[];
+        setCoaExpandedIds(new Set(ids));
+        coaExpandInitRef.current = true;
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
+    setCoaExpandedIds(new Set(coaRows.filter((r) => r.isGroup).map((r) => r.id)));
+    coaExpandInitRef.current = true;
+  }, [coaRows]);
 
   useEffect(() => {
     if (tab !== "journal_list") return;
@@ -288,8 +458,11 @@ export function AccountingWorkspace() {
         const list = await listJournalEntries();
         if (cancelled) return;
         setJournalRows(mapJournalSummaries(list));
-      } catch {
-        if (!cancelled) setJournalRows([]);
+      } catch (e) {
+        if (!cancelled) {
+          setJournalRows([]);
+          pushToast(e instanceof Error ? e.message : "Could not load journal entries.", "error");
+        }
       } finally {
         if (!cancelled) setJournalsLoading(false);
       }
@@ -297,21 +470,33 @@ export function AccountingWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [tab, journalEditorOpen]);
+  }, [tab, journalEditorOpen, pushToast]);
 
   useEffect(() => {
     if (!journalEditorOpen) return;
+    const ac = new AbortController();
     let cancelled = false;
+    setJeAccountsError(null);
     (async () => {
       try {
-        const p = await listPostableGlAccounts();
-        if (!cancelled) setPostableAccounts(p);
-      } catch {
-        if (!cancelled) setPostableAccounts([]);
+        const p = await listPostableGlAccounts(ac.signal);
+        if (cancelled) return;
+        setPostableAccounts(p);
+        if (p.length === 0) {
+          setJeAccountsError(
+            "No posting accounts found. Add a detail account under a group with “Allow posting” turned on, or activate an existing posting account.",
+          );
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setPostableAccounts([]);
+        if (e instanceof Error && e.name === "AbortError") return;
+        setJeAccountsError(e instanceof Error ? friendlyApiMessage(e.message) : "Could not load accounts for journal lines.");
       }
     })();
     return () => {
       cancelled = true;
+      ac.abort();
     };
   }, [journalEditorOpen]);
 
@@ -343,7 +528,11 @@ export function AccountingWorkspace() {
           setGlPostingAccounts(acc);
         }
       } catch (e) {
-        if (!cancelled) setGlPostingErr(e instanceof Error ? e.message : "Could not load GL settings");
+        if (!cancelled) {
+          const msg = e instanceof Error ? e.message : "Could not load GL settings";
+          setGlPostingErr(msg);
+          pushToast(msg, "error");
+        }
       } finally {
         if (!cancelled) setGlPostingLoad(false);
       }
@@ -351,7 +540,7 @@ export function AccountingWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [tab]);
+  }, [tab, pushToast]);
 
   useEffect(() => {
     const t = searchParams.get("tab");
@@ -404,18 +593,18 @@ export function AccountingWorkspace() {
     return counts;
   }, [coaSorted, coaSearch, coaStatusFilter]);
 
+  const coaChildrenByParentFiltered = useMemo(() => coaChildrenByParent(coaFiltered), [coaFiltered]);
+
   const coaGroupedSections = useMemo(() => {
     const types: readonly AccountType[] = coaTypeFilter === "All" ? COA_TYPE_ORDER : [coaTypeFilter];
     return types
-      .map((type) => ({
-        type,
-        rows: coaFiltered
-          .filter((r) => r.type === type)
-          .slice()
-          .sort((a, b) => a.code.localeCompare(b.code)),
-      }))
-      .filter((s) => s.rows.length > 0);
-  }, [coaFiltered, coaTypeFilter]);
+      .map((type) => {
+        const roots = coaRootsForSection(coaFiltered, type);
+        const items = coaFlattenVisible(roots, coaChildrenByParentFiltered, coaExpandedIds);
+        return { type, items };
+      })
+      .filter((s) => s.items.length > 0);
+  }, [coaFiltered, coaTypeFilter, coaExpandedIds, coaChildrenByParentFiltered]);
 
   const jeBalanced = useMemo(() => {
     const d = jeLines.reduce((s, l) => s + l.debit, 0);
@@ -423,18 +612,77 @@ export function AccountingWorkspace() {
     return { debit: d, credit: c, ok: Math.abs(d - c) < 0.005 };
   }, [jeLines]);
 
-  function openCoaAdd() {
+  const editingAccountId = coaModal && typeof coaModal === "object" ? coaModal.edit.id : null;
+  const coaHasParentGroupsForType = useMemo(
+    () => coaRows.some((r) => r.isGroup && r.type === coaForm.type && r.id !== editingAccountId),
+    [coaRows, coaForm.type, editingAccountId],
+  );
+  const coaParentDropdownOptions = useMemo(() => {
+    const opts = coaParentGroupDropdownOptions(coaRows, coaForm.type, editingAccountId, coaParentSearch);
+    if (coaForm.parentId !== "none" && !opts.some((o) => o.id === coaForm.parentId)) {
+      const row = coaRows.find((r) => r.id === coaForm.parentId && r.isGroup);
+      if (row) return [{ id: row.id, label: coaAccountPathLabel(coaRows, row.id) }, ...opts];
+    }
+    return opts;
+  }, [coaRows, coaForm.type, editingAccountId, coaParentSearch, coaForm.parentId]);
+
+  useEffect(() => {
+    if (!coaModal) return;
+    if (coaForm.parentId === "none") return;
+    if (!coaParentDropdownOptions.some((o) => o.id === coaForm.parentId)) {
+      setCoaForm((f) => ({ ...f, parentId: "none" }));
+    }
+  }, [coaModal, coaParentDropdownOptions, coaForm.parentId]);
+
+  useEffect(() => {
+    if (!coaModal) setCoaParentSearch("");
+  }, [coaModal]);
+
+  function openCoaAdd(opts?: { defaultParentId?: string }) {
     const suggest = `9${Date.now().toString().slice(-4)}`;
+    let nextType: AccountType = "Asset";
+    let parentId: string | "none" = "none";
+    if (opts?.defaultParentId) {
+      const p = coaRows.find((r) => r.id === opts.defaultParentId);
+      if (p?.isGroup) {
+        nextType = p.type;
+        parentId = p.id;
+      }
+    }
     setCoaForm({
       code: suggest,
       name: "",
-      type: "Asset",
-      parentId: "none",
+      type: nextType,
+      parentId,
       isGroup: false,
       allowTransactions: true,
       status: "Active",
+      accountSubtype: "",
     });
+    setCoaParentSearch("");
     setCoaModal("add");
+    if (opts?.defaultParentId) {
+      setCoaExpandedIds((prev) => {
+        const next = new Set(prev);
+        next.add(opts.defaultParentId!);
+        let walk: string | null = opts.defaultParentId!;
+        const guard = new Set<string>();
+        while (walk) {
+          if (guard.has(walk)) break;
+          guard.add(walk);
+          const p = coaRows.find((r) => r.id === walk);
+          if (!p?.parentId) break;
+          next.add(p.parentId);
+          walk = p.parentId;
+        }
+        try {
+          sessionStorage.setItem(COA_EXPANDED_STORAGE_KEY, JSON.stringify([...next]));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    }
   }
 
   function openCoaEdit(row: CoaRow) {
@@ -446,13 +694,44 @@ export function AccountingWorkspace() {
       isGroup: row.isGroup,
       allowTransactions: row.allowPosting,
       status: row.status,
+      accountSubtype: row.accountSubtype ?? "",
     });
+    setCoaParentSearch("");
     setCoaModal({ edit: row });
+  }
+
+  /** Subaccounts may only roll up under a group. Posting accounts must be converted to a group first. */
+  async function handleAddSubaccount(row: CoaRow) {
+    if (row.isGroup) {
+      openCoaAdd({ defaultParentId: row.id });
+      return;
+    }
+    const ok = await confirm({
+      title: "Convert to group account?",
+      message:
+        `"${row.code} ${row.name}" is a posting account. Only a group (folder) can have subaccounts.\n\n` +
+        `Convert this account to a group? You will not be able to post new journals directly to this code anymore—` +
+        `use a child posting account instead. If GL posting defaults (e.g. inventory) still point to this account, update them after you add the child.`,
+      confirmLabel: "Convert and continue",
+      variant: "danger",
+    });
+    if (!ok) return;
+    try {
+      await updateGlAccount(row.id, { is_group: true, allow_posting: false });
+      await refreshCoa({ silent: true });
+      pushToast("Account converted to a group. Add a posting subaccount under it.", "success");
+      openCoaAdd({ defaultParentId: row.id });
+    } catch (e) {
+      pushToast(formatCoaSaveError(e instanceof Error ? e.message : "Could not convert account"), "error");
+    }
   }
 
   async function saveCoa(andNew?: boolean) {
     if (!coaForm.code.trim() || !coaForm.name.trim()) return;
     const parentId = coaForm.parentId === "none" ? null : coaForm.parentId;
+    const subtypeTrim = coaForm.accountSubtype.trim();
+    const account_subtype = subtypeTrim ? subtypeTrim : null;
+    setCoaSaving(true);
     try {
       if (coaModal === "add") {
         await createGlAccount({
@@ -463,6 +742,7 @@ export function AccountingWorkspace() {
           is_group: coaForm.isGroup,
           allow_posting: coaForm.allowTransactions,
           is_active: coaForm.status === "Active",
+          account_subtype,
         });
       } else if (coaModal && typeof coaModal === "object") {
         await updateGlAccount(coaModal.edit.id, {
@@ -471,26 +751,71 @@ export function AccountingWorkspace() {
           is_group: coaForm.isGroup,
           allow_posting: coaForm.allowTransactions,
           is_active: coaForm.status === "Active",
+          account_subtype,
         });
       }
-      await refreshCoa();
+      await refreshCoa({ silent: true });
+      pushToast(coaModal === "add" ? "Account created." : "Account updated.", "success");
       if (andNew) {
         openCoaAdd();
       } else {
         setCoaModal(null);
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Save failed");
+      pushToast(formatCoaSaveError(e instanceof Error ? e.message : "Save failed"), "error");
+    } finally {
+      setCoaSaving(false);
     }
   }
 
   async function deactivateCoa(row: CoaRow) {
-    if (!window.confirm(`Deactivate account ${row.code}? It will be hidden from new postings.`)) return;
+    const ok = await confirm({
+      title: "Deactivate account",
+      message: `Deactivate account ${row.code}? It will be hidden from new postings.`,
+      confirmLabel: "Deactivate",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await updateGlAccount(row.id, { is_active: false });
-      await refreshCoa();
+      await refreshCoa({ silent: true });
+      pushToast("Account deactivated.", "success");
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Update failed");
+      pushToast(e instanceof Error ? e.message : "Update failed", "error");
+    }
+  }
+
+  async function activateCoa(row: CoaRow) {
+    const ok = await confirm({
+      title: "Activate account",
+      message: `Activate account ${row.code}? It can be used on new journal lines again.`,
+      confirmLabel: "Activate",
+    });
+    if (!ok) return;
+    try {
+      await updateGlAccount(row.id, { is_active: true });
+      await refreshCoa({ silent: true });
+      pushToast("Account activated.", "success");
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Update failed", "error");
+    }
+  }
+
+  async function deleteCoa(row: CoaRow) {
+    const ok = await confirm({
+      title: "Delete account?",
+      message: `Permanently delete account ${row.code} — ${row.name}?\n\nThis only works if the account has no balance, no journal lines, and no subaccounts.`,
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
+    try {
+      await deleteGlAccount(row.id);
+      if (coaDetailModal?.id === row.id) setCoaDetailModal(null);
+      await refreshCoa({ silent: true });
+      pushToast("Account deleted.", "success");
+    } catch (e) {
+      pushToast(formatCoaSaveError(e instanceof Error ? e.message : "Delete failed"), "error");
     }
   }
 
@@ -508,6 +833,7 @@ export function AccountingWorkspace() {
 
   function openNewJournal() {
     setJeError(null);
+    setJeAccountsError(null);
     setJeRef(`JE-${Date.now().toString().slice(-8)}`);
     setJeMemo("");
     setJeLines([
@@ -544,13 +870,14 @@ export function AccountingWorkspace() {
         tag: "",
         lines,
       });
+      const list = await listJournalEntries();
+      setJournalRows(mapJournalSummaries(list));
       setJournalEditorOpen(false);
-      if (tab === "journal_list") {
-        const list = await listJournalEntries();
-        setJournalRows(mapJournalSummaries(list));
-      }
+      pushToast("Journal saved as draft.", "success");
     } catch (e) {
-      setJeError(e instanceof Error ? e.message : "Could not save journal");
+      const msg = e instanceof Error ? e.message : "Could not save journal";
+      setJeError(msg);
+      pushToast(msg, "error");
     } finally {
       setJeSaving(false);
     }
@@ -588,13 +915,37 @@ export function AccountingWorkspace() {
         lines,
       });
       await postJournalEntry(draft.id);
-      setJournalEditorOpen(false);
       const list = await listJournalEntries();
       setJournalRows(mapJournalSummaries(list));
+      setJournalEditorOpen(false);
+      pushToast("Journal posted.", "success");
     } catch (e) {
-      setJeError(e instanceof Error ? e.message : "Could not post journal");
+      const msg = e instanceof Error ? e.message : "Could not post journal";
+      setJeError(msg);
+      pushToast(msg, "error");
     } finally {
       setJeSaving(false);
+    }
+  }
+
+  async function deleteDraftJournalRow(j: { id: string; ref: string }) {
+    const ok = await confirm({
+      title: "Delete draft journal?",
+      message: `Delete draft journal ${j.ref}? This cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
+    setJournalDeleteBusyId(j.id);
+    try {
+      await deleteJournalEntry(j.id);
+      const list = await listJournalEntries();
+      setJournalRows(mapJournalSummaries(list));
+      pushToast("Draft journal deleted.", "success");
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Could not delete journal", "error");
+    } finally {
+      setJournalDeleteBusyId(null);
     }
   }
 
@@ -607,7 +958,9 @@ export function AccountingWorkspace() {
       const d = await getJournalEntry(journalId);
       setJournalViewerDetail(d);
     } catch (e) {
-      setJournalViewerError(e instanceof Error ? e.message : "Could not load journal");
+      const msg = e instanceof Error ? e.message : "Could not load journal";
+      setJournalViewerError(msg);
+      pushToast(msg, "error");
     } finally {
       setJournalViewerLoading(false);
     }
@@ -630,8 +983,13 @@ export function AccountingWorkspace() {
       });
       setGlPostingSettings(updated);
       setFunctionalCurrency(updated.functional_currency || "USD");
+      setGlPostingSaveFlash("Saved");
+      window.setTimeout(() => setGlPostingSaveFlash(null), 2500);
+      pushToast("GL posting settings saved.", "success");
     } catch (e) {
-      setGlPostingErr(e instanceof Error ? e.message : "Could not save GL settings");
+      const msg = e instanceof Error ? e.message : "Could not save GL settings";
+      setGlPostingErr(msg);
+      pushToast(msg, "error");
     } finally {
       setGlPostingSave(false);
     }
@@ -643,14 +1001,15 @@ export function AccountingWorkspace() {
     setJournalViewerError(null);
     try {
       await createJournalReversalDraft(journalViewerDetail.id);
+      const list = await listJournalEntries();
+      setJournalRows(mapJournalSummaries(list));
       setJournalViewerOpen(false);
       setJournalViewerDetail(null);
-      if (tab === "journal_list") {
-        const list = await listJournalEntries();
-        setJournalRows(mapJournalSummaries(list));
-      }
+      pushToast("Reversal draft created. Open Journal entries to review and post it.", "success");
     } catch (e) {
-      setJournalViewerError(e instanceof Error ? e.message : "Could not create reversal draft");
+      const msg = e instanceof Error ? e.message : "Could not create reversal draft";
+      setJournalViewerError(msg);
+      pushToast(msg, "error");
     } finally {
       setJournalReversalBusy(false);
     }
@@ -716,32 +1075,34 @@ export function AccountingWorkspace() {
             <div>
               <h2 className="text-lg font-bold text-[var(--gs-text)]">Chart of accounts</h2>
               <p className="mt-0.5 text-sm text-[var(--gs-muted)]">
-                Balances are running totals from <strong>posted</strong> journals (as of today). Group accounts are for structure only.
+                Balances are running totals from <strong>posted</strong> journals (as of today). Group rows are folders—click the row or arrow to expand
+                subaccounts (your last expand state is remembered in this browser).
               </p>
               <p className="mt-2 text-xs text-[var(--gs-muted)]">
-                Use the category chips to filter and see counts; the list is ordered by type (Asset through Expense) without a second heading in the table.
+                Category chips filter counts; nesting cannot exceed <strong>{COA_MAX_HIERARCHY_DEPTH}</strong> levels from the chart root (including the parent you pick when saving). To add rows under a posting account, use{" "}
+                <strong>Actions → Add subaccount</strong>—the app will offer to turn that row into a <strong>group (folder)</strong> first.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 disabled
-                title="Coming later"
-                className="cursor-not-allowed rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-muted)] opacity-50"
+                title="Coming soon — not wired yet"
+                className="coa-chart-soon-btn cursor-not-allowed rounded-full border-2 border-[var(--gs-border-strong)] bg-[var(--gs-hover)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm ring-1 ring-[var(--gs-border)]/60 dark:ring-white/10"
               >
                 Import
               </button>
               <button
                 type="button"
                 disabled
-                title="Coming later"
-                className="cursor-not-allowed rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-muted)] opacity-50"
+                title="Coming soon — not wired yet"
+                className="coa-chart-soon-btn cursor-not-allowed rounded-full border-2 border-[var(--gs-border-strong)] bg-[var(--gs-hover)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] shadow-sm ring-1 ring-[var(--gs-border)]/60 dark:ring-white/10"
               >
                 Export
               </button>
               <button
                 type="button"
-                onClick={openCoaAdd}
+                onClick={() => openCoaAdd()}
                 className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
               >
                 + New account
@@ -840,33 +1201,61 @@ export function AccountingWorkspace() {
                   </tr>
                 </tbody>
               ) : (
-                coaGroupedSections.map(({ type: sectionType, rows }, sectionIdx) => (
+                coaGroupedSections.map(({ type: sectionType, items }, sectionIdx) => (
                   <tbody
                     key={sectionType}
                     className={`gs-striped-rows divide-y divide-[var(--gs-border)]${sectionIdx > 0 ? " border-t-2 border-[var(--gs-border)]" : ""}`}
                   >
-                    {rows.map((row) => {
-                        const depth = coaDepth(coaRows, row.id);
-                        const treePad = depth * 16;
+                    {items.map(({ row, treeDepth }) => {
+                        const treePad = treeDepth * 16;
                         const isHeader = row.isGroup;
+                        const expanded = coaExpandedIds.has(row.id);
                         return (
                           <tr
                             key={row.id}
                             className={`cursor-pointer ${isHeader ? `coa-chart-group ${COA_GROUP_ROW[row.type]}` : "hover:bg-[var(--gs-hover)]/80"}`}
                             onClick={() => {
+                              if (row.isGroup) {
+                                toggleCoaExpanded(row.id);
+                                return;
+                              }
                               setCoaDetailTab("overview");
-                              setCoaDetail(row);
+                              setCoaDetailModal(row);
                             }}
                           >
-                            <td
-                              className="px-5 py-3 font-mono text-[var(--gs-text)]"
-                              style={{ paddingLeft: `${20 + treePad}px` }}
-                            >
-                              {row.code}
+                            <td className="px-2 py-3 font-mono text-[var(--gs-text)]">
+                              <div className="flex items-center gap-0.5" style={{ paddingLeft: `${8 + treePad}px` }}>
+                                {row.isGroup ? (
+                                  <button
+                                    type="button"
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--gs-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                                    aria-expanded={expanded}
+                                    aria-label={expanded ? "Collapse subaccounts" : "Expand subaccounts"}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleCoaExpanded(row.id);
+                                    }}
+                                  >
+                                    <svg
+                                      className={`h-4 w-4 transition-transform ${expanded ? "rotate-90" : ""}`}
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth={2}
+                                      aria-hidden
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                  </button>
+                                ) : (
+                                  <span className="inline-block w-8 shrink-0" aria-hidden />
+                                )}
+                                <span>{row.code}</span>
+                              </div>
                             </td>
                             <td className="px-5 py-3 text-[var(--gs-text)]">
                               <span style={{ paddingLeft: `${treePad}px` }} className="inline-flex flex-wrap items-center gap-2">
-                                {depth > 0 ? <span className="shrink-0 text-[var(--gs-muted)]">└</span> : null}
+                                {treeDepth > 0 ? <span className="shrink-0 text-[var(--gs-muted)]">└</span> : null}
                                 {isHeader ? (
                                   <span className={COA_GROUP_NAME_PILL[row.type]}>{row.name}</span>
                                 ) : (
@@ -894,8 +1283,40 @@ export function AccountingWorkspace() {
                               <div className="flex items-center justify-end gap-2">
                                 <RowActionsMenu
                                   actions={[
-                                    { label: "View / edit", onSelect: () => openCoaEdit(row), tone: "accent" },
-                                    { label: "Deactivate", onSelect: () => deactivateCoa(row), tone: "danger" },
+                                    { label: "Add subaccount", onSelect: () => void handleAddSubaccount(row), tone: "accent" },
+                                    ...(!row.isGroup
+                                      ? [
+                                          {
+                                            label: "View details",
+                                            onSelect: () => {
+                                              setCoaDetailTab("overview");
+                                              setCoaDetailModal(row);
+                                            },
+                                            tone: "accent" as const,
+                                          },
+                                        ]
+                                      : []),
+                                    { label: "Edit", onSelect: () => openCoaEdit(row), tone: "default" as const },
+                                    ...(row.status === "Active"
+                                      ? [
+                                          {
+                                            label: "Deactivate",
+                                            onSelect: () => void deactivateCoa(row),
+                                            tone: "danger" as const,
+                                          },
+                                        ]
+                                      : [
+                                          {
+                                            label: "Activate",
+                                            onSelect: () => void activateCoa(row),
+                                            tone: "accent" as const,
+                                          },
+                                        ]),
+                                    {
+                                      label: "Delete account",
+                                      onSelect: () => void deleteCoa(row),
+                                      tone: "danger" as const,
+                                    },
                                   ]}
                                 />
                               </div>
@@ -926,7 +1347,22 @@ export function AccountingWorkspace() {
             {glPostingLoad || !glPostingSettings ? (
               <LoadingBlock label="Loading GL settings…" className="py-10" />
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="relative">
+                {glPostingSave ? (
+                  <div
+                    className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-xl bg-[var(--gs-card)]/85 backdrop-blur-[1px]"
+                    role="status"
+                    aria-live="polite"
+                    aria-busy="true"
+                  >
+                    <span
+                      className="h-9 w-9 animate-spin rounded-full border-2 border-[var(--gs-border)] border-t-[var(--gs-accent)]"
+                      aria-hidden
+                    />
+                    <p className="text-sm font-medium text-[var(--gs-text)]">Saving settings…</p>
+                  </div>
+                ) : null}
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="block text-sm">
                   <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Functional currency</span>
                   <input
@@ -1043,7 +1479,10 @@ export function AccountingWorkspace() {
                       ))}
                   </select>
                 </label>
-                <div className="sm:col-span-2 lg:col-span-3">
+                <div className="flex flex-wrap items-center gap-3 sm:col-span-2 lg:col-span-3">
+                  {glPostingSaveFlash ? (
+                    <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{glPostingSaveFlash}</span>
+                  ) : null}
                   <button
                     type="button"
                     disabled={glPostingSave}
@@ -1052,6 +1491,7 @@ export function AccountingWorkspace() {
                   >
                     {glPostingSave ? "Saving…" : "Save GL posting settings"}
                   </button>
+                </div>
                 </div>
               </div>
             )}
@@ -1091,7 +1531,15 @@ export function AccountingWorkspace() {
           <button
             type="button"
             onClick={() => {
-              if (window.confirm("Are you sure? This action cannot be undone (demo).")) window.alert("Opening locked (demo).");
+              void (async () => {
+                const ok = await confirm({
+                  title: "Finalize opening?",
+                  message: "Are you sure? This action cannot be undone (demo).",
+                  confirmLabel: "Finalize",
+                  variant: "danger",
+                });
+                if (ok) pushToast("Opening locked (demo).", "success");
+              })();
             }}
             className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white opacity-50"
             disabled
@@ -1178,13 +1626,25 @@ export function AccountingWorkspace() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => void openJournalViewer(j.id)}
-                              className="rounded-lg border border-[var(--gs-border)] px-3 py-1 text-xs font-semibold text-[var(--gs-accent)] hover:bg-[var(--gs-hover)]"
-                            >
-                              View lines
-                            </button>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void openJournalViewer(j.id)}
+                                className="rounded-lg border border-[var(--gs-border)] px-3 py-1 text-xs font-semibold text-[var(--gs-accent)] hover:bg-[var(--gs-hover)]"
+                              >
+                                View lines
+                              </button>
+                              {j.status === "draft" ? (
+                                <button
+                                  type="button"
+                                  disabled={journalDeleteBusyId === j.id}
+                                  onClick={() => void deleteDraftJournalRow({ id: j.id, ref: j.ref })}
+                                  className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:text-red-200 dark:hover:bg-red-950/40"
+                                >
+                                  {journalDeleteBusyId === j.id ? "Deleting…" : "Delete draft"}
+                                </button>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -1239,7 +1699,21 @@ export function AccountingWorkspace() {
 
       {journalEditorOpen ? (
         <div className="fixed inset-0 z-[60] flex min-h-[100dvh] items-start justify-center overflow-y-auto bg-black/50 p-4">
-          <div className="my-4 min-h-[min(100dvh-2rem,900px)] w-full max-w-5xl rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-2xl">
+          <div className="relative my-4 min-h-[min(100dvh-2rem,900px)] w-full max-w-5xl rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-2xl">
+            {jeSaving ? (
+              <div
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-2xl bg-[var(--gs-card)]/90 backdrop-blur-[2px]"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+              >
+                <span
+                  className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--gs-border)] border-t-[var(--gs-accent)]"
+                  aria-hidden
+                />
+                <p className="text-sm font-medium text-[var(--gs-text)]">Saving journal…</p>
+              </div>
+            ) : null}
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-[var(--gs-text)]">New journal entry</h2>
@@ -1249,8 +1723,9 @@ export function AccountingWorkspace() {
               </div>
               <button
                 type="button"
+                disabled={jeSaving}
                 onClick={() => setJournalEditorOpen(false)}
-                className="rounded-full p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
+                className="rounded-full p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Close"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
@@ -1286,6 +1761,11 @@ export function AccountingWorkspace() {
               </div>
             </div>
             {jeError ? <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{jeError}</div> : null}
+            {jeAccountsError ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                {jeAccountsError}
+              </div>
+            ) : null}
             <div className="gs-table-scroll mt-6 overflow-x-auto rounded-xl border border-[var(--gs-border)]">
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
@@ -1398,8 +1878,9 @@ export function AccountingWorkspace() {
               </button>
               <button
                 type="button"
+                disabled={jeSaving}
                 onClick={() => setJournalEditorOpen(false)}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
+                className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Cancel
               </button>
@@ -1408,49 +1889,43 @@ export function AccountingWorkspace() {
         </div>
       ) : null}
 
-      {coaDetail ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
-          <div className="h-full w-full max-w-md overflow-y-auto border-l border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-bold text-[var(--gs-text)]">{coaDetail.name}</h3>
-                <p className="mt-1 font-mono text-sm text-[var(--gs-muted)]">{coaDetail.code}</p>
+      {coaDetailModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="presentation"
+          onClick={() => setCoaDetailModal(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="coa-detail-modal-title"
+            className="max-h-[min(88vh,36rem)] w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--gs-border)] p-5">
+              <div className="min-w-0">
+                <h3 id="coa-detail-modal-title" className="truncate text-lg font-bold text-[var(--gs-text)]">
+                  {coaDetailModal.name}
+                </h3>
+                <p className="mt-1 font-mono text-sm text-[var(--gs-muted)]">{coaDetailModal.code}</p>
               </div>
               <button
                 type="button"
-                onClick={() => setCoaDetail(null)}
-                className="rounded-full p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
-                aria-label="Close drawer"
+                onClick={() => setCoaDetailModal(null)}
+                className="shrink-0 rounded-full p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]"
+                aria-label="Close"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <div className="mt-6 space-y-3 text-sm">
-              <div className="flex justify-between border-b border-[var(--gs-border)] py-2">
-                <span className="text-[var(--gs-muted)]">Type</span>
-                <span className="font-semibold text-[var(--gs-text)]">{coaDetail.type}</span>
-              </div>
-              <div className="flex justify-between border-b border-[var(--gs-border)] py-2">
-                <span className="text-[var(--gs-muted)]">Parent</span>
-                <span className="font-semibold text-[var(--gs-text)]">{parentLabel(coaRows, coaDetail.parentId)}</span>
-              </div>
-              <div className="flex justify-between border-b border-[var(--gs-border)] py-2">
-                <span className="text-[var(--gs-muted)]">Balance</span>
-                <span className="font-mono font-semibold text-[var(--gs-text)]">{formatMoney(coaDetail.balance, functionalCurrency)}</span>
-              </div>
-              <div className="flex justify-between border-b border-[var(--gs-border)] py-2">
-                <span className="text-[var(--gs-muted)]">Status</span>
-                <span className="font-semibold text-[var(--gs-text)]">{coaDetail.status}</span>
-              </div>
-            </div>
-            <div className="mt-6 flex gap-2 border-b border-[var(--gs-border)] pb-4">
+            <div className="flex gap-2 border-b border-[var(--gs-border)] px-5 pt-2">
               <button
                 type="button"
                 onClick={() => setCoaDetailTab("overview")}
-                className={`rounded-full px-4 py-2 text-xs font-semibold ${
-                  coaDetailTab === "overview" ? "border border-[var(--gs-border)] bg-[var(--gs-hover)] text-[var(--gs-text)]" : "text-[var(--gs-muted)]"
+                className={`rounded-t-lg px-3 py-2 text-xs font-semibold ${
+                  coaDetailTab === "overview" ? "bg-[var(--gs-hover)] text-[var(--gs-text)] ring-1 ring-[var(--gs-border)]" : "text-[var(--gs-muted)]"
                 }`}
               >
                 Overview
@@ -1458,30 +1933,99 @@ export function AccountingWorkspace() {
               <button
                 type="button"
                 onClick={() => setCoaDetailTab("transactions")}
-                className={`rounded-full px-4 py-2 text-xs font-semibold ${
-                  coaDetailTab === "transactions" ? "border border-[var(--gs-border)] bg-[var(--gs-hover)] text-[var(--gs-text)]" : "text-[var(--gs-muted)]"
+                className={`rounded-t-lg px-3 py-2 text-xs font-semibold ${
+                  coaDetailTab === "transactions" ? "bg-[var(--gs-hover)] text-[var(--gs-text)] ring-1 ring-[var(--gs-border)]" : "text-[var(--gs-muted)]"
                 }`}
               >
                 Transactions
               </button>
             </div>
-            {coaDetailTab === "overview" ? (
+            <div className="max-h-[min(52vh,22rem)] overflow-y-auto p-5 text-sm">
+              {coaDetailTab === "overview" ? (
+                <div className="space-y-3">
+                  <div className="flex justify-between gap-4 border-b border-[var(--gs-border)] py-2">
+                    <span className="text-[var(--gs-muted)]">Type</span>
+                    <span className="text-right font-semibold text-[var(--gs-text)]">{coaDetailModal.type}</span>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-[var(--gs-border)] py-2">
+                    <span className="shrink-0 text-[var(--gs-muted)]">Parent</span>
+                    <span className="text-right font-semibold text-[var(--gs-text)]">
+                      {coaDetailModal.parentId ? parentBreadcrumb(coaRows, coaDetailModal.parentId) : "— Top level"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-[var(--gs-border)] py-2">
+                    <span className="text-[var(--gs-muted)]">Subtype</span>
+                    <span className="font-mono text-[var(--gs-text)]">{coaDetailModal.accountSubtype?.trim() || "—"}</span>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-[var(--gs-border)] py-2">
+                    <span className="text-[var(--gs-muted)]">Group account</span>
+                    <span className="font-semibold text-[var(--gs-text)]">{coaDetailModal.isGroup ? "Yes" : "No"}</span>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-[var(--gs-border)] py-2">
+                    <span className="text-[var(--gs-muted)]">Allows posting</span>
+                    <span className="font-semibold text-[var(--gs-text)]">{coaDetailModal.allowPosting ? "Yes" : "No"}</span>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-[var(--gs-border)] py-2">
+                    <span className="text-[var(--gs-muted)]">Balance</span>
+                    <span className="font-mono font-semibold text-[var(--gs-text)]">
+                      {formatMoney(coaDetailModal.balance, functionalCurrency)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b border-[var(--gs-border)] py-2">
+                    <span className="text-[var(--gs-muted)]">Status</span>
+                    <span className="font-semibold text-[var(--gs-text)]">{coaDetailModal.status}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="rounded-xl border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-4 text-[var(--gs-muted)]">
+                  Account activity by voucher will appear here in a future update. Use <strong>Journal entries</strong> for posted detail
+                  today.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-[var(--gs-border)] p-5">
               <button
                 type="button"
                 onClick={() => {
-                  openCoaEdit(coaDetail);
-                  setCoaDetail(null);
+                  openCoaEdit(coaDetailModal);
+                  setCoaDetailModal(null);
                 }}
-                className="mt-6 w-full rounded-full bg-[var(--gs-accent)] px-4 py-2.5 text-sm font-semibold text-white"
+                className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white"
               >
                 Edit account
               </button>
-            ) : (
-              <p className="mt-6 rounded-xl border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-4 text-sm text-[var(--gs-muted)]">
-                Account activity by voucher will appear here in a future update. Use <strong>Journal entries</strong> for posted
-                detail today.
-              </p>
-            )}
+              {coaDetailModal.status === "Active" ? (
+                <button
+                  type="button"
+                  onClick={() => void deactivateCoa(coaDetailModal)}
+                  className="rounded-full border border-red-300/80 px-4 py-2.5 text-sm font-semibold text-red-800 dark:border-red-800 dark:text-red-200"
+                >
+                  Deactivate
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void activateCoa(coaDetailModal)}
+                  className="rounded-full border border-[var(--gs-border)] px-4 py-2.5 text-sm font-semibold text-[var(--gs-text)]"
+                >
+                  Activate
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void deleteCoa(coaDetailModal)}
+                className="rounded-full border border-red-300/80 px-4 py-2.5 text-sm font-semibold text-red-800 dark:border-red-800 dark:text-red-200"
+              >
+                Delete account
+              </button>
+              <button
+                type="button"
+                onClick={() => setCoaDetailModal(null)}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2.5 text-sm font-semibold text-[var(--gs-text)]"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -1490,139 +2034,276 @@ export function AccountingWorkspace() {
         <div
           className="fixed inset-0 z-[55] flex items-center justify-center bg-black/40 p-4"
           role="presentation"
-          onClick={() => setCoaModal(null)}
+          onClick={() => {
+            if (!coaSaving) setCoaModal(null);
+          }}
         >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="coa-modal-title"
-            className="flex max-h-[min(90vh,44rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-2xl"
+            className="relative flex max-h-[min(92vh,46rem)] w-full min-w-0 max-w-[min(100%,56rem)] flex-col rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-2xl min-h-0"
             onClick={(e) => e.stopPropagation()}
           >
+            {coaSaving ? (
+              <div
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl bg-[var(--gs-card)]/88 backdrop-blur-[2px]"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+              >
+                <span
+                  className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--gs-border)] border-t-[var(--gs-accent)]"
+                  aria-hidden
+                />
+                <p className="text-sm font-medium text-[var(--gs-text)]">Saving account…</p>
+              </div>
+            ) : null}
             <div className="flex items-start justify-between gap-3 border-b border-[var(--gs-border)] p-6">
               <div>
                 <h3 id="coa-modal-title" className="text-lg font-bold text-[var(--gs-text)]">
                   {coaModal === "add" ? "New account" : "Edit account"}
                 </h3>
                 <p className="mt-1 text-xs text-[var(--gs-muted)]">
-                  {coaModal === "add" ? "Add a code and name, then save. Parent must be a group account." : "Code and account type cannot be changed after creation."}
+                  {coaModal === "add"
+                    ? "Subaccounts must sit under a group of the same type. Chart depth is limited to nested levels (see error text if save fails)."
+                    : "Code and account type cannot be changed after creation."}
                 </p>
               </div>
-              <button type="button" onClick={() => setCoaModal(null)} className="rounded-full p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)]" aria-label="Close">
+              <button
+                type="button"
+                disabled={coaSaving}
+                onClick={() => setCoaModal(null)}
+                className="rounded-full p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Close"
+              >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <div className="flex-1 space-y-4 overflow-y-auto p-6">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Account name *</label>
-                <input
-                  value={coaForm.name}
-                  onChange={(e) => setCoaForm((f) => ({ ...f, name: e.target.value }))}
-                  className="gs-field"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Account code (auto, editable)</label>
-                <input
-                  value={coaForm.code}
-                  readOnly={coaModal !== "add"}
-                  onChange={(e) => setCoaForm((f) => ({ ...f, code: e.target.value }))}
-                  className="gs-field font-mono read-only:opacity-80"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Account type *</label>
-                <select
-                  value={coaForm.type}
-                  disabled={coaModal !== "add"}
-                  onChange={(e) => setCoaForm((f) => ({ ...f, type: e.target.value as AccountType }))}
-                  className="gs-field disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <option>Asset</option>
-                  <option>Liability</option>
-                  <option>Equity</option>
-                  <option>Revenue</option>
-                  <option>Expense</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Parent account</label>
-                <select
-                  value={coaForm.parentId}
-                  onChange={(e) => setCoaForm((f) => ({ ...f, parentId: e.target.value as string | "none" }))}
-                  className="gs-field"
-                >
-                  <option value="none">None (top level)</option>
-                  {coaRows
-                    .filter((r) => r.isGroup)
-                    .filter((r) => !(typeof coaModal === "object" && coaModal.edit.id === r.id))
-                    .map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.code} {r.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-3 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-4">
-                <label className="flex items-center gap-2 text-sm font-medium text-[var(--gs-text)]">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-4 sm:p-6">
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Account name *</label>
                   <input
-                    type="checkbox"
-                    checked={coaForm.isGroup}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setCoaForm((f) => ({
-                        ...f,
-                        isGroup: checked,
-                        allowTransactions: checked ? false : true,
-                      }));
-                    }}
-                    className="rounded border-[var(--gs-border-strong)]"
+                    value={coaForm.name}
+                    disabled={coaSaving}
+                    onChange={(e) => setCoaForm((f) => ({ ...f, name: e.target.value }))}
+                    className="gs-field disabled:cursor-not-allowed disabled:opacity-60"
                   />
-                  Is group account
-                </label>
-                <label className={`flex items-center gap-2 text-sm font-medium ${coaForm.isGroup ? "text-[var(--gs-muted)]" : "text-[var(--gs-text)]"}`}>
-                  <input
-                    type="checkbox"
-                    checked={coaForm.allowTransactions}
-                    disabled={coaForm.isGroup}
-                    onChange={(e) => setCoaForm((f) => ({ ...f, allowTransactions: e.target.checked }))}
-                    className="rounded border-[var(--gs-border-strong)] disabled:cursor-not-allowed"
-                  />
-                  Allow transactions {coaForm.isGroup ? "(off for group accounts)" : ""}
-                </label>
+                </div>
                 <div>
-                  <span className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Status</span>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Code *</label>
+                  <input
+                    value={coaForm.code}
+                    readOnly={coaModal !== "add"}
+                    disabled={coaSaving}
+                    onChange={(e) => setCoaForm((f) => ({ ...f, code: e.target.value }))}
+                    className="gs-field font-mono read-only:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Type *</label>
                   <select
-                    value={coaForm.status}
-                    onChange={(e) => setCoaForm((f) => ({ ...f, status: e.target.value as "Active" | "Inactive" }))}
-                    className="gs-field bg-[var(--gs-card)]"
+                    value={coaForm.type}
+                    disabled={coaModal !== "add" || coaSaving}
+                    onChange={(e) => {
+                      const nextType = e.target.value as AccountType;
+                      setCoaForm((f) => {
+                        let parentId = f.parentId;
+                        if (parentId !== "none") {
+                          const still = coaRows.some((r) => r.id === parentId && r.isGroup && r.type === nextType);
+                          if (!still) parentId = "none";
+                        }
+                        return { ...f, type: nextType, parentId };
+                      });
+                    }}
+                    className="gs-field disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
+                    <option>Asset</option>
+                    <option>Liability</option>
+                    <option>Equity</option>
+                    <option>Revenue</option>
+                    <option>Expense</option>
                   </select>
                 </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                    Subtype <span className="font-normal normal-case text-[var(--gs-muted)]">(optional)</span>
+                  </label>
+                  <input
+                    list="coa-subtype-presets"
+                    value={coaForm.accountSubtype}
+                    disabled={coaSaving}
+                    onChange={(e) => setCoaForm((f) => ({ ...f, accountSubtype: e.target.value }))}
+                    placeholder="e.g. bank, inventory, payable"
+                    className="gs-field disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  <datalist id="coa-subtype-presets">
+                    <option value="bank" />
+                    <option value="inventory" />
+                    <option value="payable" />
+                    <option value="receivable" />
+                  </datalist>
+                </div>
+                <div className="min-w-0 sm:col-span-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/40 p-4">
+                  <span className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Parent in chart</span>
+                  <div className="mt-3 flex flex-wrap gap-4">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--gs-text)]">
+                      <input
+                        type="radio"
+                        name="coa-parent-mode"
+                        className="shrink-0"
+                        checked={coaForm.parentId === "none"}
+                        disabled={coaSaving}
+                        onChange={() => setCoaForm((f) => ({ ...f, parentId: "none" }))}
+                      />
+                      <span>
+                        <span className="font-semibold">Top-level</span>{" "}
+                        <span className="text-[var(--gs-muted)]">under {coaForm.type}</span>
+                      </span>
+                    </label>
+                    <label
+                      className={`flex cursor-pointer items-center gap-2 text-sm text-[var(--gs-text)] ${
+                        !coaHasParentGroupsForType ? "cursor-not-allowed opacity-55" : ""
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="coa-parent-mode"
+                        className="shrink-0"
+                        checked={coaForm.parentId !== "none"}
+                        disabled={coaSaving || !coaHasParentGroupsForType}
+                        onChange={() => {
+                          const first = coaParentGroupDropdownOptions(coaRows, coaForm.type, editingAccountId, "")[0];
+                          setCoaForm((f) => ({ ...f, parentId: first ? first.id : "none" }));
+                        }}
+                      />
+                      <span className="font-semibold">Under a group</span>
+                    </label>
+                  </div>
+                  {coaForm.parentId !== "none" ? (
+                    <div className="mt-3 space-y-2 border-t border-[var(--gs-border)] pt-3">
+                      <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Filter groups</label>
+                      <input
+                        value={coaParentSearch}
+                        disabled={coaSaving}
+                        onChange={(e) => setCoaParentSearch(e.target.value)}
+                        placeholder="Search code or name…"
+                        className="gs-field text-sm"
+                      />
+                      <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Parent group</label>
+                      <div
+                        role="radiogroup"
+                        aria-label="Parent group"
+                        className="coa-parent-radiogroup mt-1 max-h-[min(50vh,16rem)] w-full min-w-0 overflow-y-auto overscroll-contain rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-1"
+                      >
+                        {coaParentDropdownOptions.map((o) => {
+                          const label = o.label.replace(/\u00a0/g, " ");
+                          const selected = coaForm.parentId === o.id;
+                          return (
+                            <label
+                              key={o.id}
+                              className={`flex cursor-pointer items-start gap-2 rounded-lg px-2 py-2 text-sm ${
+                                selected ? "bg-[var(--gs-accent-soft)] ring-1 ring-[var(--gs-accent)]" : "hover:bg-[var(--gs-hover)]"
+                              } ${coaSaving ? "pointer-events-none opacity-50" : ""}`}
+                            >
+                              <input
+                                type="radio"
+                                name="coa-parent-pick"
+                                value={o.id}
+                                checked={selected}
+                                disabled={coaSaving}
+                                onChange={() => setCoaForm((f) => ({ ...f, parentId: o.id }))}
+                                className="mt-1 shrink-0"
+                              />
+                              <span className="min-w-0 flex-1 break-words font-mono leading-snug text-[var(--gs-text)]">{label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                  {!coaHasParentGroupsForType ? (
+                    <p className="mt-2 text-xs text-[var(--gs-muted)]">
+                      No <strong>{coaForm.type}</strong> group accounts yet. Create a top-level group first, or keep this account top-level.
+                    </p>
+                  ) : coaForm.parentId !== "none" && coaParentDropdownOptions.length === 0 ? (
+                    <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">No groups match the filter — clear search to see the full list.</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-col justify-center gap-3 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-4 sm:col-span-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <label className="flex items-center gap-2 text-sm font-medium text-[var(--gs-text)]">
+                    <input
+                      type="checkbox"
+                      checked={coaForm.isGroup}
+                      disabled={coaSaving}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setCoaForm((f) => ({
+                          ...f,
+                          isGroup: checked,
+                          allowTransactions: checked ? false : true,
+                        }));
+                      }}
+                      className="rounded border-[var(--gs-border-strong)] disabled:cursor-not-allowed"
+                    />
+                    Group (folder)
+                  </label>
+                  <label className={`flex items-center gap-2 text-sm font-medium ${coaForm.isGroup ? "text-[var(--gs-muted)]" : "text-[var(--gs-text)]"}`}>
+                    <input
+                      type="checkbox"
+                      checked={coaForm.allowTransactions}
+                      disabled={coaForm.isGroup || coaSaving}
+                      onChange={(e) => setCoaForm((f) => ({ ...f, allowTransactions: e.target.checked }))}
+                      className="rounded border-[var(--gs-border-strong)] disabled:cursor-not-allowed"
+                    />
+                    Allow posting
+                  </label>
+                  <div className="min-w-[10rem] sm:ml-auto">
+                    <span className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Status</span>
+                    <select
+                      value={coaForm.status}
+                      disabled={coaSaving}
+                      onChange={(e) => setCoaForm((f) => ({ ...f, status: e.target.value as "Active" | "Inactive" }))}
+                      className="gs-field mt-1 bg-[var(--gs-card)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+                <p className="rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/50 px-3 py-2 text-xs text-[var(--gs-muted)] sm:col-span-2">
+                  Opening balances use <strong>journal entries</strong>. Posted activity updates balances in the list.
+                </p>
               </div>
-              <p className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 px-4 py-3 text-xs text-[var(--gs-muted)]">
-                Opening balances are recorded with <strong>journal entries</strong>, not on this form. Balances in the list update
-                when you post.
-              </p>
             </div>
-            <div className="flex flex-wrap gap-2 border-t border-[var(--gs-border)] p-6">
-              <button type="button" onClick={() => setCoaModal(null)} className="rounded-full border border-[var(--gs-border)] px-4 py-2.5 text-sm font-semibold text-[var(--gs-text)]">
+            <div className="flex shrink-0 flex-wrap gap-2 border-t border-[var(--gs-border)] bg-[var(--gs-card)] p-4 sm:p-6">
+              <button
+                type="button"
+                disabled={coaSaving}
+                onClick={() => setCoaModal(null)}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2.5 text-sm font-semibold text-[var(--gs-text)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 Cancel
               </button>
-              <button type="button" onClick={() => void saveCoa(false)} className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white">
-                Save
+              <button
+                type="button"
+                disabled={coaSaving}
+                onClick={() => void saveCoa(false)}
+                className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {coaSaving ? "Saving…" : "Save"}
               </button>
               {coaModal === "add" ? (
                 <button
                   type="button"
+                  disabled={coaSaving}
                   onClick={() => void saveCoa(true)}
-                  className="rounded-full border border-orange-200 bg-[var(--gs-accent-soft)] px-5 py-2.5 text-sm font-semibold text-orange-900 dark:text-orange-100"
+                  className="rounded-full border border-orange-200 bg-[var(--gs-accent-soft)] px-5 py-2.5 text-sm font-semibold text-orange-900 disabled:cursor-not-allowed disabled:opacity-60 dark:text-orange-100"
                 >
-                  Save &amp; new
+                  {coaSaving ? "Saving…" : "Save & new"}
                 </button>
               ) : null}
             </div>
@@ -1906,7 +2587,7 @@ export function AccountingWorkspace() {
               <button
                 type="button"
                 onClick={() => {
-                  window.alert("Demo: bank saved");
+                  pushToast("Demo: bank saved.", "success");
                   setBankAddOpen(false);
                 }}
                 className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white"
@@ -1940,7 +2621,7 @@ export function AccountingWorkspace() {
               <button type="button" onClick={() => setBankImportOpen(false)} className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold">
                 Cancel
               </button>
-              <button type="button" onClick={() => window.alert("Demo: preview rows")} className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white">
+              <button type="button" onClick={() => pushToast("Demo: preview rows.", "success")} className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white">
                 Upload &amp; preview
               </button>
             </div>
@@ -1990,7 +2671,7 @@ export function AccountingWorkspace() {
               <button
                 type="button"
                 onClick={() => {
-                  window.alert("Demo: transfer recorded");
+                  pushToast("Demo: transfer recorded.", "success");
                   setBankTransferOpen(false);
                 }}
                 className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white"
@@ -2077,6 +2758,7 @@ export function AccountingWorkspace() {
       <AppDialog
         open={journalViewerOpen}
         onClose={() => {
+          if (journalReversalBusy) return;
           setJournalViewerOpen(false);
           setJournalViewerDetail(null);
           setJournalViewerError(null);
@@ -2099,12 +2781,13 @@ export function AccountingWorkspace() {
             ) : null}
             <button
               type="button"
+              disabled={journalReversalBusy}
               onClick={() => {
                 setJournalViewerOpen(false);
                 setJournalViewerDetail(null);
                 setJournalViewerError(null);
               }}
-              className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+              className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Close
             </button>

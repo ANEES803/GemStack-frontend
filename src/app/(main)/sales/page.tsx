@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { ReceivePaymentModal, type ReceivePaymentInitial } from "@/components/sales/ReceivePaymentModal";
 import { CreateModuleLink } from "@/components/ui/CreateModuleLink";
 import { ListPageLayout } from "@/components/ui/ListPageLayout";
@@ -108,6 +109,7 @@ function csvEscape(cell: string): string {
 }
 
 function SalesPageContent() {
+  const { pushToast } = useAppNotifications();
   const router = useRouter();
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab") ?? "transactions";
@@ -315,7 +317,7 @@ function SalesPageContent() {
           <button
             key={doc}
             type="button"
-            onClick={() => window.alert(`Demo: open ${doc} list / create`)}
+            onClick={() => pushToast(`Demo: open ${doc} list / create`, "info")}
             className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] shadow-sm hover:border-[var(--gs-accent)] hover:text-[var(--gs-accent)]"
           >
             {doc}
@@ -449,10 +451,10 @@ function SalesPageContent() {
                             tone: "success",
                             onSelect: () => openReceivePayment(rowToPaymentInitial(row)),
                           },
-                          { label: "View invoice", tone: "default", onSelect: () => window.alert(`Demo: open ${row.id}`) },
-                          { label: "Edit invoice", tone: "accent", onSelect: () => window.alert("Demo: edit invoice") },
-                          { label: "Download PDF", tone: "info", onSelect: () => window.alert("Demo: PDF export") },
-                          { label: "Delete", tone: "danger", onSelect: () => window.alert("Demo: delete invoice") },
+                          { label: "View invoice", tone: "default", onSelect: () => pushToast(`Demo: open ${row.id}`, "info") },
+                          { label: "Edit invoice", tone: "accent", onSelect: () => pushToast("Demo: edit invoice", "info") },
+                          { label: "Download PDF", tone: "info", onSelect: () => pushToast("Demo: PDF export", "info") },
+                          { label: "Delete", tone: "danger", onSelect: () => pushToast("Demo: delete invoice", "info") },
                         ]}
                       />
                     </div>

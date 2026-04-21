@@ -7,6 +7,11 @@ const REFRESH_KEY = "gemstack_refresh_token";
 /** Prevents the UI from hanging indefinitely when the API is down or unreachable. */
 const FETCH_TIMEOUT_MS = 15_000;
 
+/** Slightly longer for shared authenticated API calls (matches inventory client). */
+const API_AUTH_FETCH_TIMEOUT_MS = 20_000;
+
+const LOGIN_PATH = "/login";
+
 function mergeAbortSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
   if (!a) return b;
   const controller = new AbortController();
@@ -29,6 +34,22 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Re
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+async function fetchWithTimeoutMs(url: string, init: RequestInit = {}, timeoutMs: number): Promise<Response> {
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
+  try {
+    const signal = mergeAbortSignals(init.signal ?? undefined, timeoutController.signal);
+    return await fetch(url, { ...init, signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function redirectToLogin(): void {
+  if (typeof window === "undefined") return;
+  window.location.assign(LOGIN_PATH);
 }
 
 export type AuthUser = {
@@ -146,26 +167,52 @@ async function refreshSession(): Promise<string | null> {
   return data.access_token;
 }
 
-async function authorizedFetch(input: string, init: RequestInit): Promise<Response> {
-  const token = getAccessToken();
-  if (!token) throw new Error("Not authenticated");
-
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  let response = await fetchWithTimeout(input, { ...init, headers });
-  if (response.status !== 401) {
-    return response;
+/**
+ * Authenticated fetch for business API routes: Bearer access token, refresh on 401,
+ * then redirect to login if the session cannot be recovered.
+ */
+export async function apiAuthFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  if (typeof window === "undefined") {
+    throw new Error("Not authenticated");
   }
-
-  const rotatedAccessToken = await refreshSession();
-  if (!rotatedAccessToken) {
+  const token = getAccessToken();
+  if (!token) {
+    clearAuthTokens();
+    redirectToLogin();
     throw new Error("Session expired. Please sign in again.");
   }
 
-  const retryHeaders = new Headers(init.headers);
-  retryHeaders.set("Authorization", `Bearer ${rotatedAccessToken}`);
-  response = await fetchWithTimeout(input, { ...init, headers: retryHeaders });
+  const headers = new Headers(init.headers);
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
+  if (!headers.has("Content-Type") && init.body !== undefined && !isFormData) {
+    headers.set("Content-Type", "application/json");
+  }
+  headers.set("Authorization", `Bearer ${token}`);
+
+  let response = await fetchWithTimeoutMs(input, { ...init, headers }, API_AUTH_FETCH_TIMEOUT_MS);
+  if (response.status === 401) {
+    const rotatedAccessToken = await refreshSession();
+    if (!rotatedAccessToken) {
+      redirectToLogin();
+      throw new Error("Session expired. Please sign in again.");
+    }
+    const retryHeaders = new Headers(init.headers);
+    if (!retryHeaders.has("Content-Type") && init.body !== undefined && !isFormData) {
+      retryHeaders.set("Content-Type", "application/json");
+    }
+    retryHeaders.set("Authorization", `Bearer ${rotatedAccessToken}`);
+    response = await fetchWithTimeoutMs(input, { ...init, headers: retryHeaders }, API_AUTH_FETCH_TIMEOUT_MS);
+  }
+  if (response.status === 401) {
+    clearAuthTokens();
+    redirectToLogin();
+    throw new Error("Session expired. Please sign in again.");
+  }
   return response;
+}
+
+async function authorizedFetch(input: string, init: RequestInit): Promise<Response> {
+  return apiAuthFetch(input, init);
 }
 
 export async function logout(): Promise<void> {

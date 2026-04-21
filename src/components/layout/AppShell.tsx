@@ -35,6 +35,10 @@ const PATHS_WITH_PAGE_OWNED_TITLE = new Set([
   "/reports/profit-loss",
   "/reports/balance-sheet",
   "/reports/cash-flow",
+  "/reports/sales",
+  "/reports/purchases",
+  "/reports/inventory-financial",
+  "/reports/aging",
 ]);
 
 const ROUTE_HEADINGS: Record<string, { title: string; sub?: string }> = {
@@ -52,6 +56,10 @@ const ROUTE_HEADINGS: Record<string, { title: string; sub?: string }> = {
   "/reports/profit-loss": { title: "Profit & Loss", sub: "Income statement" },
   "/reports/balance-sheet": { title: "Balance Sheet", sub: "Assets · liabilities · equity" },
   "/reports/cash-flow": { title: "Cash Flow", sub: "Operating · investing · financing" },
+  "/reports/sales": { title: "Sales report", sub: "Summary (API placeholder)" },
+  "/reports/purchases": { title: "Purchase report", sub: "Purchase lots" },
+  "/reports/inventory-financial": { title: "Inventory (financial)", sub: "Stock valuation snapshot" },
+  "/reports/aging": { title: "Aging", sub: "AR / AP buckets (placeholder)" },
   "/settings": { title: "Settings", sub: "Company · fiscal year · tax · integrations" },
   "/fep": { title: "FEP & commission", sub: "Earned vs paid (4% COGS)" },
   "/partners": { title: "Partners", sub: "Capital, drawings & profit split" },

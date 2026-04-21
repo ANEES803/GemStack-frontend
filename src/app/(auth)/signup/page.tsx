@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AuthShell } from "@/components/auth/AuthShell";
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 
 export default function SignupPage() {
+  const { pushToast } = useAppNotifications();
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -18,11 +20,11 @@ export default function SignupPage() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (password !== confirm) {
-      window.alert("Passwords do not match.");
+      pushToast("Passwords do not match.", "error");
       return;
     }
     if (!accept) {
-      window.alert("Please accept the terms to continue.");
+      pushToast("Please accept the terms to continue.", "error");
       return;
     }
     setBusy(true);

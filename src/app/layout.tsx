@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 
 import "./globals.css";
 
+import { AppProviders } from "@/components/providers/AppProviders";
+
 /** Bitdefender and some AV extensions inject `bis_skin_checked` on divs before React hydrates, causing false hydration errors. */
 const STRIP_EXTENSION_ATTRS_JS = `
 (function () {
@@ -90,7 +92,7 @@ export default function RootLayout({
         */}
         <script id="strip-av-extension-attrs" dangerouslySetInnerHTML={{ __html: STRIP_EXTENSION_ATTRS_JS }} />
         <script id="apply-theme-early" dangerouslySetInnerHTML={{ __html: APPLY_THEME_EARLY_JS }} />
-        {children}
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

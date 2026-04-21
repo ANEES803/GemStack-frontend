@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { formatMoney } from "@/lib/format";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
@@ -21,6 +22,7 @@ const INITIAL: FepRow[] = [
 ];
 
 export default function FepPage() {
+  const { pushToast } = useAppNotifications();
   const todayIso = useHydratedTodayIso();
   const [rows, setRows] = useState<FepRow[]>(INITIAL);
   const [payOpen, setPayOpen] = useState<FepRow | null>(null);
@@ -41,13 +43,13 @@ export default function FepPage() {
     if (!payOpen) return;
     const amt = Number(payAmount);
     if (!Number.isFinite(amt) || amt <= 0) {
-      window.alert("Enter a valid amount.");
+      pushToast("Enter a valid amount.", "error");
       return;
     }
     setRows((prev) => prev.map((r) => (r.id === payOpen.id ? { ...r, paid: r.paid + amt } : r)));
     setPayOpen(null);
     setPayAmount("");
-    window.alert("Demo: Dr FEP Payable · Cr Cash. Connect API.");
+    pushToast("Demo: Dr FEP Payable · Cr Cash. Connect API.", "info");
   }
 
   return (

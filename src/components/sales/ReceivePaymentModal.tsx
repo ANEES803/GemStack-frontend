@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { AppDialog } from "@/components/ui/AppDialog";
 
 export const PAYMENT_OPTIONS = ["Cash", "Bank Transfer", "Direct to Bank Account", "Cheque", "Online"] as const;
@@ -43,6 +44,7 @@ export function ReceivePaymentModal({
   amountDue,
   onSubmitPayment,
 }: Props) {
+  const { pushToast } = useAppNotifications();
   const [invoiceId, setInvoiceId] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [email, setEmail] = useState("");
@@ -85,19 +87,19 @@ export function ReceivePaymentModal({
 
   function submit() {
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
-      window.alert("Amount must be greater than 0.");
+      pushToast("Amount must be greater than 0.", "error");
       return;
     }
     if (typeof amountDue === "number" && amountNum > amountDue) {
-      window.alert(`Amount cannot exceed total due (${amountDue.toFixed(2)}).`);
+      pushToast(`Amount cannot exceed total due (${amountDue.toFixed(2)}).`, "error");
       return;
     }
     if (requiresBank && !bankAccountId) {
-      window.alert("Please select a company bank account.");
+      pushToast("Please select a company bank account.", "error");
       return;
     }
     if (!date) {
-      window.alert("Date is required.");
+      pushToast("Date is required.", "error");
       return;
     }
     onSubmitPayment?.({
@@ -106,8 +108,9 @@ export function ReceivePaymentModal({
       depositTo,
       date,
     });
-    window.alert(
-      `Demo: Record payment\nMethod: ${method}\nInvoice: ${invoiceId || ""}\nCustomer: ${customerName || ""}\nAmount: ${amount || ""}\nConnect API to post.`,
+    pushToast(
+      `Demo: Record payment — Method: ${method}; Invoice: ${invoiceId || "—"}; Customer: ${customerName || "—"}; Amount: ${amount || "—"}. Connect API to post.`,
+      "info",
     );
     onClose();
   }

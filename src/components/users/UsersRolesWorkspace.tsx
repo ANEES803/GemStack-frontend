@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { ROLES, type RoleDefinition, type RoleSlug } from "@/lib/roles";
 
@@ -147,6 +148,7 @@ function CellIcon({ kind }: { kind: "full" | "view" | "own" | "none" }) {
 }
 
 export function UsersRolesWorkspace() {
+  const { pushToast, confirm } = useAppNotifications();
   const [users, setUsers] = useState<UserRow[]>(INITIAL_USERS);
   const [modal, setModal] = useState<"add" | { edit: UserRow } | null>(null);
   const [form, setForm] = useState({
@@ -170,7 +172,7 @@ export function UsersRolesWorkspace() {
 
   function saveUser() {
     if (!form.name.trim() || !form.email.trim()) {
-      window.alert("Name and email are required.");
+      pushToast("Name and email are required.", "error");
       return;
     }
     if (modal === "add") {
@@ -203,12 +205,21 @@ export function UsersRolesWorkspace() {
       );
     }
     setModal(null);
-    window.alert("Demo: user saved. Wire to auth API (email + password, OTP per SRS).");
+    pushToast("Demo: user saved. Wire to auth API (email + password, OTP per SRS).", "info");
   }
 
-  function toggleDisable(u: UserRow) {
+  async function toggleDisable(u: UserRow) {
     const next: UserStatus = u.status === "disabled" ? "active" : "disabled";
-    if (!window.confirm(next === "disabled" ? "Disable this user? (SRS: prefer soft-disable over hard delete.)" : "Re-enable this user?")) return;
+    const ok = await confirm({
+      title: next === "disabled" ? "Disable user?" : "Re-enable user?",
+      message:
+        next === "disabled"
+          ? "Disable this user? (SRS: prefer soft-disable over hard delete.)"
+          : "Re-enable this user?",
+      confirmLabel: next === "disabled" ? "Disable" : "Re-enable",
+      variant: next === "disabled" ? "danger" : "default",
+    });
+    if (!ok) return;
     setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, status: next } : x)));
   }
 
@@ -273,7 +284,7 @@ export function UsersRolesWorkspace() {
                           { label: "Edit user", onSelect: () => openEdit(u), tone: "accent" },
                           {
                             label: u.status === "disabled" ? "Enable user" : "Disable user",
-                            onSelect: () => toggleDisable(u),
+                            onSelect: () => void toggleDisable(u),
                             tone: u.status === "disabled" ? "success" : "warning",
                           },
                           { label: "View profile", tone: "default" },

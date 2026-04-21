@@ -2,49 +2,9 @@
  * Authenticated API client for vendors and purchase lots (GemStack backend).
  */
 
-import { getAccessToken } from "@/lib/authClient";
+import { apiAuthFetch } from "@/lib/authClient";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-
-const FETCH_TIMEOUT_MS = 15_000;
-
-function mergeAbortSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
-  if (!a) return b;
-  const controller = new AbortController();
-  const onAbort = () => controller.abort();
-  if (a.aborted || b.aborted) {
-    controller.abort();
-    return controller.signal;
-  }
-  a.addEventListener("abort", onAbort, { once: true });
-  b.addEventListener("abort", onAbort, { once: true });
-  return controller.signal;
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
-  const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const signal = mergeAbortSignals(init.signal ?? undefined, timeoutController.signal);
-    return await fetch(url, { ...init, signal });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-function authHeaders(): HeadersInit {
-  const token = getAccessToken();
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) h.Authorization = `Bearer ${token}`;
-  return h;
-}
-
-function authBearerOnly(): HeadersInit {
-  const token = getAccessToken();
-  const h: Record<string, string> = {};
-  if (token) h.Authorization = `Bearer ${token}`;
-  return h;
-}
 
 async function parseError(response: Response): Promise<string> {
   const body = (await response.json().catch(() => ({}))) as { detail?: unknown };
@@ -151,30 +111,28 @@ export type ApAgingLineDto = {
 };
 
 export async function fetchVendorOpenBalances(): Promise<VendorOpenBalanceDto[]> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/vendors/open-balances`, { headers: authHeaders() });
+  const response = await apiAuthFetch(`${API_BASE_URL}/vendors/open-balances`, { method: "GET" });
   if (!response.ok) throw new Error(await parseError(response));
   return (await response.json()) as VendorOpenBalanceDto[];
 }
 
 export async function fetchApAging(asOfIso: string): Promise<ApAgingLineDto[]> {
-  const response = await fetchWithTimeout(
-    `${API_BASE_URL}/vendors/ap-aging?as_of=${encodeURIComponent(asOfIso)}`,
-    { headers: authHeaders() },
-  );
+  const response = await apiAuthFetch(`${API_BASE_URL}/vendors/ap-aging?as_of=${encodeURIComponent(asOfIso)}`, {
+    method: "GET",
+  });
   if (!response.ok) throw new Error(await parseError(response));
   return (await response.json()) as ApAgingLineDto[];
 }
 
 export async function fetchVendors(): Promise<VendorDto[]> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/vendors`, { headers: authHeaders() });
+  const response = await apiAuthFetch(`${API_BASE_URL}/vendors`, { method: "GET" });
   if (!response.ok) throw new Error(await parseError(response));
   return (await response.json()) as VendorDto[];
 }
 
 export async function createVendor(body: { name: string; email?: string | null }): Promise<VendorDto> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/vendors`, {
+  const response = await apiAuthFetch(`${API_BASE_URL}/vendors`, {
     method: "POST",
-    headers: authHeaders(),
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await parseError(response));
@@ -182,14 +140,14 @@ export async function createVendor(body: { name: string; email?: string | null }
 }
 
 export async function suggestNextLotCode(): Promise<string> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/next-code`, { headers: authHeaders() });
+  const response = await apiAuthFetch(`${API_BASE_URL}/purchase-lots/next-code`, { method: "GET" });
   if (!response.ok) throw new Error(await parseError(response));
   const data = (await response.json()) as { lot_code: string };
   return data.lot_code;
 }
 
 export async function listPurchaseLotSummaries(): Promise<PurchaseLotSummary[]> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots`, { headers: authHeaders() });
+  const response = await apiAuthFetch(`${API_BASE_URL}/purchase-lots`, { method: "GET" });
   if (!response.ok) throw new Error(await parseError(response));
   return (await response.json()) as PurchaseLotSummary[];
 }
@@ -217,9 +175,8 @@ export type CreatePurchaseLotBody = {
 };
 
 export async function createPurchaseLot(body: CreatePurchaseLotBody): Promise<PurchaseLotDetail> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots`, {
+  const response = await apiAuthFetch(`${API_BASE_URL}/purchase-lots`, {
     method: "POST",
-    headers: authHeaders(),
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await parseError(response));
@@ -228,7 +185,7 @@ export async function createPurchaseLot(body: CreatePurchaseLotBody): Promise<Pu
 
 export async function getPurchaseLotByCode(lotCode: string): Promise<PurchaseLotDetail> {
   const enc = encodeURIComponent(lotCode.trim());
-  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/by-code/${enc}`, { headers: authHeaders() });
+  const response = await apiAuthFetch(`${API_BASE_URL}/purchase-lots/by-code/${enc}`, { method: "GET" });
   if (!response.ok) throw new Error(await parseError(response));
   return (await response.json()) as PurchaseLotDetail;
 }
@@ -247,9 +204,8 @@ export type PatchPurchaseLotBody = {
 };
 
 export async function patchPurchaseLot(lotId: string, body: PatchPurchaseLotBody): Promise<PurchaseLotDetail> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/${lotId}`, {
+  const response = await apiAuthFetch(`${API_BASE_URL}/purchase-lots/${lotId}`, {
     method: "PATCH",
-    headers: authHeaders(),
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await parseError(response));
@@ -268,17 +224,15 @@ export type AddLotPaymentBody = {
 };
 
 export async function deletePurchaseLot(lotId: string): Promise<void> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/${lotId}`, {
+  const response = await apiAuthFetch(`${API_BASE_URL}/purchase-lots/${lotId}`, {
     method: "DELETE",
-    headers: authBearerOnly(),
   });
   if (!response.ok) throw new Error(await parseError(response));
 }
 
 export async function addPurchaseLotPayment(lotId: string, body: AddLotPaymentBody): Promise<PurchaseLotDetail> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/purchase-lots/${lotId}/payments`, {
+  const response = await apiAuthFetch(`${API_BASE_URL}/purchase-lots/${lotId}/payments`, {
     method: "POST",
-    headers: authHeaders(),
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await parseError(response));

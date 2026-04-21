@@ -403,7 +403,7 @@ export default function LotsPage() {
       {null}
     </AppDialog>
 
-    <ToastStack toasts={toasts} onRemove={removeToast} bottomOffsetClass="bottom-6" />
+    <ToastStack toasts={toasts} onRemove={removeToast} />
     </>
   );
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { formatMoney } from "@/lib/format";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
@@ -25,6 +26,7 @@ const INITIAL: ExpenseRow[] = [
 const CATEGORIES = ["Rent", "Utilities", "Marketing", "Travel", "Professional fees", "Other"];
 
 export default function ExpensesPage() {
+  const { pushToast } = useAppNotifications();
   const todayIso = useHydratedTodayIso();
   const [rows, setRows] = useState<ExpenseRow[]>(INITIAL);
   const [open, setOpen] = useState(false);
@@ -45,7 +47,7 @@ export default function ExpensesPage() {
   function saveExpense() {
     const amt = Number(form.amount);
     if (!form.dateIso || !Number.isFinite(amt) || amt <= 0) {
-      window.alert("Enter a valid date and amount.");
+      pushToast("Enter a valid date and amount.", "error");
       return;
     }
     setRows((prev) => [
@@ -67,7 +69,7 @@ export default function ExpensesPage() {
       description: "",
     });
     setOpen(false);
-    window.alert("Demo: Dr expense · Cr Cash/Bank. Connect API for live posting.");
+    pushToast("Demo: Dr expense · Cr Cash/Bank. Connect API for live posting.", "info");
   }
 
   return (

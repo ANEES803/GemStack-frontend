@@ -6,6 +6,8 @@ export type AccountTypeFilter = "Asset" | "Liability" | "Equity" | "Revenue" | "
 
 export type LedgerRow = {
   id: string;
+  /** Source journal for drill-down (general ledger lines API). */
+  journalEntryId?: string;
   date: string;
   journalNo: string;
   transactionType: TransactionType;

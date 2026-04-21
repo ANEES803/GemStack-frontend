@@ -84,6 +84,7 @@ export function miniLedgerForAccount(accountId: string, code: string): { lines: 
     const cr = i % 3 !== 0 ? 8_500 + (seed % 4) * 600 : 0;
     lines.push({
       id: `${accountId}-ln-${i}`,
+      journalEntryId: "00000000-0000-4000-8000-000000000000",
       date: `2026-03-${String(10 + i).padStart(2, "0")}`,
       ref: `JE-2026-${420 + i + (seed % 20)}`,
       memo: i % 2 === 0 ? "Allocation — month end" : `Reclass — ${code}`,

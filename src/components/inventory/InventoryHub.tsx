@@ -22,6 +22,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { DEMO_REVENUE_ACCOUNTS, revenueAccountLabel } from "@/lib/demoRevenueAccounts";
 import { loadItemCatalog, saveItemCatalog, type StoredItemRow } from "@/lib/itemCatalogStorage";
 import { getAccessToken } from "@/lib/authClient";
@@ -602,6 +603,7 @@ function ItemsImportExportMenu({
   customTypes: readonly CustomInventoryType[];
   onImportFiles: (files: FileList | null) => void;
 }) {
+  const { pushToast } = useAppNotifications();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -617,12 +619,12 @@ function ItemsImportExportMenu({
   const close = useCallback(() => setOpen(false), []);
 
   const runExport = useCallback(() => {
-    window.alert(`Demo: export ${rows.length} item(s)  connect API for full export.`);
-  }, [rows.length]);
+    pushToast(`Demo: export ${rows.length} item(s)  connect API for full export.`, "info");
+  }, [rows.length, pushToast]);
 
   const runPdf = useCallback(() => {
-    window.alert("Demo: Download to PDF  connect report service or window.print() from a preview.");
-  }, []);
+    pushToast("Demo: Download to PDF  connect report service or window.print() from a preview.", "info");
+  }, [pushToast]);
 
   const runCsv = useCallback(() => {
     downloadTextFile(`items-${new Date().toISOString().slice(0, 10)}.csv`, rowsToCsv(rows, customTypes), "text/csv;charset=utf-8;");
@@ -630,9 +632,9 @@ function ItemsImportExportMenu({
   }, [rows, customTypes, close]);
 
   const runExcel = useCallback(() => {
-    window.alert("Demo: Download to Excel (.xlsx)  connect API or add a sheet library; CSV download is available now.");
+    pushToast("Demo: Download to Excel (.xlsx) — connect API or add a sheet library; CSV download is available now.", "info");
     close();
-  }, [close]);
+  }, [close, pushToast]);
 
   const triggerImport = useCallback(() => {
     fileRef.current?.click();
@@ -874,16 +876,17 @@ function LineTypeToggle({
 const MAX_ITEM_IMAGE_BYTES = 2_500_000;
 
 function ItemImageDropzone({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const { pushToast } = useAppNotifications();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
   function readFile(file: File) {
     if (!file.type.startsWith("image/")) {
-      window.alert("Please choose an image file (PNG, JPG, WebP, etc.).");
+      pushToast("Please choose an image file (PNG, JPG, WebP, etc.).", "error");
       return;
     }
     if (file.size > MAX_ITEM_IMAGE_BYTES) {
-      window.alert(`Image must be under ${Math.round(MAX_ITEM_IMAGE_BYTES / 1e6)} MB.`);
+      pushToast(`Image must be under ${Math.round(MAX_ITEM_IMAGE_BYTES / 1e6)} MB.`, "error");
       return;
     }
     const reader = new FileReader();
@@ -1078,6 +1081,7 @@ function SearchableFieldPicker({
   onRenameOption?: (from: string, to: string) => void;
   onDeleteOption?: (opt: string) => void;
 }) {
+  const { prompt, confirm } = useAppNotifications();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -1200,13 +1204,21 @@ function SearchableFieldPicker({
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        const n = window.prompt(`Rename "${opt}" to`, opt);
-                        if (n == null) return;
-                        const t = n.trim();
-                        if (!t || t === opt) return;
-                        onRenameOption(opt, t);
-                        if (value === opt) onChange(t);
-                        setOpen(false);
+                        void (async () => {
+                          const n = await prompt({
+                            title: "Rename option",
+                            message: `Rename "${opt}" to a new label.`,
+                            label: "New name",
+                            defaultValue: opt,
+                            submitLabel: "Rename",
+                          });
+                          if (n == null) return;
+                          const t = n.trim();
+                          if (!t || t === opt) return;
+                          onRenameOption(opt, t);
+                          if (value === opt) onChange(t);
+                          setOpen(false);
+                        })();
                       }}
                     >
                       <Pencil className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
@@ -1218,10 +1230,18 @@ function SearchableFieldPicker({
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (!window.confirm(`Remove "${opt}" from the list? Items using it will be cleared.`)) return;
-                        onDeleteOption(opt);
-                        if (value === opt) onChange("");
-                        setOpen(false);
+                        void (async () => {
+                          const ok = await confirm({
+                            title: "Remove option?",
+                            message: `Remove "${opt}" from the list? Items using it will be cleared.`,
+                            confirmLabel: "Remove",
+                            variant: "danger",
+                          });
+                          if (!ok) return;
+                          onDeleteOption(opt);
+                          if (value === opt) onChange("");
+                          setOpen(false);
+                        })();
                       }}
                     >
                       <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
@@ -1509,6 +1529,7 @@ function itemFormSnapshot(f: ItemFormState) {
 }
 
 export function InventoryHub() {
+  const { pushToast, confirm, prompt } = useAppNotifications();
   const router = useRouter();
   const sp = useSearchParams();
   const rawTab = sp.get("tab");
@@ -1726,32 +1747,47 @@ export function InventoryHub() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [categoryPickerOptions, customCategories, itemForm.category]);
 
-  const addCustomLocation = useCallback(() => {
-    const name = window.prompt("Enter new location name:");
+  const addCustomLocation = useCallback(async () => {
+    const name = await prompt({
+      title: "New location",
+      message: "Enter a name for the new location.",
+      label: "Location name",
+      submitLabel: "Add",
+    });
     if (name == null) return;
     const trimmed = name.trim();
     if (!trimmed) return;
     setCustomLocations((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
     setItemForm((s) => ({ ...s, location: trimmed }));
-  }, []);
+  }, [prompt]);
 
-  const addCustomCustodian = useCallback(() => {
-    const name = window.prompt("Enter new custodian name:");
+  const addCustomCustodian = useCallback(async () => {
+    const name = await prompt({
+      title: "New custodian",
+      message: "Enter a name for the new custodian.",
+      label: "Custodian name",
+      submitLabel: "Add",
+    });
     if (name == null) return;
     const trimmed = name.trim();
     if (!trimmed) return;
     setCustomCustodians((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
     setItemForm((s) => ({ ...s, custodian: trimmed }));
-  }, []);
+  }, [prompt]);
 
-  const addCustomCategory = useCallback(() => {
-    const name = window.prompt("Enter new category name:");
+  const addCustomCategory = useCallback(async () => {
+    const name = await prompt({
+      title: "New category",
+      message: "Enter a name for the new category.",
+      label: "Category name",
+      submitLabel: "Add",
+    });
     if (name == null) return;
     const trimmed = name.trim();
     if (!trimmed) return;
     setCustomCategories((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
     setItemForm((s) => ({ ...s, category: trimmed }));
-  }, []);
+  }, [prompt]);
 
   const renameLocationOption = useCallback((from: string, to: string) => {
     setRows((prev) =>
@@ -2155,8 +2191,14 @@ export function InventoryHub() {
     setViewAllTypesOpen(false);
   }
 
-  function deleteInventoryType(typeId: string) {
-    if (!window.confirm("Delete this inventory type? Items using it will switch to Rough.")) return;
+  async function deleteInventoryType(typeId: string) {
+    const ok = await confirm({
+      title: "Delete inventory type?",
+      message: "Delete this inventory type? Items using it will switch to Rough.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     setCustomInventoryTypes((prev) => prev.filter((x) => x.id !== typeId));
     setRows((prev) =>
       prev.map((r) => (r.itemKind === typeId ? { ...r, itemKind: KIND_ROUGH, customFieldValuesJson: "{}" } : r)),
@@ -2293,7 +2335,7 @@ export function InventoryHub() {
 
     setSplitParcelOpen(false);
     setSplitError(null);
-    window.alert(`Parcel split complete. Created ${newRows.length} new parcel(s).`);
+    pushToast(`Parcel split complete. Created ${newRows.length} new parcel(s).`, "success");
   }
 
   function openEditItemModal(row: ItemRow) {
@@ -2382,8 +2424,14 @@ export function InventoryHub() {
     return () => window.removeEventListener("keydown", onKey);
   }, [addTypeModalOpen, itemModalOpen]);
 
-  function deleteItem(id: string) {
-    if (!window.confirm("Delete this item? This cannot be undone in the demo.")) return;
+  async function deleteItem(id: string) {
+    const ok = await confirm({
+      title: "Delete item?",
+      message: "Delete this item? This cannot be undone in the demo.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     setRows((prev) => prev.filter((r) => r.id !== id));
   }
 
@@ -2395,11 +2443,12 @@ export function InventoryHub() {
       return !n.endsWith(".csv") && !n.endsWith(".xlsx") && !n.endsWith(".xls");
     });
     if (invalid.length) {
-      window.alert("Only Excel (.xlsx, .xls) and CSV files are allowed for import.");
+      pushToast("Only Excel (.xlsx, .xls) and CSV files are allowed for import.", "error");
       return;
     }
-    window.alert(
+    pushToast(
       `Demo: received ${list.length} file(s): ${list.map((f) => `${f.name} (${Math.round(f.size / 1024)} KB)`).join(", ")}. Parse on the server and upsert items.`,
+      "info",
     );
   }
 
@@ -2409,16 +2458,16 @@ export function InventoryHub() {
 
     if (itemForm.entryType === "service") {
       if (!itemForm.itemName.trim()) {
-        window.alert("Enter a service name.");
+        pushToast("Enter a service name.", "error");
         return;
       }
       if (!itemForm.revenueAccountId.trim()) {
-        window.alert("Select a revenue (income) account for this service.");
+        pushToast("Select a revenue (income) account for this service.", "error");
         return;
       }
       const rate = Number(itemForm.rate);
       if (!Number.isFinite(rate) || rate < 0) {
-        window.alert("Enter a valid rate / price.");
+        pushToast("Enter a valid rate / price.", "error");
         return;
       }
       const today = new Date().toISOString().slice(0, 10);
@@ -2453,16 +2502,16 @@ export function InventoryHub() {
         setRows((prev) => [rowPayload, ...prev]);
       }
       forceCloseItemModal();
-      window.alert(wasEdit ? "Demo: service updated. Wire save to your API." : "Demo: service saved. Wire save to your API.");
+      pushToast(wasEdit ? "Demo: service updated. Wire save to your API." : "Demo: service saved. Wire save to your API.", "info");
       return;
     }
 
     if (!itemForm.itemNo.trim()) {
-      window.alert("Item # is required.");
+      pushToast("Item # is required.", "error");
       return;
     }
     if (!itemForm.date.trim()) {
-      window.alert("Enter a date.");
+      pushToast("Enter a date.", "error");
       return;
     }
 
@@ -2493,21 +2542,21 @@ export function InventoryHub() {
     }
 
     if (!itemForm.itemName.trim()) {
-      window.alert("Item name is required.");
+      pushToast("Item name is required.", "error");
       return;
     }
 
     if (isBuiltinKind(itemForm.itemTypeKey)) {
       if (!Number.isFinite(piecesNum) || piecesNum < 0) {
-        window.alert("Enter a valid pieces count.");
+        pushToast("Enter a valid pieces count.", "error");
         return;
       }
       if (!Number.isFinite(uomNum) || uomNum < 0) {
-        window.alert("Enter a valid UOM.");
+        pushToast("Enter a valid UOM.", "error");
         return;
       }
       if (!Number.isFinite(rateNum) || rateNum < 0) {
-        window.alert("Enter a valid rate.");
+        pushToast("Enter a valid rate.", "error");
         return;
       }
       effUom = uomNum;
@@ -2515,15 +2564,15 @@ export function InventoryHub() {
       effRate = rateNum;
     } else {
       if (rPieces.enabled && (!Number.isFinite(piecesNum) || piecesNum < 0)) {
-        window.alert("Enter a valid pieces count.");
+        pushToast("Enter a valid pieces count.", "error");
         return;
       }
       if (rUom.enabled && (!Number.isFinite(uomNum) || uomNum < 0)) {
-        window.alert("Enter a valid UOM.");
+        pushToast("Enter a valid UOM.", "error");
         return;
       }
       if (rRate.enabled && (!Number.isFinite(rateNum) || rateNum < 0)) {
-        window.alert("Enter a valid rate.");
+        pushToast("Enter a valid rate.", "error");
         return;
       }
     }
@@ -2531,7 +2580,7 @@ export function InventoryHub() {
     const mode = getInventoryTypeUiMode(itemForm.itemTypeKey, customInventoryTypes);
     if (mode === "cut") {
       if (!itemForm.dimLength.trim() || !itemForm.dimWidth.trim() || !itemForm.dimHeight.trim()) {
-        window.alert("Enter length, width, and height / thickness for this item type.");
+        pushToast("Enter length, width, and height / thickness for this item type.", "error");
         return;
       }
     }
@@ -2541,7 +2590,7 @@ export function InventoryHub() {
       for (const f of fields) {
         if (f.required === false) continue;
         if (!itemForm.customFields[f.id]?.trim()) {
-          window.alert(`Enter a value for "${f.label}".`);
+          pushToast(`Enter a value for "${f.label}".`, "error");
           return;
         }
       }
@@ -2575,7 +2624,7 @@ export function InventoryHub() {
     if (editingItemId) {
       setRows((prev) => prev.map((r) => (r.id === editingItemId ? rowPayload : r)));
       forceCloseItemModal();
-      window.alert("Demo: item updated. Wire save to your API.");
+      pushToast("Demo: item updated. Wire save to your API.", "info");
       return;
     }
     setRows((prev) => [rowPayload, ...prev]);
@@ -2596,7 +2645,7 @@ export function InventoryHub() {
   const commitAudit = useCallback(
     (mode: "now" | "close") => {
       if (auditFilteredStockRows.length === 0) {
-        window.alert("No lines to save.");
+        pushToast("No lines to save.", "error");
         return;
       }
       const lines: AuditLineSnap[] = auditFilteredStockRows.map((r) => {
@@ -2647,13 +2696,14 @@ export function InventoryHub() {
             return next;
           });
         }
-        window.alert(
+        pushToast(
           idsToClose.length === 0
-            ? "Audit saved (demo). No lines were marked Verified  nothing was removed from the audit list. Tick Verified for rows to complete, then Save and Close again."
+            ? "Audit saved (demo). No lines were marked Verified — nothing was removed from the audit list. Tick Verified for rows to complete, then Save and Close again."
             : `Audit saved (demo). ${idsToClose.length} verified line(s) removed from this audit list. Wire save to your API for production.`,
+          "info",
         );
       } else {
-        window.alert("Audit saved (demo). You can keep editing counts. Wire save to your API for production.");
+        pushToast("Audit saved (demo). You can keep editing counts. Wire save to your API for production.", "info");
       }
     },
     [auditFilteredStockRows, auditDraft],
@@ -2872,7 +2922,7 @@ export function InventoryHub() {
                     </td>
                     <td className="px-4 py-3 text-xs text-[var(--gs-muted)]">{revenueAccountLabel(r.revenueAccountId)}</td>
                     <td className="px-2 py-2 text-right">
-                      <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => deleteItem(r.id)} />
+                      <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => void deleteItem(r.id)} />
                     </td>
                   </tr>
                 ))}
@@ -3011,7 +3061,7 @@ export function InventoryHub() {
                       </td>
                       <td className="min-w-0 max-w-0 px-2 py-2.5 text-center align-middle">
                         <div className="flex min-w-0 justify-center overflow-hidden">
-                          <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => deleteItem(r.id)} />
+                          <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => void deleteItem(r.id)} />
                         </div>
                       </td>
                     </tr>
@@ -3526,17 +3576,17 @@ export function InventoryHub() {
                 onClick={() => {
                   const label = addTypeDraft.label.trim();
                   if (!label) {
-                    window.alert("Enter a type name.");
+                    pushToast("Enter a type name.", "error");
                     return;
                   }
                   if (addTypeDraft.uomTab === "custom" && !addTypeDraft.customUom.trim()) {
-                    window.alert("Enter a custom UOM label.");
+                    pushToast("Enter a custom UOM label.", "error");
                     return;
                   }
                   const mergedStd = mergeStandardFields(addTypeDraft.standardFields);
                   if (addTypeDraft.specMode !== "builder") {
                     if (!Object.values(mergedStd).some((r) => r.enabled)) {
-                      window.alert("Enable at least one standard field, or switch to Custom fields.");
+                      pushToast("Enable at least one standard field, or switch to Custom fields.", "error");
                       return;
                     }
                   }
@@ -3553,16 +3603,16 @@ export function InventoryHub() {
                       : [];
                   if (addTypeDraft.specMode === "builder") {
                     if (cleaned.length < 1) {
-                      window.alert("Add at least one custom attribute field.");
+                      pushToast("Add at least one custom attribute field.", "error");
                       return;
                     }
                     for (const f of cleaned) {
                       if (!f.label) {
-                        window.alert("Each field needs a label.");
+                        pushToast("Each field needs a label.", "error");
                         return;
                       }
                       if (f.kind === "dropdown" && (!f.options || f.options.length < 1)) {
-                        window.alert(`Add at least one option for dropdown "${f.label || "field"}".`);
+                        pushToast(`Add at least one option for dropdown "${f.label || "field"}".`, "error");
                         return;
                       }
                     }
@@ -3935,7 +3985,7 @@ export function InventoryHub() {
                   />
                   <button
                     type="button"
-                    onClick={addCustomCategory}
+                    onClick={() => void addCustomCategory()}
                     className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-2 text-xs font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)]"
                   >
                     <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
@@ -4197,7 +4247,7 @@ export function InventoryHub() {
                           />
                           <button
                             type="button"
-                            onClick={addCustomLocation}
+                            onClick={() => void addCustomLocation()}
                             className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-2 text-xs font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)] sm:w-auto"
                           >
                             <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
@@ -4221,7 +4271,7 @@ export function InventoryHub() {
                           />
                           <button
                             type="button"
-                            onClick={addCustomCustodian}
+                            onClick={() => void addCustomCustodian()}
                             className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-2 text-xs font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)] sm:w-auto"
                           >
                             <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
@@ -4901,7 +4951,7 @@ export function InventoryHub() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => deleteInventoryType(t.id)}
+                              onClick={() => void deleteInventoryType(t.id)}
                               className="inline-flex items-center gap-1 rounded-lg border border-[var(--gs-border)] px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
                             >
                               <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />

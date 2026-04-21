@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { formatMoney } from "@/lib/format";
 import { fetchVendorOpenBalances, fetchVendors, type VendorDto } from "@/lib/purchaseLotsApi";
 
@@ -21,6 +22,7 @@ const FLOW_STEPS = [
 type VendorUiRow = { id: string; name: string; email: string; balance: number };
 
 export function PurchasesWorkspace() {
+  const { pushToast } = useAppNotifications();
   const router = useRouter();
   const sp = useSearchParams();
   const tab = (sp.get("tab") as Tab | null) ?? "flow";
@@ -103,7 +105,7 @@ export function PurchasesWorkspace() {
             </div>
             <button
               type="button"
-              onClick={() => window.alert("Demo: start new purchase requisition")}
+              onClick={() => pushToast("Demo: start new purchase requisition", "info")}
               className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--gs-accent-hover)]"
             >
               + New requisition
@@ -114,7 +116,7 @@ export function PurchasesWorkspace() {
               <button
                 key={s.id}
                 type="button"
-                onClick={() => window.alert(`Demo: open ${s.label}`)}
+                onClick={() => pushToast(`Demo: open ${s.label}`, "info")}
                 className="flex flex-col rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 p-4 text-left transition hover:border-[var(--gs-accent)] hover:bg-[var(--gs-card)]"
               >
                 <span className="font-bold text-[var(--gs-text)]">{s.label}</span>
@@ -188,7 +190,7 @@ export function PurchasesWorkspace() {
             </div>
             <button
               type="button"
-              onClick={() => window.alert("Demo: add vendor drawer")}
+              onClick={() => pushToast("Demo: add vendor drawer", "info")}
               className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm"
             >
               + New vendor

@@ -149,6 +149,12 @@ select option {
   color: var(--gs-text);
 }
 
+/* Chart of accounts: “soon” toolbar buttons stay readable when disabled (browser default dims them) */
+button.coa-chart-soon-btn:disabled {
+  opacity: 1;
+  color: var(--gs-text);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Data tables: zebra rows + readable hover (opt-in via tbody.gs-striped-rows) */
 /* -------------------------------------------------------------------------- */

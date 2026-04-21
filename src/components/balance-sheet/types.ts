@@ -1,4 +1,4 @@
-export type BsRowKind = "section" | "subsection" | "detail" | "total" | "grand_total" | "check";
+export type BsRowKind = "section" | "subsection" | "detail" | "pl_bridge" | "total" | "grand_total" | "check";
 
 export type BsRow = {
   id: string;

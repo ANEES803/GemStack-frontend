@@ -68,6 +68,7 @@ export type TbDisplayRow = {
 
 export type TbMiniLine = {
   id: string;
+  journalEntryId: string;
   date: string;
   ref: string;
   memo: string;

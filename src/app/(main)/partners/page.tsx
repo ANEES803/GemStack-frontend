@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { emitAppToast } from "@/components/providers/AppNotificationsProvider";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { formatMoney } from "@/lib/format";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
@@ -48,7 +49,7 @@ export default function PartnersPage() {
   function addWithdrawal() {
     const amt = Number(drawForm.amount);
     if (!Number.isFinite(amt) || amt <= 0) {
-      window.alert("Enter a valid amount.");
+      emitAppToast("Enter a valid amount.", "error");
       return;
     }
     const p = partners.find((x) => x.id === drawForm.partnerId);
@@ -66,12 +67,12 @@ export default function PartnersPage() {
     setPartners((prev) => prev.map((x) => (x.id === p.id ? { ...x, capitalBalance: x.capitalBalance - amt } : x)));
     setDrawOpen(false);
     setDrawForm({ partnerId: drawForm.partnerId, amount: "", dateIso: todayIso || drawForm.dateIso });
-    window.alert("Demo: Dr Capital · Cr Cash. Connect API.");
+    emitAppToast("Demo: Dr Capital · Cr Cash. Connect API.", "info");
   }
 
   function runProfitDistribution() {
     if (Math.abs(ratioTotals - 100) > 0.01) {
-      window.alert("Profit ratios should sum to 100%.");
+      emitAppToast("Profit ratios should sum to 100%.", "error");
       return;
     }
     setPartners((prev) =>
@@ -80,7 +81,7 @@ export default function PartnersPage() {
         capitalBalance: p.capitalBalance + (profitToDistribute * p.profitRatioPct) / 100,
       })),
     );
-    window.alert("Demo: Dr profit summary · Cr partner capital. Connect API.");
+    emitAppToast("Demo: Dr profit summary · Cr partner capital. Connect API.", "info");
   }
 
   return (

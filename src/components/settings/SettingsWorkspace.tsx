@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { ThemeToggleRow } from "@/components/theme";
 
 type Tab = "appearance" | "company" | "tax" | "account_types" | "workflow" | "integrations";
 
 export function SettingsWorkspace() {
+  const { pushToast } = useAppNotifications();
   const router = useRouter();
   const sp = useSearchParams();
   const tab = (sp.get("tab") as Tab | null) ?? "company";
@@ -97,7 +99,7 @@ export function SettingsWorkspace() {
           <div className="mt-6 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => window.alert("Demo: save company profile")}
+              onClick={() => pushToast("Demo: save company profile", "info")}
               className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--gs-accent-hover)]"
             >
               Save
@@ -141,7 +143,7 @@ export function SettingsWorkspace() {
             </div>
             <button
               type="button"
-              onClick={() => window.alert("Demo: add account type drawer")}
+              onClick={() => pushToast("Demo: add account type drawer", "info")}
               className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--gs-accent-hover)]"
             >
               + Add type
@@ -184,7 +186,7 @@ export function SettingsWorkspace() {
           </ul>
           <button
             type="button"
-            onClick={() => window.alert("Demo: configure approval rules")}
+            onClick={() => pushToast("Demo: configure approval rules", "info")}
             className="mt-6 rounded-full border border-[var(--gs-border)] px-5 py-2.5 text-sm font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-accent-soft)]"
           >
             Configure rules

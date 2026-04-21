@@ -7,11 +7,13 @@ import type { BsRow } from "./types";
 type Props = {
   rows: BsRow[];
   balanceDifference: number;
+  currency: string;
   onAccountClick: (row: BsRow) => void;
 };
 
-export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: Props) {
+export function BalanceSheetTable({ rows, balanceDifference, currency, onAccountClick }: Props) {
   const showWarning = Math.abs(balanceDifference) >= 0.01;
+  const ccy = currency || "USD";
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
@@ -26,6 +28,8 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
           <tbody className="gs-striped-rows">
             {rows.map((row) => {
               const isDetail = row.kind === "detail";
+              const isBridge = row.kind === "pl_bridge";
+              const isClickable = isDetail;
               const isTotal = row.kind === "total";
               const isGrand = row.kind === "grand_total";
               const isSection = row.kind === "section";
@@ -41,7 +45,9 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
                     ? "font-bold text-[var(--gs-text)]"
                     : isTotal
                       ? "font-bold text-[var(--gs-text)]"
-                      : "font-medium text-[var(--gs-text)]";
+                      : isBridge
+                        ? "text-sm italic text-[var(--gs-muted)]"
+                        : "font-medium text-[var(--gs-text)]";
 
               const amountClass =
                 isGrand || isTotal
@@ -53,9 +59,9 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
               return (
                 <tr
                   key={row.id}
-                  onClick={() => isDetail && onAccountClick(row)}
+                  onClick={() => isClickable && onAccountClick(row)}
                   className={`border-b border-[var(--gs-border)] ${
-                    isDetail ? "cursor-pointer hover:bg-[var(--gs-accent-soft)]/50" : ""
+                    isClickable ? "cursor-pointer hover:bg-[var(--gs-accent-soft)]/50" : ""
                   } ${isCheck ? checkClass : ""}`}
                 >
                   <td className="px-4 py-2.5 align-top" style={{ paddingLeft: pad }}>
@@ -64,18 +70,18 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
                   <td className={`px-4 py-2.5 text-right font-mono ${amountClass} ${isCheck && showWarning ? "text-red-700" : ""}`}>
                     {isCheck ? (
                       balanceDifference < 0 ? (
-                        `(${formatMoney(Math.abs(balanceDifference), "PKR")})`
+                        `(${formatMoney(Math.abs(balanceDifference), ccy)})`
                       ) : balanceDifference > 0 ? (
-                        formatMoney(balanceDifference, "PKR")
+                        formatMoney(balanceDifference, ccy)
                       ) : (
-                        formatMoney(0, "PKR")
+                        formatMoney(0, ccy)
                       )
                     ) : row.amount === null ? (
                       "—"
                     ) : row.amount < 0 ? (
-                      `(${formatMoney(Math.abs(row.amount), "PKR")})`
+                      `(${formatMoney(Math.abs(row.amount), ccy)})`
                     ) : (
-                      formatMoney(row.amount, "PKR")
+                      formatMoney(row.amount, ccy)
                     )}
                   </td>
                 </tr>
@@ -86,7 +92,8 @@ export function BalanceSheetTable({ rows, balanceDifference, onAccountClick }: P
       </div>
       {showWarning ? (
         <p className="border-t border-red-200 bg-red-50/90 px-4 py-3 text-xs font-semibold text-red-900 dark:border-red-900 dark:bg-red-950/50 dark:text-red-100">
-          Assets do not equal liabilities plus equity. Review the balance check line.
+          Assets still do not equal liabilities plus equity after the P&amp;L bridge. Review account types, missing retained
+          earnings, or other classification issues.
         </p>
       ) : (
         <p className="border-t border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs font-medium text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100">

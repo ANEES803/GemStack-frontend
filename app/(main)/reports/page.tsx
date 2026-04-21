@@ -1,6 +1,10 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
+import { downloadGeneralLedgerCsv } from "@/lib/glApi";
+import { defaultReportPeriod, periodFromSearchParams } from "@/lib/reportPeriod";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const HUB_REPORTS = [
@@ -15,41 +19,94 @@ const HUB_REPORTS = [
   { id: "aging", title: "Aging (AR / AP)", desc: "Outstanding customer and vendor balances by bucket." },
 ] as const;
 
+function withPeriod(path: string, from: string, to: string): string {
+  return `${path}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+}
+
 function ReportsContent() {
+  const { pushToast } = useAppNotifications();
   const router = useRouter();
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab") ?? "hub";
 
-  const [from, setFrom] = useState("2026-03-01");
-  const [to, setTo] = useState("2026-03-31");
+  const initial = periodFromSearchParams(searchParams);
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
+
+  useEffect(() => {
+    const p = periodFromSearchParams(searchParams);
+    setFrom(p.from);
+    setTo(p.to);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!searchParams.get("tab")) {
-      router.replace("/reports?tab=hub", { scroll: false });
+      const p = periodFromSearchParams(searchParams);
+      router.replace(
+        `/reports?tab=hub&from=${encodeURIComponent(p.from)}&to=${encodeURIComponent(p.to)}`,
+        { scroll: false },
+      );
     }
   }, [router, searchParams]);
+
+  const applyRange = () => {
+    router.replace(`/reports?tab=${tab}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { scroll: false });
+    pushToast(`Report period set: ${from} → ${to}`, "success");
+  };
+
+  const openReport = (id: string) => {
+    if (id === "gl") router.push(withPeriod("/reports/general-ledger", from, to));
+    else if (id === "trial") router.push(withPeriod("/reports/trial-balance", from, to));
+    else if (id === "pl") router.push(withPeriod("/reports/profit-loss", from, to));
+    else if (id === "bs") router.push(withPeriod("/reports/balance-sheet", from, to));
+    else if (id === "cf") router.push(withPeriod("/reports/cash-flow", from, to));
+    else if (id === "sales") router.push(withPeriod("/reports/sales", from, to));
+    else if (id === "purchase") router.push(withPeriod("/reports/purchases", from, to));
+    else if (id === "inv") router.push(withPeriod("/reports/inventory-financial", from, to));
+    else if (id === "aging") router.push(withPeriod("/reports/aging", from, to));
+  };
+
+  const exportGlCsv = () => {
+    void downloadGeneralLedgerCsv({ dateFrom: from, dateTo: to, status: null }).catch((e) =>
+      pushToast(e instanceof Error ? e.message : "Export failed", "error"),
+    );
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
       <p className="text-sm leading-relaxed text-[var(--gs-muted)]">
-        Central report hub: financial statements, operational reports, and aging  filters and export are front-end demo until the API is connected.
+        Central report hub: pick a period, apply it to sync child reports via URL{" "}
+        <span className="font-mono text-[var(--gs-text)]">?from=&amp;to=</span>. Operational summaries use live APIs where
+        available.
       </p>
 
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => router.push("/reports?tab=hub", { scroll: false })}
+          onClick={() =>
+            router.push(`/reports?tab=hub&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+              scroll: false,
+            })
+          }
           className={`rounded-full px-3 py-1.5 text-xs font-semibold sm:text-sm ${
-            tab === "hub" ? "bg-[var(--gs-accent)] text-white" : "border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+            tab === "hub"
+              ? "bg-[var(--gs-accent)] text-white"
+              : "border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
           }`}
         >
           Report hub
         </button>
         <button
           type="button"
-          onClick={() => router.push("/reports?tab=accounting", { scroll: false })}
+          onClick={() =>
+            router.push(`/reports?tab=accounting&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+              scroll: false,
+            })
+          }
           className={`rounded-full px-3 py-1.5 text-xs font-semibold sm:text-sm ${
-            tab === "accounting" ? "bg-[var(--gs-accent)] text-white" : "border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+            tab === "accounting"
+              ? "bg-[var(--gs-accent)] text-white"
+              : "border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
           }`}
         >
           Accounting bundle
@@ -58,6 +115,9 @@ function ReportsContent() {
 
       <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm sm:p-6">
         <h2 className="text-lg font-bold text-[var(--gs-text)]">Report period</h2>
+        <p className="mt-1 text-xs text-[var(--gs-muted)]">
+          Default when missing: {defaultReportPeriod().from} → {defaultReportPeriod().to} (current year — today).
+        </p>
         <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end">
           <div>
             <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">From *</label>
@@ -79,7 +139,7 @@ function ReportsContent() {
           </div>
           <button
             type="button"
-            onClick={() => window.alert(`Demo: run reports for ${from} → ${to}`)}
+            onClick={applyRange}
             className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
           >
             Apply range
@@ -101,28 +161,24 @@ function ReportsContent() {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (r.id === "gl") router.push("/reports/general-ledger");
-                      else if (r.id === "trial") router.push("/reports/trial-balance");
-                      else if (r.id === "pl") router.push("/reports/profit-loss");
-                      else if (r.id === "bs") router.push("/reports/balance-sheet");
-                      else if (r.id === "cf") router.push("/reports/cash-flow");
-                      else window.alert(`Demo: preview ${r.title}`);
-                    }}
+                    onClick={() => openReport(r.id)}
                     className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-xs font-semibold text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
                   >
                     Open
                   </button>
                   <button
                     type="button"
-                    onClick={() => window.alert(`Demo: Excel export  ${r.title}`)}
+                    onClick={() => {
+                      if (r.id === "gl") exportGlCsv();
+                      else pushToast("CSV export for this report is not wired yet. Use General ledger for CSV.", "info");
+                    }}
                     className="rounded-full bg-[var(--gs-accent-soft)] px-4 py-2 text-xs font-semibold text-[var(--gs-accent)] ring-1 ring-[var(--gs-accent)]/30 hover:bg-orange-100/80"
                   >
-                    Excel
+                    CSV
                   </button>
                   <button
                     type="button"
-                    onClick={() => window.alert(`Demo: PDF export  ${r.title}`)}
+                    onClick={() => pushToast("PDF export is not implemented yet.", "info")}
                     className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
                   >
                     PDF
@@ -137,7 +193,9 @@ function ReportsContent() {
       {tab === "accounting" && (
         <section>
           <h2 className="mb-4 text-lg font-bold text-[var(--gs-text)]">Accounting reports</h2>
-          <p className="mb-4 text-sm text-[var(--gs-muted)]">GL, trial balance, P&amp;L, balance sheet, and cash flow  same export pattern as the hub.</p>
+          <p className="mb-4 text-sm text-[var(--gs-muted)]">
+            GL, trial balance, P&amp;L, balance sheet, and cash flow — same period query string as the hub.
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             {HUB_REPORTS.filter((r) => ["gl", "trial", "pl", "bs", "cf"].includes(r.id)).map((r) => (
               <div key={r.id} className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm">
@@ -145,14 +203,7 @@ function ReportsContent() {
                 <p className="mt-2 text-sm text-[var(--gs-muted)]">{r.desc}</p>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (r.id === "gl") router.push("/reports/general-ledger");
-                    else if (r.id === "trial") router.push("/reports/trial-balance");
-                    else if (r.id === "pl") router.push("/reports/profit-loss");
-                    else if (r.id === "bs") router.push("/reports/balance-sheet");
-                    else if (r.id === "cf") router.push("/reports/cash-flow");
-                    else window.alert(`Demo: open ${r.title}`);
-                  }}
+                  onClick={() => openReport(r.id)}
                   className="mt-4 text-xs font-semibold text-[var(--gs-accent)] hover:underline"
                 >
                   Open report →

@@ -4,11 +4,14 @@ import { FileDown, FileSpreadsheet, Printer, RefreshCw, Settings2 } from "lucide
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
+import { JournalEntryReadOnlyModal } from "@/components/reports/JournalEntryReadOnlyModal";
 import { AccountDrawer } from "./AccountDrawer";
-import { DEFAULT_TB_FILTERS, FilterPanel, type TbFilterState } from "./FilterPanel";
-import { fetchTrialBalance, getGlSettings } from "@/lib/glApi";
+import { FilterPanel, type TbFilterState } from "./FilterPanel";
+import { defaultReportPeriod, isoTodayUtc } from "@/lib/reportPeriod";
+import { fetchAccountActivity, fetchTrialBalance, getGlSettings, getJournalEntry, type JournalDetailDto } from "@/lib/glApi";
 
-import { applyRounding, miniLedgerForAccount, netToDebitCredit } from "./mockData";
+import { applyRounding, netToDebitCredit } from "./mockData";
 import { SettingsModal } from "./SettingsModal";
 import { SummaryCards } from "./SummaryCards";
 import { TrialBalanceTable } from "./TrialBalanceTable";
@@ -17,6 +20,7 @@ import type {
   TbAccountSource,
   TbColumnId,
   TbDisplayRow,
+  TbMiniLine,
   TbSettings,
   SortDirTB,
   SortKeyTB,
@@ -24,6 +28,34 @@ import type {
 import { DEFAULT_TB_SETTINGS } from "./types";
 
 const STORAGE_SAVED = "gemstack-tb-saved-view";
+
+function initialTbFilters(): import("./FilterPanel").TbFilterState {
+  const { from, to } = defaultReportPeriod();
+  const asOf = isoTodayUtc();
+  return {
+    asOfDate: asOf,
+    useDateRange: false,
+    dateFrom: from,
+    dateTo: to,
+    accountFrom: "",
+    accountTo: "",
+    accountType: "All",
+    branch: "",
+    currency: "All",
+    includeZeroBalances: false,
+    includeUnposted: false,
+    useComparison: false,
+    comparisonPeriodLabel: "Prior period (compare as-of)",
+  };
+}
+
+/** Last calendar day strictly before the first day of the month containing `isoDate`. */
+function endOfMonthBefore(isoDate: string): string {
+  const d = new Date(`${isoDate}T12:00:00Z`);
+  d.setUTCDate(1);
+  d.setUTCDate(0);
+  return d.toISOString().slice(0, 10);
+}
 
 function compareDisplay(a: TbDisplayRow, b: TbDisplayRow, key: SortKeyTB, dir: SortDirTB): number {
   const m = dir === "asc" ? 1 : -1;
@@ -91,13 +123,14 @@ const DEFAULT_COL_PICK: Record<TbColumnId, boolean> = {
 };
 
 export function TrialBalancePage() {
+  const { pushToast } = useAppNotifications();
   const [source, setSource] = useState<TbAccountSource[]>([]);
   const [tbLoading, setTbLoading] = useState(false);
   const [tbError, setTbError] = useState<string | null>(null);
   const branchOptions = useMemo(() => ["Main"], []);
 
-  const [draftFilters, setDraftFilters] = useState<TbFilterState>(DEFAULT_TB_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState<TbFilterState>(DEFAULT_TB_FILTERS);
+  const [draftFilters, setDraftFilters] = useState<TbFilterState>(initialTbFilters);
+  const [appliedFilters, setAppliedFilters] = useState<TbFilterState>(initialTbFilters);
   const [settings, setSettings] = useState<TbSettings>(DEFAULT_TB_SETTINGS);
   const [sortKey, setSortKey] = useState<SortKeyTB>(DEFAULT_TB_SETTINGS.defaultSortKey);
   const [sortDir, setSortDir] = useState<SortDirTB>(DEFAULT_TB_SETTINGS.defaultSortDir);
@@ -110,7 +143,14 @@ export function TrialBalancePage() {
     setTbLoading(true);
     setTbError(null);
     try {
-      const [report, settings] = await Promise.all([fetchTrialBalance(appliedFilters.asOfDate), getGlSettings()]);
+      let compareAsOf: string | undefined;
+      if (appliedFilters.useComparison) {
+        compareAsOf = appliedFilters.useDateRange ? appliedFilters.dateFrom : endOfMonthBefore(appliedFilters.asOfDate);
+      }
+      const [report, settings] = await Promise.all([
+        fetchTrialBalance(appliedFilters.asOfDate, { compareAsOf }),
+        getGlSettings(),
+      ]);
       const fc = (settings.functional_currency || "USD").toUpperCase();
       const displayCur: "PKR" | "USD" =
         appliedFilters.currency === "PKR" ? "PKR" : appliedFilters.currency === "USD" ? "USD" : fc === "PKR" ? "PKR" : "USD";
@@ -127,8 +167,8 @@ export function TrialBalancePage() {
           draftDebit: 0,
           draftCredit: 0,
           openingBalance: 0,
-          priorPostedDebit: 0,
-          priorPostedCredit: 0,
+          priorPostedDebit: Number.parseFloat(ln.prior_debit ?? "0") || 0,
+          priorPostedCredit: Number.parseFloat(ln.prior_credit ?? "0") || 0,
         })),
       );
     } catch (e) {
@@ -137,7 +177,7 @@ export function TrialBalancePage() {
     } finally {
       setTbLoading(false);
     }
-  }, [appliedFilters.asOfDate, appliedFilters.currency]);
+  }, [appliedFilters.asOfDate, appliedFilters.currency, appliedFilters.useComparison, appliedFilters.useDateRange, appliedFilters.dateFrom]);
 
   useEffect(() => {
     void loadTrialBalance();
@@ -181,10 +221,62 @@ export function TrialBalancePage() {
     return { debit: td, credit: tc, difference: td - tc };
   }, [processedRows, appliedFilters.currency]);
 
-  const drawerLines = useMemo(() => {
-    if (!drawerRow) return [];
-    return miniLedgerForAccount(drawerRow.id, drawerRow.code).lines;
-  }, [drawerRow]);
+  const [drawerLines, setDrawerLines] = useState<TbMiniLine[]>([]);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+
+  const [tbJournalOpen, setTbJournalOpen] = useState(false);
+  const [tbJournalDetail, setTbJournalDetail] = useState<JournalDetailDto | null>(null);
+  const [tbJournalLoading, setTbJournalLoading] = useState(false);
+
+  const openTbJournal = useCallback((journalId: string) => {
+    setTbJournalOpen(true);
+    setTbJournalLoading(true);
+    setTbJournalDetail(null);
+    void getJournalEntry(journalId)
+      .then((j) => setTbJournalDetail(j))
+      .catch(() => setTbJournalDetail(null))
+      .finally(() => setTbJournalLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!drawerRow) {
+      setDrawerLines([]);
+      return;
+    }
+    let cancelled = false;
+    setDrawerLoading(true);
+    void fetchAccountActivity({
+      accountId: drawerRow.id,
+      dateFrom: "2000-01-01",
+      dateTo: appliedFilters.asOfDate,
+      status: "posted",
+      limit: 200,
+      offset: 0,
+    })
+      .then((page) => {
+        if (cancelled) return;
+        setDrawerLines(
+          page.lines.map((l) => ({
+            id: l.line_id,
+            journalEntryId: l.journal_entry_id,
+            date: l.entry_date,
+            ref: l.reference,
+            memo: l.memo || l.description,
+            debit: Number.parseFloat(l.debit) || 0,
+            credit: Number.parseFloat(l.credit) || 0,
+          })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setDrawerLines([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDrawerLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [drawerRow, appliedFilters.asOfDate]);
 
   const handleSort = useCallback((key: SortKeyTB) => {
     setPage(1);
@@ -219,36 +311,36 @@ export function TrialBalancePage() {
   }, [draftFilters]);
 
   const resetFilters = useCallback(() => {
-    setDraftFilters(DEFAULT_TB_FILTERS);
-    setAppliedFilters(DEFAULT_TB_FILTERS);
+    setDraftFilters(initialTbFilters());
+    setAppliedFilters(initialTbFilters());
     setPage(1);
   }, []);
 
   const saveView = useCallback(() => {
     try {
       localStorage.setItem(STORAGE_SAVED, JSON.stringify(draftFilters));
-      window.alert("Trial balance view saved in this browser.");
+      pushToast("Trial balance view saved in this browser.", "success");
     } catch {
-      window.alert("Could not save view.");
+      pushToast("Could not save view.", "error");
     }
-  }, [draftFilters]);
+  }, [draftFilters, pushToast]);
 
   const loadView = useCallback(() => {
     try {
       const raw = localStorage.getItem(STORAGE_SAVED);
       if (!raw) {
-        window.alert("No saved view found.");
+        pushToast("No saved view found.", "info");
         return;
       }
       const parsed = JSON.parse(raw) as TbFilterState;
-      setDraftFilters({ ...DEFAULT_TB_FILTERS, ...parsed });
-      setAppliedFilters({ ...DEFAULT_TB_FILTERS, ...parsed });
+      setDraftFilters({ ...initialTbFilters(), ...parsed });
+      setAppliedFilters({ ...initialTbFilters(), ...parsed });
       setPage(1);
-      window.alert("Loaded saved view.");
+      pushToast("Loaded saved view.", "success");
     } catch {
-      window.alert("Could not load view.");
+      pushToast("Could not load view.", "error");
     }
-  }, []);
+  }, [pushToast]);
 
   const closeSettings = useCallback(() => {
     setSortKey(settings.defaultSortKey);
@@ -277,7 +369,7 @@ export function TrialBalancePage() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => window.alert("Demo: export trial balance PDF")}
+            onClick={() => pushToast("Demo: export trial balance PDF", "info")}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export PDF"
             title="Export PDF"
@@ -286,7 +378,7 @@ export function TrialBalancePage() {
           </button>
           <button
             type="button"
-            onClick={() => window.alert("Demo: export Excel")}
+            onClick={() => pushToast("Demo: export Excel", "info")}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export Excel"
             title="Export Excel"
@@ -372,8 +464,8 @@ export function TrialBalancePage() {
         onRowClick={setDrawerRow}
         footerTotals={footerTotals}
         displayCurrency={displayCurrency}
-        onDownload={() => window.alert("Demo: download trial balance report")}
-        onEmail={() => window.alert("Demo: email trial balance")}
+        onDownload={() => pushToast("Demo: download trial balance report", "info")}
+        onEmail={() => pushToast("Demo: email trial balance", "info")}
       />
 
       <p className="text-center text-xs text-[var(--gs-muted)]">
@@ -387,7 +479,20 @@ export function TrialBalancePage() {
         row={drawerRow}
         openingBalance={drawerRow?.openingBalance ?? 0}
         lines={drawerLines}
+        loading={drawerLoading}
         onClose={() => setDrawerRow(null)}
+        onActivityRowClick={openTbJournal}
+      />
+
+      <JournalEntryReadOnlyModal
+        open={tbJournalOpen}
+        journal={tbJournalDetail}
+        loading={tbJournalLoading}
+        currency={displayCurrency}
+        onClose={() => {
+          setTbJournalOpen(false);
+          setTbJournalDetail(null);
+        }}
       />
 
       <SettingsModal open={settingsOpen} onClose={closeSettings} settings={settings} onChange={setSettings} />

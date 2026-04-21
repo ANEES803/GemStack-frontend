@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
 
+import { emitAppToast } from "@/components/providers/AppNotificationsProvider";
+
 export type InvoicePrintSettings = {
   paperSize: "a4" | "letter" | "legal";
   orientation: "portrait" | "landscape";
@@ -226,7 +228,7 @@ ${footerBlock}
 
   const w = window.open("", "_blank", "noopener,noreferrer");
   if (!w) {
-    window.alert("Pop-up blocked. Allow pop-ups to use the print preview.");
+    emitAppToast("Pop-up blocked. Allow pop-ups to use the print preview.", "error");
     return;
   }
   w.document.write(html);

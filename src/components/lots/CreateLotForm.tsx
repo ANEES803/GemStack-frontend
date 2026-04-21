@@ -1373,7 +1373,7 @@ export function CreateLotForm() {
         </div>
       </div>
 
-      <ToastStack toasts={toasts} onRemove={removeToast} bottomOffsetClass="bottom-24" />
+      <ToastStack toasts={toasts} onRemove={removeToast} />
 
       <style jsx global>{`
         @media print {

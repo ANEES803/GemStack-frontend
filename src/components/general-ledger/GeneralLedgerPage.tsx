@@ -2,12 +2,19 @@
 
 import { FileDown, FileSpreadsheet, Printer, RefreshCw, Settings2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { getGlSettings, getJournalEntry, listJournalEntries, type JournalDetailDto } from "@/lib/glApi";
-
-import { drawerDataForRow } from "./mockData";
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
+import {
+  downloadGeneralLedgerCsv,
+  fetchGeneralLedgerLines,
+  getGlSettings,
+  getJournalEntry,
+  type GeneralLedgerLineDto,
+  type JournalDetailDto,
+} from "@/lib/glApi";
+import { defaultReportPeriod, periodFromSearchParams } from "@/lib/reportPeriod";
 import { DEFAULT_GL_FILTERS, FilterPanel, type GlFilterState } from "./FilterPanel";
 import { LedgerDrawer } from "./LedgerDrawer";
 import { LedgerTable, LedgerTableToolbar, type LedgerRowView } from "./LedgerTable";
@@ -30,29 +37,43 @@ const STORAGE_SAVED_VIEW = "gemstack-gl-saved-view";
 const STORAGE_DEFAULT_FILTERS = "gemstack-gl-default-filters";
 const OPENING_BALANCE = 0;
 
-function mapJournalToLedgerRows(je: JournalDetailDto, currency: "PKR" | "USD"): LedgerRow[] {
-  const contact = (je.vendor_name || "").trim();
+function mapApiAccountTypeToFilter(raw: string): AccountTypeFilter {
+  const s = (raw || "").trim().toLowerCase();
+  if (s === "asset") return "Asset";
+  if (s === "liability") return "Liability";
+  if (s === "equity") return "Equity";
+  if (s === "revenue") return "Revenue";
+  if (s === "expense") return "Expense";
+  return "Expense";
+}
+
+function mapGlLineToRow(ln: GeneralLedgerLineDto, currency: "PKR" | "USD"): LedgerRow {
   const tt: TransactionType =
-    je.source_kind === "purchase_receipt" ? "Bill" : je.source_kind === "vendor_payment" ? "Payment" : "Journal";
-  const st: PostingStatus = je.status === "posted" ? "Posted" : "Draft";
-  const accountType: AccountTypeFilter = "Expense";
-  return je.lines.map((ln) => ({
-    id: `${je.id}-${ln.id}`,
-    date: je.entry_date,
-    journalNo: je.reference,
+    ln.source_type === "purchase_lot_receipt" ? "Bill" : ln.source_type === "lot_payment" ? "Payment" : "Journal";
+  const st: PostingStatus = ln.status === "posted" ? "Posted" : "Draft";
+  return {
+    id: `${ln.journal_entry_id}-${ln.line_id}`,
+    journalEntryId: ln.journal_entry_id,
+    date: ln.entry_date,
+    journalNo: ln.reference,
     transactionType: tt,
     accountCode: ln.account_code,
     accountName: ln.account_name,
-    accountType,
-    description: ln.description || je.memo || "",
-    reference: je.reference,
-    debit: Number(ln.debit) || 0,
-    credit: Number(ln.credit) || 0,
-    contact,
+    accountType: mapApiAccountTypeToFilter(ln.account_type),
+    description: ln.description || ln.memo || "",
+    reference: ln.reference,
+    debit: Number.parseFloat(ln.debit) || 0,
+    credit: Number.parseFloat(ln.credit) || 0,
+    contact: "",
     branch: "Main",
     currency,
     status: st,
-  }));
+  };
+}
+
+function initialGlFilters(): GlFilterState {
+  const { from, to } = defaultReportPeriod();
+  return { ...DEFAULT_GL_FILTERS, dateFrom: from, dateTo: to };
 }
 
 const DEFAULT_VISIBLE: Record<ColumnId, boolean> = {
@@ -164,31 +185,48 @@ function groupKey(r: LedgerRow, mode: GroupByMode): string {
 }
 
 export function GeneralLedgerPage() {
+  const { pushToast } = useAppNotifications();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [sourceRows, setSourceRows] = useState<LedgerRow[]>([]);
   const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [drawerJournal, setDrawerJournal] = useState<JournalDetailDto | null>(null);
+  const [drawerJournalLoading, setDrawerJournalLoading] = useState(false);
+
+  const [draftFilters, setDraftFilters] = useState<GlFilterState>(initialGlFilters);
+  const [appliedFilters, setAppliedFilters] = useState<GlFilterState>(initialGlFilters);
+
+  useEffect(() => {
+    const { from, to } = periodFromSearchParams(searchParams);
+    setDraftFilters((prev) => ({ ...prev, dateFrom: from, dateTo: to }));
+    setAppliedFilters((prev) => ({ ...prev, dateFrom: from, dateTo: to }));
+  }, [searchParams]);
 
   const loadLedger = useCallback(async () => {
     setLedgerLoading(true);
     setLedgerError(null);
     try {
-      const [summaries, settings] = await Promise.all([listJournalEntries(), getGlSettings()]);
+      const settings = await getGlSettings();
       const fc = (settings.functional_currency || "USD").toUpperCase();
       const currency: "PKR" | "USD" = fc === "PKR" ? "PKR" : "USD";
-      const details = await Promise.all(summaries.map((s) => getJournalEntry(s.id)));
-      const rows: LedgerRow[] = [];
-      for (const je of details) {
-        rows.push(...mapJournalToLedgerRows(je, currency));
-      }
-      setSourceRows(rows);
+      const statusFilter =
+        appliedFilters.status === "Posted" ? "posted" : appliedFilters.status === "Draft" ? "draft" : null;
+      const page = await fetchGeneralLedgerLines({
+        dateFrom: appliedFilters.dateFrom,
+        dateTo: appliedFilters.dateTo,
+        status: statusFilter,
+        limit: 2000,
+        offset: 0,
+      });
+      setSourceRows(page.lines.map((ln) => mapGlLineToRow(ln, currency)));
     } catch (e) {
       setLedgerError(e instanceof Error ? e.message : "Could not load general ledger");
       setSourceRows([]);
     } finally {
       setLedgerLoading(false);
     }
-  }, []);
+  }, [appliedFilters.dateFrom, appliedFilters.dateTo, appliedFilters.status]);
 
   useEffect(() => {
     void loadLedger();
@@ -210,8 +248,6 @@ export function GeneralLedgerPage() {
     return [...s].sort();
   }, [sourceRows]);
 
-  const [draftFilters, setDraftFilters] = useState<GlFilterState>(DEFAULT_GL_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState<GlFilterState>(DEFAULT_GL_FILTERS);
   const [settings, setSettings] = useState<GlSettings>(DEFAULT_GL_SETTINGS);
   const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_GL_SETTINGS.defaultSortKey);
   const [sortDir, setSortDir] = useState<SortDir>(DEFAULT_GL_SETTINGS.defaultSortDir);
@@ -222,6 +258,28 @@ export function GeneralLedgerPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [drawerRow, setDrawerRow] = useState<LedgerRow | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!drawerRow?.journalEntryId) {
+      setDrawerJournal(null);
+      return;
+    }
+    let cancelled = false;
+    setDrawerJournalLoading(true);
+    void getJournalEntry(drawerRow.journalEntryId)
+      .then((j) => {
+        if (!cancelled) setDrawerJournal(j);
+      })
+      .catch(() => {
+        if (!cancelled) setDrawerJournal(null);
+      })
+      .finally(() => {
+        if (!cancelled) setDrawerJournalLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [drawerRow?.journalEntryId]);
 
   const displayCurrency: "PKR" | "USD" =
     appliedFilters.currency === "USD" ? "USD" : appliedFilters.currency === "PKR" ? "PKR" : "PKR";
@@ -274,62 +332,63 @@ export function GeneralLedgerPage() {
   }, [draftFilters]);
 
   const resetFilters = useCallback(() => {
-    setDraftFilters(DEFAULT_GL_FILTERS);
-    setAppliedFilters(DEFAULT_GL_FILTERS);
+    const next = initialGlFilters();
+    setDraftFilters(next);
+    setAppliedFilters(next);
     setPage(1);
   }, []);
 
   const saveView = useCallback(() => {
     try {
       localStorage.setItem(STORAGE_SAVED_VIEW, JSON.stringify(draftFilters));
-      window.alert("Saved view stored in this browser.");
+      pushToast("Saved view stored in this browser.", "success");
     } catch {
-      window.alert("Could not save view (storage unavailable).");
+      pushToast("Could not save view (storage unavailable).", "error");
     }
-  }, [draftFilters]);
+  }, [draftFilters, pushToast]);
 
   const loadView = useCallback(() => {
     try {
       const raw = localStorage.getItem(STORAGE_SAVED_VIEW);
       if (!raw) {
-        window.alert("No saved view found.");
+        pushToast("No saved view found.", "info");
         return;
       }
       const parsed = JSON.parse(raw) as GlFilterState;
-      setDraftFilters({ ...DEFAULT_GL_FILTERS, ...parsed });
-      setAppliedFilters({ ...DEFAULT_GL_FILTERS, ...parsed });
+      setDraftFilters({ ...initialGlFilters(), ...parsed });
+      setAppliedFilters({ ...initialGlFilters(), ...parsed });
       setPage(1);
-      window.alert("Loaded saved view.");
+      pushToast("Loaded saved view.", "success");
     } catch {
-      window.alert("Could not load saved view.");
+      pushToast("Could not load saved view.", "error");
     }
-  }, []);
+  }, [pushToast]);
 
   const saveDefaultFilters = useCallback(() => {
     try {
       localStorage.setItem(STORAGE_DEFAULT_FILTERS, JSON.stringify(draftFilters));
-      window.alert("Current filters saved as default for this browser.");
+      pushToast("Current filters saved as default for this browser.", "success");
     } catch {
-      window.alert("Could not save defaults.");
+      pushToast("Could not save defaults.", "error");
     }
-  }, [draftFilters]);
+  }, [draftFilters, pushToast]);
 
   const applyDefaultFilters = useCallback(() => {
     try {
       const raw = localStorage.getItem(STORAGE_DEFAULT_FILTERS);
       if (!raw) {
-        window.alert("No default filters saved yet.");
+        pushToast("No default filters saved yet.", "info");
         return;
       }
       const parsed = JSON.parse(raw) as GlFilterState;
-      setDraftFilters({ ...DEFAULT_GL_FILTERS, ...parsed });
-      setAppliedFilters({ ...DEFAULT_GL_FILTERS, ...parsed });
+      setDraftFilters({ ...initialGlFilters(), ...parsed });
+      setAppliedFilters({ ...initialGlFilters(), ...parsed });
       setPage(1);
-      window.alert("Applied default filters.");
+      pushToast("Applied default filters.", "success");
     } catch {
-      window.alert("Could not load default filters.");
+      pushToast("Could not load default filters.", "error");
     }
-  }, []);
+  }, [pushToast]);
 
   const closeSettings = useCallback(() => {
     setSortKey(settings.defaultSortKey);
@@ -357,8 +416,6 @@ export function GeneralLedgerPage() {
     });
   }, []);
 
-  const drawerData = drawerRow ? drawerDataForRow(drawerRow) : null;
-
   return (
     <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 space-y-6 pb-10">
       <header className="flex flex-col gap-4 border-b border-[var(--gs-border)]/80 pb-6 lg:flex-row lg:items-start lg:justify-between">
@@ -371,7 +428,7 @@ export function GeneralLedgerPage() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => window.alert("Demo: export general ledger as PDF")}
+            onClick={() => pushToast("Demo: export general ledger as PDF", "info")}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export PDF"
             title="Export PDF"
@@ -380,7 +437,7 @@ export function GeneralLedgerPage() {
           </button>
           <button
             type="button"
-            onClick={() => window.alert("Demo: export as Excel")}
+            onClick={() => pushToast("Demo: export as Excel", "info")}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
             aria-label="Export Excel"
             title="Export Excel"
@@ -400,7 +457,6 @@ export function GeneralLedgerPage() {
             type="button"
             onClick={() => {
               void loadLedger();
-              setAppliedFilters({ ...draftFilters });
               setPage(1);
             }}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm hover:bg-[var(--gs-hover)]"
@@ -463,8 +519,16 @@ export function GeneralLedgerPage() {
         onExpandAll={expandAll}
         onCollapseAll={collapseAll}
         onNewJournal={() => router.push("/accounting?tab=journal_list")}
-        onDownload={() => window.alert("Demo: download ledger CSV / Excel")}
-        onEmail={() => window.alert("Demo: email ledger report")}
+        onDownload={() => {
+          const st =
+            appliedFilters.status === "Posted" ? "posted" : appliedFilters.status === "Draft" ? "draft" : null;
+          void downloadGeneralLedgerCsv({
+            dateFrom: appliedFilters.dateFrom,
+            dateTo: appliedFilters.dateTo,
+            status: st,
+          }).catch((e) => pushToast(e instanceof Error ? e.message : "Export failed", "error"));
+        }}
+        onEmail={() => pushToast("Demo: email ledger report", "info")}
       />
 
       <LedgerTable
@@ -491,7 +555,13 @@ export function GeneralLedgerPage() {
         </Link>
       </p>
 
-      <LedgerDrawer open={!!drawerRow} data={drawerData} onClose={() => setDrawerRow(null)} />
+      <LedgerDrawer
+        open={!!drawerRow}
+        row={drawerRow}
+        journalDetail={drawerJournal}
+        journalLoading={drawerJournalLoading}
+        onClose={() => setDrawerRow(null)}
+      />
 
       <SettingsModal
         open={settingsOpen}

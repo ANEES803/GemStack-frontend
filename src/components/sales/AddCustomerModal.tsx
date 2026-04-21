@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { AppDialog } from "@/components/ui/AppDialog";
 import type { DemoCustomer } from "@/lib/demoCustomers";
 
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export function AddCustomerModal({ open, onClose, onSave }: Props) {
+  const { pushToast } = useAppNotifications();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -28,7 +30,7 @@ export function AddCustomerModal({ open, onClose, onSave }: Props) {
 
   function save() {
     if (!name.trim()) {
-      window.alert("Name is required.");
+      pushToast("Name is required.", "error");
       return;
     }
     onSave({ name: name.trim(), email: email.trim(), phone: phone.trim(), detail: detail.trim() });
