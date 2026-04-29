@@ -9,9 +9,11 @@ import {
   FileText,
   Import,
   MoreVertical,
+  Package,
   Pencil,
   Plus,
   Search,
+  SquareSplitHorizontal,
   Trash2,
   X,
   Sheet,
@@ -26,7 +28,13 @@ import { useAppNotifications } from "@/components/providers/AppNotificationsProv
 import { DEMO_REVENUE_ACCOUNTS, revenueAccountLabel } from "@/lib/demoRevenueAccounts";
 import { loadItemCatalog, saveItemCatalog, type StoredItemRow } from "@/lib/itemCatalogStorage";
 import { getAccessToken } from "@/lib/authClient";
-import { fetchRoughLotPickerOptions } from "@/lib/purchaseLotsApi";
+import {
+  fetchRoughLotPickerOptions,
+  getPurchaseLotByCode,
+  listPurchaseLotSummaries,
+  type PurchaseLotDetail,
+  type PurchaseLotSummary,
+} from "@/lib/purchaseLotsApi";
 import { ROUGH_LOTS_SEED } from "@/lib/roughLotsSeed";
 
 import {
@@ -51,6 +59,33 @@ import {
   uomHintForKind,
   type UomTab,
 } from "@/components/inventory/inventoryItemTypes";
+import type { ItemLineEntryType, ItemRow } from "@/components/inventory/inventoryHubTypes";
+import { loadInventoryHubServerSnapshot } from "@/lib/inventoryHubDataBridge";
+import {
+  catalogShouldLoadFromServer,
+  createStockFromItemForm,
+  inventorySplitAllowed,
+  inventoryWritesAllowed,
+  isServerUuid,
+  patchStockFromItemForm,
+  persistCustomInventoryType,
+} from "@/lib/inventoryHubInventoryApi";
+import type { InvInventoryFeatureFlags, InvItemTypeDto } from "@/lib/invApi";
+import {
+  closeAuditSession,
+  createAuditSession,
+  createService,
+  createStockUnitsFromPurchaseLot,
+  fetchInventoryFeatureFlags,
+  fetchItemTypes,
+  fetchReportByCustodian,
+  fetchReportByType,
+  fetchReportSummary,
+  splitStockUnits,
+  updateItemType,
+  updateService,
+  voidStockUnit,
+} from "@/lib/invApi";
 
 type Tab = "items" | "stock" | "reports" | "audit";
 
@@ -283,44 +318,6 @@ const DUMMY_NEW_ITEM_QR_DATA_URL =
 type AddTypeSpecMode = "rough" | "cut" | "builder";
 
 const GRADE_OPTIONS = ["AAA", "AA", "A", "B", "C", "Commercial", ""] as const;
-
-type ItemLineEntryType = "inventory" | "service";
-
-type ItemRow = {
-  id: string;
-  /** Top-level line: stocked inventory vs non-stock service */
-  entryType: ItemLineEntryType;
-  /** Optional image (demo: data URL stored in state; replace with URL after upload API) */
-  imageDataUrl: string | null;
-  itemNo: string;
-  date: string;
-  itemName: string;
-  /** Inventory item kind: Rough (grade) or Cut (dimensions), or custom id */
-  itemKind: ItemKindKey;
-  category: string;
-  type: "Product" | "Service" | "Raw";
-  /** Used when field preset is Rough */
-  grade: string;
-  /** Used when field preset is Cut */
-  dimLength: string;
-  dimWidth: string;
-  dimHeight: string;
-  /** Unit of measure quantity  amount = uom × rate */
-  uom: number;
-  pieces: number;
-  rate: number;
-  location: string;
-  custodian: string;
-  details: string;
-  /** JSON object: field id → value for builder-based custom types */
-  customFieldValuesJson: string;
-  /** Optional unit label for service lines (e.g. Hours) */
-  serviceUnit: string;
-  /** Revenue (income) COA link for service lines  demo ids from `demoRevenueAccounts` */
-  revenueAccountId: string;
-  /** Linked rough purchase lot (demo); only used when `itemKind` is Rough */
-  linkedRoughLotCode: string;
-};
 
 type SplitDraftRow = {
   id: string;
@@ -733,8 +730,8 @@ function AuditSaveDropdown({
   onSaveAndClose,
   disabled,
 }: {
-  onSaveNow: () => void;
-  onSaveAndClose: () => void;
+  onSaveNow: () => void | Promise<void>;
+  onSaveAndClose: () => void | Promise<void>;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -801,6 +798,11 @@ function AuditSaveDropdown({
 
 function cn(...parts: (string | false | undefined)[]) {
   return parts.filter(Boolean).join(" ");
+}
+
+function custodianServerReportLabel(id: string | null | undefined): string {
+  if (id == null || id === "") return "Unassigned";
+  return `User ${id.slice(0, 8)}…`;
 }
 
 const FIELD_LABEL = "block text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]";
@@ -1408,7 +1410,16 @@ function customInventoryTypeToAddDraft(t: CustomInventoryType): {
   };
 }
 
-function ItemRowActionMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+function ItemRowActionMenu({
+  onEdit,
+  onDelete,
+  extraItems,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+  /** Optional extra entries (e.g. Split) shown below Edit */
+  extraItems?: { label: string; onSelect: () => void; danger?: boolean; icon?: "split" }[];
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -1421,7 +1432,7 @@ function ItemRowActionMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete:
   }, []);
 
   return (
-    <div className="relative flex justify-end" ref={ref}>
+    <div className="relative z-30 flex justify-end" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -1429,34 +1440,58 @@ function ItemRowActionMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete:
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label="Row actions"
+        title="Actions"
       >
         <MoreVertical className="h-4 w-4" strokeWidth={2} aria-hidden />
       </button>
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 min-w-[9rem] rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-lg ring-1 ring-[var(--gs-border)]"
+          className="absolute right-0 top-full z-[200] mt-1 min-w-[10.5rem] rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-lg ring-1 ring-black/5"
         >
           <button
             type="button"
             role="menuitem"
-            className="flex w-full px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
             onClick={() => {
               onEdit();
               setOpen(false);
             }}
           >
+            <Pencil className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
             Edit
           </button>
+          {extraItems?.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              role="menuitem"
+              className={
+                it.danger
+                  ? "flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-red-700 hover:bg-red-50"
+                  : "flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
+              }
+              onClick={() => {
+                it.onSelect();
+                setOpen(false);
+              }}
+            >
+              {it.icon === "split" ? (
+                <SquareSplitHorizontal className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+              ) : null}
+              {it.label}
+            </button>
+          ))}
           <button
             type="button"
             role="menuitem"
-            className="flex w-full px-3 py-2 text-left text-sm font-semibold text-red-700 hover:bg-red-50"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-red-700 hover:bg-red-50"
             onClick={() => {
               onDelete();
               setOpen(false);
             }}
           >
+            <Trash2 className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
             Delete
           </button>
         </div>
@@ -1545,6 +1580,14 @@ export function InventoryHub() {
   const setTab = (t: Tab) => router.push(`/inventory?tab=${t}`, { scroll: false });
 
   const [rows, setRows] = useState<ItemRow[]>(INITIAL_ITEMS);
+  /**
+   * `local` = legacy localStorage + demo seed (default).
+   * `server` = catalog hydrated from `/inv/*` when business flag `hub_backend_reads` is true.
+   */
+  const [inventoryCatalogSource, setInventoryCatalogSource] = useState<"local" | "server">("local");
+  const [invFlags, setInvFlags] = useState<InvInventoryFeatureFlags | null>(null);
+  const [inventorySaving, setInventorySaving] = useState(false);
+  const [splitBusy, setSplitBusy] = useState(false);
   /** Stock = physical inventory only; Services = billable services (not stock-tracked). */
   const [itemCatalogScope, setItemCatalogScope] = useState<"stock" | "services">("stock");
   const [itemSearch, setItemSearch] = useState("");
@@ -1582,6 +1625,30 @@ export function InventoryHub() {
   const [reportItemNameKinds, setReportItemNameKinds] = useState<Set<string>>(() => new Set());
   const [roughLotOptions, setRoughLotOptions] = useState<{ code: string; supplier: string }[]>(() => [...ROUGH_LOTS_SEED]);
   const [custodianReportExpanded, setCustodianReportExpanded] = useState<string | null>(null);
+  /** Custodian-wise server report drill-down key = `custodian_user_id` or `""` for unassigned. */
+  const [serverCustodianReportExpanded, setServerCustodianReportExpanded] = useState<string | null>(null);
+  /** Server `/inv/reports/*` (when signed in). */
+  const [serverReportSummary, setServerReportSummary] = useState<Awaited<ReturnType<typeof fetchReportSummary>> | null>(null);
+  const [serverReportByType, setServerReportByType] = useState<Awaited<ReturnType<typeof fetchReportByType>>>([]);
+  const [serverReportByCustodian, setServerReportByCustodian] = useState<Awaited<ReturnType<typeof fetchReportByCustodian>>>([]);
+  const [reportsApiLoading, setReportsApiLoading] = useState(false);
+  const [reportsApiError, setReportsApiError] = useState<string | null>(null);
+  const [auditSaving, setAuditSaving] = useState(false);
+  /** Stock line selected to inspect split children (parcels / child units). */
+  const [parcelLinesParent, setParcelLinesParent] = useState<ItemRow | null>(null);
+  const [fromLotOpen, setFromLotOpen] = useState(false);
+  const [fromLotTypes, setFromLotTypes] = useState<InvItemTypeDto[]>([]);
+  const [lotSummariesHub, setLotSummariesHub] = useState<PurchaseLotSummary[]>([]);
+  const [lotSummariesErrorHub, setLotSummariesErrorHub] = useState<string | null>(null);
+  const [selectedLotCodeHub, setSelectedLotCodeHub] = useState("");
+  const [lotDetailHub, setLotDetailHub] = useState<PurchaseLotDetail | null>(null);
+  const [lotDetailLoadingHub, setLotDetailLoadingHub] = useState(false);
+  const [fromLotItemTypeIdHub, setFromLotItemTypeIdHub] = useState("");
+  const [fromLotPrimaryUomCodeHub, setFromLotPrimaryUomCodeHub] = useState("ct");
+  const [fromLotParcelsHub, setFromLotParcelsHub] = useState<
+    { key: string; purchase_lot_line_id: string; display_name: string; primary_uom_qty: string; pieces: string; public_code: string }[]
+  >([]);
+  const [fromLotSavingHub, setFromLotSavingHub] = useState(false);
   const [addTypeDraft, setAddTypeDraft] = useState<{
     label: string;
     uomTab: UomTab;
@@ -1623,20 +1690,125 @@ export function InventoryHub() {
   }, [itemCatalogScope]);
 
   useEffect(() => {
-    const loaded = loadItemCatalog();
-    if (!loaded?.length) return;
-    setRows(
-      loaded.map((r) => ({
-        ...r,
-        revenueAccountId: r.revenueAccountId ?? (r.entryType === "service" ? "8" : ""),
-        linkedRoughLotCode: r.linkedRoughLotCode ?? "",
-      })) as ItemRow[],
-    );
+    if (tab !== "reports" || !getAccessToken()) return;
+    let cancelled = false;
+    setReportsApiLoading(true);
+    setReportsApiError(null);
+    void Promise.all([fetchReportSummary(), fetchReportByType(), fetchReportByCustodian()])
+      .then(([su, bt, bc]) => {
+        if (cancelled) return;
+        setServerReportSummary(su);
+        setServerReportByType(bt);
+        setServerReportByCustodian(bc);
+      })
+      .catch((e) => {
+        if (!cancelled) setReportsApiError(e instanceof Error ? e.message : "Could not load server reports.");
+      })
+      .finally(() => {
+        if (!cancelled) setReportsApiLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+
+  useEffect(() => {
+    if (!fromLotOpen || !getAccessToken()) return;
+    setLotSummariesErrorHub(null);
+    let cancelled = false;
+    void Promise.all([fetchItemTypes(), listPurchaseLotSummaries()])
+      .then(([types, sums]) => {
+        if (cancelled) return;
+        setFromLotTypes(types);
+        setLotSummariesHub(sums);
+      })
+      .catch((e) => {
+        if (!cancelled) setLotSummariesErrorHub(e instanceof Error ? e.message : "Could not load purchase lots.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromLotOpen]);
+
+  useEffect(() => {
+    if (!fromLotOpen || !selectedLotCodeHub.trim()) {
+      setLotDetailHub(null);
+      return;
+    }
+    let cancelled = false;
+    setLotDetailLoadingHub(true);
+    void getPurchaseLotByCode(selectedLotCodeHub.trim())
+      .then((d) => {
+        if (!cancelled) setLotDetailHub(d);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLotDetailHub(null);
+          pushToast("Could not load that lot. Check the lot code or sign in again.", "error");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLotDetailLoadingHub(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromLotOpen, selectedLotCodeHub, pushToast]);
+
+  const refetchInventoryCatalog = useCallback(async () => {
+    const snap = await loadInventoryHubServerSnapshot();
+    setRows(snap.rows);
+    setCustomInventoryTypes(snap.customInventoryTypes);
+    setInventoryCatalogSource("server");
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (typeof window === "undefined") return;
+      if (getAccessToken()) {
+        try {
+          const flags = await fetchInventoryFeatureFlags();
+          if (cancelled) return;
+          setInvFlags(flags);
+          if (catalogShouldLoadFromServer(flags)) {
+            const snap = await loadInventoryHubServerSnapshot();
+            if (!cancelled) {
+              setRows(snap.rows);
+              setCustomInventoryTypes(snap.customInventoryTypes);
+              setInventoryCatalogSource("server");
+              pushToast("Inventory loaded from server.", "success");
+              return;
+            }
+          }
+        } catch (e) {
+          if (!cancelled) {
+            pushToast(e instanceof Error ? e.message : "Could not load inventory from server.", "error");
+          }
+        }
+      }
+      if (cancelled) return;
+      const loaded = loadItemCatalog();
+      if (!loaded?.length) return;
+      setRows(
+        loaded.map((r) => ({
+          ...r,
+          revenueAccountId: r.revenueAccountId ?? (r.entryType === "service" ? "8" : ""),
+          linkedRoughLotCode: r.linkedRoughLotCode ?? "",
+        })) as ItemRow[],
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally once on mount: avoid re-fetching catalog when toast helper identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (inventoryCatalogSource === "server") return;
     saveItemCatalog(rows as StoredItemRow[]);
-  }, [rows]);
+  }, [rows, inventoryCatalogSource]);
 
   const [customLocations, setCustomLocations] = useState<string[]>([]);
   const [customCustodians, setCustomCustodians] = useState<string[]>([]);
@@ -1909,6 +2081,12 @@ export function InventoryHub() {
     [rows],
   );
 
+  const parcelChildRows = useMemo(() => {
+    if (!parcelLinesParent) return [];
+    const uid = parcelLinesParent.serverUnitId ?? parcelLinesParent.id;
+    return inventoryStockRows.filter((c) => (c.serverParentUnitId ?? null) === uid);
+  }, [parcelLinesParent, inventoryStockRows]);
+
   const splitParcelPickerOptions = useMemo(
     () =>
       inventoryStockRows.map((row) => ({
@@ -2040,6 +2218,29 @@ export function InventoryHub() {
     }
     return m;
   }, [reportInventoryRows]);
+
+  const reportLinesByServerCustodian = useMemo(() => {
+    const m = new Map<string, ItemRow[]>();
+    for (const r of reportInventoryRows) {
+      const key = r.serverCustodianUserId ?? "";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(r);
+    }
+    for (const arr of m.values()) {
+      arr.sort((a, b) => a.itemNo.localeCompare(b.itemNo));
+    }
+    return m;
+  }, [reportInventoryRows]);
+
+  const defaultFromLotTypeIdHub = useMemo(
+    () => fromLotTypes.find((x) => (x.code || "").toLowerCase() === "rough")?.id ?? fromLotTypes[0]?.id ?? "",
+    [fromLotTypes],
+  );
+
+  useEffect(() => {
+    if (!fromLotOpen) return;
+    if (!fromLotItemTypeIdHub && defaultFromLotTypeIdHub) setFromLotItemTypeIdHub(defaultFromLotTypeIdHub);
+  }, [fromLotOpen, fromLotItemTypeIdHub, defaultFromLotTypeIdHub]);
 
   const toggleReportItemNameKind = useCallback((key: string) => {
     setReportItemNameKinds((prev) => {
@@ -2194,11 +2395,24 @@ export function InventoryHub() {
   async function deleteInventoryType(typeId: string) {
     const ok = await confirm({
       title: "Delete inventory type?",
-      message: "Delete this inventory type? Items using it will switch to Rough.",
+      message: isServerUuid(typeId) && invFlags && inventoryWritesAllowed(invFlags)
+        ? "Deactivate this type on the server? Existing stock lines keep their type; new lines should use another type."
+        : "Delete this inventory type? Items using it will switch to Rough.",
       confirmLabel: "Delete",
       variant: "danger",
     });
     if (!ok) return;
+    if (getAccessToken() && invFlags && inventoryWritesAllowed(invFlags) && isServerUuid(typeId)) {
+      try {
+        await updateItemType(typeId, { is_active: false });
+        await refetchInventoryCatalog();
+        setItemForm((s) => (s.itemTypeKey === typeId ? { ...s, itemTypeKey: KIND_ROUGH, customFields: {} } : s));
+        pushToast("Inventory type deactivated on the server.", "success");
+      } catch (e) {
+        pushToast(e instanceof Error ? e.message : "Could not deactivate type", "error");
+      }
+      return;
+    }
     setCustomInventoryTypes((prev) => prev.filter((x) => x.id !== typeId));
     setRows((prev) =>
       prev.map((r) => (r.itemKind === typeId ? { ...r, itemKind: KIND_ROUGH, customFieldValuesJson: "{}" } : r)),
@@ -2219,6 +2433,93 @@ export function InventoryHub() {
     ]);
     setSplitError(null);
     setSplitParcelOpen(true);
+  }
+
+  function openSplitParcelFromRow(r: ItemRow) {
+    if (r.entryType !== "inventory") return;
+    setSplitSourceId(r.id);
+    setSplitRows([
+      {
+        id: crypto.randomUUID(),
+        itemName: "",
+        uom: "",
+        pieces: "",
+        rate: "",
+      },
+    ]);
+    setSplitError(null);
+    setSplitParcelOpen(true);
+  }
+
+  function openParcelLinesDrawer(r: ItemRow) {
+    if (r.entryType !== "inventory") return;
+    setParcelLinesParent(r);
+  }
+
+  function appendParcelFromLineHub(lineId: string, itemName: string, linePieces: number) {
+    setFromLotParcelsHub((prev) => [
+      ...prev,
+      {
+        key: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        purchase_lot_line_id: lineId,
+        display_name: itemName,
+        primary_uom_qty: "",
+        pieces: String(linePieces ?? 0),
+        public_code: "",
+      },
+    ]);
+  }
+
+  async function submitFromLotHub() {
+    if (!lotDetailHub) {
+      pushToast("Select a purchase lot and wait for it to load.", "error");
+      return;
+    }
+    if (!fromLotItemTypeIdHub) {
+      pushToast("Pick an inventory item type.", "error");
+      return;
+    }
+    const parcels = fromLotParcelsHub
+      .map((p) => ({
+        purchase_lot_line_id: p.purchase_lot_line_id,
+        display_name: p.display_name.trim(),
+        public_code: p.public_code.trim(),
+        primary_uom_qty: p.primary_uom_qty.trim(),
+        pieces: Number.parseInt(p.pieces, 10) || 0,
+      }))
+      .filter((p) => p.display_name && p.purchase_lot_line_id && Number(p.primary_uom_qty) > 0);
+    if (!parcels.length) {
+      pushToast("Add at least one parcel from a lot line and enter UOM quantity for each.", "error");
+      return;
+    }
+    setFromLotSavingHub(true);
+    try {
+      await createStockUnitsFromPurchaseLot({
+        purchase_lot_id: lotDetailHub.id,
+        item_type_id: fromLotItemTypeIdHub,
+        primary_uom_code: fromLotPrimaryUomCodeHub.trim() || "ct",
+        parcels: parcels.map((p) => ({
+          purchase_lot_line_id: p.purchase_lot_line_id,
+          display_name: p.display_name,
+          primary_uom_qty: p.primary_uom_qty,
+          pieces: p.pieces,
+          ...(p.public_code ? { public_code: p.public_code } : {}),
+        })),
+        client_ref: `hub-from-lot-${Date.now()}`,
+      });
+      setFromLotOpen(false);
+      setSelectedLotCodeHub("");
+      setLotDetailHub(null);
+      setFromLotParcelsHub([]);
+      if (inventoryCatalogSource === "server" || (invFlags && catalogShouldLoadFromServer(invFlags))) {
+        await refetchInventoryCatalog();
+      }
+      pushToast("Stock lines were created from the purchase lot.", "success");
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Receive from lot failed", "error");
+    } finally {
+      setFromLotSavingHub(false);
+    }
   }
 
   function addSplitRow() {
@@ -2271,7 +2572,7 @@ export function InventoryHub() {
     return null;
   }
 
-  function submitSplitParcel() {
+  async function submitSplitParcel() {
     const validation = splitValidationMessage();
     if (validation) {
       setSplitError(validation);
@@ -2279,6 +2580,67 @@ export function InventoryHub() {
     }
     if (!splitSourceRow) return;
 
+    if (
+      getAccessToken() &&
+      invFlags &&
+      inventoryWritesAllowed(invFlags) &&
+      isServerUuid(splitSourceRow.id) &&
+      !inventorySplitAllowed(invFlags)
+    ) {
+      pushToast("Splits are disabled for this business (disable_client_split).", "error");
+      return;
+    }
+
+    const apiWrite = Boolean(getAccessToken() && invFlags && inventoryWritesAllowed(invFlags));
+    const apiSplit = apiWrite && inventorySplitAllowed(invFlags) && isServerUuid(splitSourceRow.id);
+
+    if (apiSplit) {
+      setSplitBusy(true);
+      setSplitError(null);
+      try {
+        const children = splitRows
+          .map((row) => {
+            const uom = Number(row.uom);
+            const pieces = Number(row.pieces);
+            const parsedUom = Number.isFinite(uom) && uom > 0 ? uom : 0;
+            const parsedPieces = Number.isFinite(pieces) && pieces > 0 ? Math.floor(pieces) : 0;
+            if (parsedUom <= 0 && parsedPieces <= 0) return null;
+            const rate = Number(row.rate);
+            const parsedRate = Number.isFinite(rate) && rate >= 0 ? rate : splitSourceRow.rate;
+            const cost = parsedRate * (parsedUom > 0 ? parsedUom : 1);
+            const slug = row.itemName.trim().replace(/[^\w.-]+/g, "_").slice(0, 40) || "child";
+            return {
+              display_name: row.itemName.trim(),
+              public_code: `${slug}-${Date.now().toString(36)}`.slice(0, 80),
+              primary_uom_qty: String(parsedUom > 0 ? parsedUom : 0),
+              pieces: parsedPieces,
+              cost_basis_total: parsedUom > 0 || parsedPieces > 0 ? String(Math.max(0, cost)) : null,
+            };
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null);
+        if (!children.length) {
+          setSplitError("Add at least one child with quantity.");
+          setSplitBusy(false);
+          return;
+        }
+        await splitStockUnits({
+          source_unit_id: splitSourceRow.id,
+          children,
+          client_ref: `hub-split-${Date.now()}`,
+          expected_source_row_version: splitSourceRow.rowVersion ?? 1,
+        });
+        await refetchInventoryCatalog();
+        setSplitParcelOpen(false);
+        setSplitError(null);
+        pushToast(`Split saved on the server (${children.length} child line(s)).`, "success");
+      } catch (err) {
+        setSplitError(err instanceof Error ? err.message : "Split failed");
+        pushToast(err instanceof Error ? err.message : "Split failed", "error");
+      } finally {
+        setSplitBusy(false);
+      }
+      return;
+    }
     const now = Date.now();
     const existingNos = new Set(rows.map((r) => r.itemNo.trim()).filter((s) => s !== ""));
     const sourceBaseNo = splitSourceRow.itemNo.trim() || `LOT-${now}`;
@@ -2335,7 +2697,7 @@ export function InventoryHub() {
 
     setSplitParcelOpen(false);
     setSplitError(null);
-    pushToast(`Parcel split complete. Created ${newRows.length} new parcel(s).`, "success");
+    pushToast(`Parcel split complete (local only). Created ${newRows.length} new parcel(s).`, "success");
   }
 
   function openEditItemModal(row: ItemRow) {
@@ -2425,13 +2787,40 @@ export function InventoryHub() {
   }, [addTypeModalOpen, itemModalOpen]);
 
   async function deleteItem(id: string) {
+    const row = rows.find((r) => r.id === id);
+    const apiWrite = Boolean(getAccessToken() && invFlags && inventoryWritesAllowed(invFlags));
     const ok = await confirm({
       title: "Delete item?",
-      message: "Delete this item? This cannot be undone in the demo.",
+      message:
+        row?.entryType === "inventory" && isServerUuid(id) && apiWrite
+          ? "Void this stock line on the server? It will be marked void in inventory."
+          : row?.entryType === "service" && isServerUuid(id) && apiWrite
+            ? "Deactivate this service on the server?"
+            : "Delete this item? This cannot be undone in the demo.",
       confirmLabel: "Delete",
       variant: "danger",
     });
     if (!ok) return;
+    if (row?.entryType === "service" && isServerUuid(id) && apiWrite) {
+      try {
+        await updateService(id, { is_active: false });
+        await refetchInventoryCatalog();
+        pushToast("Service deactivated on the server.", "success");
+      } catch (e) {
+        pushToast(e instanceof Error ? e.message : "Deactivate failed", "error");
+      }
+      return;
+    }
+    if (row?.entryType === "inventory" && isServerUuid(id) && apiWrite) {
+      try {
+        await voidStockUnit(id, "Deleted from Inventory Hub");
+        await refetchInventoryCatalog();
+        pushToast("Stock line voided on the server.", "success");
+      } catch (e) {
+        pushToast(e instanceof Error ? e.message : "Void failed", "error");
+      }
+      return;
+    }
     setRows((prev) => prev.filter((r) => r.id !== id));
   }
 
@@ -2452,22 +2841,64 @@ export function InventoryHub() {
     );
   }
 
-  function submitItemForm(e: React.FormEvent) {
+  function isUuidString(s: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.trim());
+  }
+
+  async function submitItemForm(e: React.FormEvent) {
     e.preventDefault();
     const wasEdit = Boolean(editingItemId);
+    const apiWrite = Boolean(getAccessToken() && invFlags && inventoryWritesAllowed(invFlags));
 
     if (itemForm.entryType === "service") {
       if (!itemForm.itemName.trim()) {
         pushToast("Enter a service name.", "error");
         return;
       }
-      if (!itemForm.revenueAccountId.trim()) {
-        pushToast("Select a revenue (income) account for this service.", "error");
-        return;
-      }
       const rate = Number(itemForm.rate);
       if (!Number.isFinite(rate) || rate < 0) {
         pushToast("Enter a valid rate / price.", "error");
+        return;
+      }
+      if (!apiWrite && !itemForm.revenueAccountId.trim()) {
+        pushToast("Select a revenue (income) account for this service.", "error");
+        return;
+      }
+      if (apiWrite && itemForm.revenueAccountId.trim() && !isUuidString(itemForm.revenueAccountId)) {
+        pushToast("Revenue account must be a valid UUID for server save, or clear the field.", "error");
+        return;
+      }
+      if (apiWrite) {
+        setInventorySaving(true);
+        try {
+          const rev = itemForm.revenueAccountId.trim() && isUuidString(itemForm.revenueAccountId)
+            ? itemForm.revenueAccountId.trim()
+            : null;
+          if (editingItemId && isServerUuid(editingItemId)) {
+            await updateService(editingItemId, {
+              name: itemForm.itemName.trim(),
+              description: itemForm.details.trim() || "",
+              billing_unit_label: itemForm.serviceUnit.trim() || "Each",
+              default_rate: String(rate),
+              revenue_gl_account_id: rev,
+            });
+          } else {
+            await createService({
+              name: itemForm.itemName.trim(),
+              description: itemForm.details.trim() || "",
+              billing_unit_label: itemForm.serviceUnit.trim() || "Each",
+              default_rate: String(rate),
+              revenue_gl_account_id: rev,
+            });
+          }
+          await refetchInventoryCatalog();
+          forceCloseItemModal();
+          pushToast(wasEdit ? "Service updated on the server." : "Service saved on the server.", "success");
+        } catch (err) {
+          pushToast(err instanceof Error ? err.message : "Service save failed", "error");
+        } finally {
+          setInventorySaving(false);
+        }
         return;
       }
       const today = new Date().toISOString().slice(0, 10);
@@ -2502,7 +2933,7 @@ export function InventoryHub() {
         setRows((prev) => [rowPayload, ...prev]);
       }
       forceCloseItemModal();
-      pushToast(wasEdit ? "Demo: service updated. Wire save to your API." : "Demo: service saved. Wire save to your API.", "info");
+      pushToast(wasEdit ? "Demo: service updated (local only)." : "Demo: service saved (local only).", "info");
       return;
     }
 
@@ -2621,10 +3052,53 @@ export function InventoryHub() {
       linkedRoughLotCode:
         itemForm.itemTypeKey === KIND_ROUGH ? itemForm.linkedRoughLotCode.trim() : "",
     };
+    if (apiWrite) {
+      setInventorySaving(true);
+      try {
+        if (editingItemId && isServerUuid(editingItemId)) {
+          const existing = rows.find((r) => r.id === editingItemId);
+          await patchStockFromItemForm({
+            unitId: editingItemId,
+            expectedRowVersion: existing?.rowVersion ?? 1,
+            form: itemForm,
+            effUom,
+            effPieces: Math.floor(effPieces),
+            effRate,
+            mode,
+            locationEnabled: rLoc.enabled,
+            custodianEnabled: rCust.enabled,
+          });
+        } else if (!editingItemId) {
+          const types = await fetchItemTypes();
+          await createStockFromItemForm({
+            types,
+            form: itemForm,
+            effUom,
+            effPieces: Math.floor(effPieces),
+            effRate,
+            mode,
+            locationEnabled: rLoc.enabled,
+            custodianEnabled: rCust.enabled,
+          });
+        } else {
+          pushToast("This line is not on the server yet. Refresh after enabling server inventory, or delete the local row.", "error");
+          setInventorySaving(false);
+          return;
+        }
+        await refetchInventoryCatalog();
+        forceCloseItemModal();
+        pushToast(wasEdit ? "Item updated on the server." : "Item created on the server.", "success");
+      } catch (err) {
+        pushToast(err instanceof Error ? err.message : "Inventory save failed", "error");
+      } finally {
+        setInventorySaving(false);
+      }
+      return;
+    }
     if (editingItemId) {
       setRows((prev) => prev.map((r) => (r.id === editingItemId ? rowPayload : r)));
       forceCloseItemModal();
-      pushToast("Demo: item updated. Wire save to your API.", "info");
+      pushToast("Demo: item updated (local only).", "info");
       return;
     }
     setRows((prev) => [rowPayload, ...prev]);
@@ -2643,7 +3117,7 @@ export function InventoryHub() {
   }, [newItemQrDataUrl, itemForm.itemNo]);
 
   const commitAudit = useCallback(
-    (mode: "now" | "close") => {
+    async (mode: "now" | "close") => {
       if (auditFilteredStockRows.length === 0) {
         pushToast("No lines to save.", "error");
         return;
@@ -2674,6 +3148,47 @@ export function InventoryHub() {
         note: "",
         lines,
       };
+      const apiLines = auditFilteredStockRows
+        .map((r) => {
+          const unitId = r.serverUnitId ?? r.id;
+          if (!isServerUuid(unitId)) return null;
+          const d = auditDraft[r.id] ?? { physical: "", verified: false };
+          const physRaw = d.physical.trim();
+          const physicalUom = physRaw === "" ? null : Number(physRaw);
+          const physical_qty =
+            physicalUom !== null && Number.isFinite(physicalUom) ? String(physicalUom) : null;
+          return {
+            stock_unit_id: unitId,
+            physical_qty,
+            verified: d.verified,
+          };
+        })
+        .filter((x): x is { stock_unit_id: string; physical_qty: string | null; verified: boolean } => x !== null);
+
+      let serverSavedOk = false;
+      if (getAccessToken() && apiLines.length > 0) {
+        setAuditSaving(true);
+        try {
+          const sess = await createAuditSession({ note: "", lines: apiLines });
+          if (mode === "close") {
+            await closeAuditSession(sess.id);
+          }
+          serverSavedOk = true;
+          pushToast(
+            mode === "close"
+              ? `Audit session ${sess.id.slice(0, 8)}… saved and closed on the server.`
+              : `Audit session ${sess.id.slice(0, 8)}… saved on the server.`,
+            "success",
+          );
+        } catch (e) {
+          pushToast(e instanceof Error ? e.message : "Could not save audit on the server.", "error");
+        } finally {
+          setAuditSaving(false);
+        }
+      } else if (getAccessToken() && apiLines.length === 0) {
+        pushToast("No server UUID stock lines in this list — snapshot saved locally only.", "info");
+      }
+
       setAuditRecords((prev) => {
         const next = [rec, ...prev];
         persistAuditRecords(next);
@@ -2696,18 +3211,47 @@ export function InventoryHub() {
             return next;
           });
         }
+        if (!serverSavedOk) {
+          pushToast(
+            idsToClose.length === 0
+              ? "No rows were marked Verified — nothing was removed from this audit list."
+              : `${idsToClose.length} verified line(s) removed from this audit list.`,
+            "info",
+          );
+        } else if (idsToClose.length > 0) {
+          pushToast(`${idsToClose.length} verified line(s) removed from this audit list.`, "info");
+        }
+      } else if (!serverSavedOk && (!getAccessToken() || apiLines.length === 0)) {
         pushToast(
-          idsToClose.length === 0
-            ? "Audit saved (demo). No lines were marked Verified — nothing was removed from the audit list. Tick Verified for rows to complete, then Save and Close again."
-            : `Audit saved (demo). ${idsToClose.length} verified line(s) removed from this audit list. Wire save to your API for production.`,
+          getAccessToken()
+            ? "Snapshot saved locally. Add counts for server-backed lines (UUID ids) to post an audit session."
+            : "Audit snapshot saved locally (sign in to post sessions to the server).",
           "info",
         );
-      } else {
-        pushToast("Audit saved (demo). You can keep editing counts. Wire save to your API for production.", "info");
       }
     },
-    [auditFilteredStockRows, auditDraft],
+    [auditFilteredStockRows, auditDraft, pushToast],
   );
+
+  const reloadServerReports = useCallback(() => {
+    if (!getAccessToken()) {
+      pushToast("Sign in to load server reports.", "info");
+      return;
+    }
+    setReportsApiLoading(true);
+    setReportsApiError(null);
+    void Promise.all([fetchReportSummary(), fetchReportByType(), fetchReportByCustodian()])
+      .then(([su, bt, bc]) => {
+        setServerReportSummary(su);
+        setServerReportByType(bt);
+        setServerReportByCustodian(bc);
+        pushToast("Server reports refreshed.", "success");
+      })
+      .catch((e) => {
+        setReportsApiError(e instanceof Error ? e.message : "Could not load server reports.");
+      })
+      .finally(() => setReportsApiLoading(false));
+  }, [pushToast]);
 
   return (
     <div className="w-full space-y-6">
@@ -2761,6 +3305,12 @@ export function InventoryHub() {
                     </button>
                   ))}
                 </div>
+                {itemCatalogScope === "stock" ? (
+                  <p className="mt-2 text-xs text-[var(--gs-muted)]">
+                    Click a stock row (outside Actions) to open{" "}
+                    <span className="font-semibold text-[var(--gs-text)]">child parcels & splits</span> linked to that line.
+                  </p>
+                ) : null}
               </div>
               <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                 <div className="inline-flex rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-1">
@@ -2795,14 +3345,26 @@ export function InventoryHub() {
                   onImportFiles={handleImportFiles}
                 />
                 {itemCatalogScope === "stock" ? (
-                  <button
-                    type="button"
-                    onClick={openSplitParcel}
-                    className="inline-flex items-center gap-1 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
-                  >
-                    <Table className="h-3.5 w-3.5 text-[var(--gs-muted)]" strokeWidth={2} aria-hidden />
-                    Split Parcel
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={openSplitParcel}
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
+                    >
+                      <Table className="h-3.5 w-3.5 text-[var(--gs-muted)]" strokeWidth={2} aria-hidden />
+                      Split Parcel
+                    </button>
+                    {getAccessToken() && invFlags && inventoryWritesAllowed(invFlags) ? (
+                      <button
+                        type="button"
+                        onClick={() => setFromLotOpen(true)}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
+                      >
+                        <Package className="h-3.5 w-3.5 text-[var(--gs-muted)]" strokeWidth={2} aria-hidden />
+                        Receive from lot
+                      </button>
+                    ) : null}
+                  </>
                 ) : null}
                 <button
                   type="button"
@@ -2894,9 +3456,9 @@ export function InventoryHub() {
               ) : null}
             </div>
           </div>
-          <div className="w-full overflow-x-hidden px-3 pb-5 sm:px-5">
+          <div className="w-full overflow-x-auto overflow-y-visible px-3 pb-5 sm:px-5">
             {itemCatalogScope === "services" ? (
-            <table className="w-full table-fixed border-collapse text-left text-[11px] sm:text-sm">
+            <table className="w-full table-fixed border-collapse overflow-visible text-left text-[11px] sm:text-sm">
               <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)] sm:text-xs">
                 <tr>
                   <th className="min-w-[10rem] px-4 py-3">Service name</th>
@@ -2904,12 +3466,14 @@ export function InventoryHub() {
                   <th className="whitespace-nowrap px-4 py-3">Unit</th>
                   <th className="px-4 py-3 text-right">Rate</th>
                   <th className="min-w-[10rem] px-4 py-3">Revenue account</th>
-                  <th className="w-12 px-2 py-3 text-right" aria-label="Actions" />
+                  <th className="w-14 min-w-[3.25rem] px-2 py-3 text-center align-middle" scope="col">
+                    <span className="block truncate">Actions</span>
+                  </th>
                 </tr>
               </thead>
-              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)] overflow-visible">
                 {items.map((r) => (
-                  <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
+                  <tr key={r.id} className="overflow-visible hover:bg-[var(--gs-hover)]/80">
                     <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{r.itemName}</td>
                     <td className="max-w-[20rem] px-4 py-3 text-[var(--gs-muted)]">
                       <span className="line-clamp-2 text-xs leading-snug" title={r.details}>
@@ -2921,15 +3485,17 @@ export function InventoryHub() {
                       {r.rate.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-3 text-xs text-[var(--gs-muted)]">{revenueAccountLabel(r.revenueAccountId)}</td>
-                    <td className="px-2 py-2 text-right">
-                      <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => void deleteItem(r.id)} />
+                    <td className="relative z-10 w-14 min-w-[3.25rem] overflow-visible px-2 py-2 text-center align-middle">
+                      <div className="flex justify-center">
+                        <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => void deleteItem(r.id)} />
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             ) : (
-            <table className="w-full table-fixed border-collapse text-left text-[11px] sm:text-sm">
+            <table className="w-full table-fixed border-collapse overflow-visible text-left text-[11px] sm:text-sm">
               <colgroup>
                 {Array.from({ length: 12 }, (_, i) => (
                   <col key={i} style={{ width: `${100 / 12}%` }} />
@@ -2996,21 +3562,41 @@ export function InventoryHub() {
                   <th className="min-w-0 overflow-hidden px-2 py-2.5 text-right align-middle tabular-nums">
                     <span className="block truncate">Amount</span>
                   </th>
-                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle leading-tight">
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-center align-middle leading-tight">
                     <span className="line-clamp-2 break-words">Location</span>
                   </th>
-                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle leading-tight">
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-center align-middle leading-tight">
                     <span className="line-clamp-2 break-words">Custodian</span>
                   </th>
-                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-center align-middle" aria-label="Actions" />
+                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-center align-middle leading-tight" scope="col">
+                    <span className="block truncate">Actions</span>
+                  </th>
                 </tr>
               </thead>
-              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+              <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)] overflow-visible">
                 {items.map((r) => {
                   const amt = lineAmount(r, customInventoryTypes);
                   const specText = formatSpecCell(r, customInventoryTypes);
                   return (
-                    <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
+                    <tr
+                      key={r.id}
+                      className={cn(
+                        "overflow-visible hover:bg-[var(--gs-hover)]/80",
+                        r.entryType === "inventory" ? "cursor-pointer" : "",
+                      )}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("[data-row-actions]")) return;
+                        if (r.entryType === "inventory") openParcelLinesDrawer(r);
+                      }}
+                      onKeyDown={(e) => {
+                        if (r.entryType !== "inventory") return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openParcelLinesDrawer(r);
+                        }
+                      }}
+                      tabIndex={r.entryType === "inventory" ? 0 : undefined}
+                    >
                       <td className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle font-mono text-[var(--gs-text)]">
                         {r.itemNo}
                       </td>
@@ -3048,20 +3634,38 @@ export function InventoryHub() {
                         {amt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                       </td>
                       <td
-                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle text-[var(--gs-muted)]"
+                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 text-center align-middle text-[var(--gs-muted)]"
                         title={r.location}
                       >
                         {r.location}
                       </td>
                       <td
-                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle text-[var(--gs-muted)]"
+                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 text-center align-middle text-[var(--gs-muted)]"
                         title={r.custodian}
                       >
                         {r.custodian}
                       </td>
-                      <td className="min-w-0 max-w-0 px-2 py-2.5 text-center align-middle">
-                        <div className="flex min-w-0 justify-center overflow-hidden">
-                          <ItemRowActionMenu onEdit={() => openEditItemModal(r)} onDelete={() => void deleteItem(r.id)} />
+                      <td
+                        className="relative z-10 w-14 min-w-[3.25rem] overflow-visible px-2 py-2.5 text-center align-middle"
+                        data-row-actions
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex justify-center overflow-visible">
+                          <ItemRowActionMenu
+                            onEdit={() => openEditItemModal(r)}
+                            onDelete={() => void deleteItem(r.id)}
+                            extraItems={[
+                              {
+                                label: "Child parcels / splits…",
+                                onSelect: () => openParcelLinesDrawer(r),
+                              },
+                              {
+                                label: "Split parcel…",
+                                icon: "split",
+                                onSelect: () => openSplitParcelFromRow(r),
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -3073,6 +3677,82 @@ export function InventoryHub() {
           </div>
         </section>
       )}
+
+      {parcelLinesParent ? (
+        <div
+          className="fixed inset-0 z-[115] flex items-center justify-center bg-black/50 p-3"
+          role="presentation"
+          onClick={() => setParcelLinesParent(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="parcel-lines-title"
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2 border-b border-[var(--gs-border)] px-4 py-3">
+              <div className="min-w-0">
+                <h3 id="parcel-lines-title" className="text-base font-bold text-[var(--gs-text)]">
+                  Child parcels & split lines
+                </h3>
+                <p className="mt-1 text-xs text-[var(--gs-muted)]">
+                  Parent: <span className="font-medium text-[var(--gs-text)]">{parcelLinesParent.itemName}</span> · Item #
+                  <span className="font-mono text-[var(--gs-text)]"> {parcelLinesParent.itemNo || "—"}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setParcelLinesParent(null)}
+                className="shrink-0 rounded-lg p-1.5 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)]"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            {parcelLinesParent.serverParentUnitId ? (
+              <p className="border-b border-[var(--gs-border)] bg-[var(--gs-hover)]/50 px-4 py-2 text-xs text-[var(--gs-muted)]">
+                This line is itself a split child of another stock unit (parent link is set on the server).
+              </p>
+            ) : null}
+            <div className="p-4">
+              {parcelChildRows.length === 0 ? (
+                <p className="text-sm text-[var(--gs-muted)]">
+                  No child lines reference this unit yet. Use <span className="font-semibold text-[var(--gs-text)]">Split parcel</span>{" "}
+                  to create parcels that appear here.
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-[var(--gs-border)]">
+                  <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
+                    <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                      <tr>
+                        <th className="px-3 py-2">Item #</th>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2 text-right">UOM</th>
+                        <th className="px-3 py-2 text-right">Pieces</th>
+                        <th className="px-3 py-2">Location</th>
+                      </tr>
+                    </thead>
+                    <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                      {parcelChildRows.map((c) => (
+                        <tr key={c.id} className="hover:bg-[var(--gs-hover)]/80">
+                          <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-[var(--gs-text)]">{c.itemNo}</td>
+                          <td className="max-w-[14rem] px-3 py-2 font-medium text-[var(--gs-text)]">{c.itemName}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
+                            {c.uom.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-muted)]">{c.pieces}</td>
+                          <td className="px-3 py-2 text-xs text-[var(--gs-muted)]">{c.location || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {splitParcelOpen ? (
         <div
@@ -3225,10 +3905,242 @@ export function InventoryHub() {
               </button>
               <button
                 type="button"
-                onClick={submitSplitParcel}
-                className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)]"
+                disabled={splitBusy}
+                onClick={() => void submitSplitParcel()}
+                className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
               >
                 Split
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {fromLotOpen ? (
+        <div
+          className="fixed inset-0 z-[112] flex items-center justify-center bg-black/50 p-4"
+          role="presentation"
+          onClick={() => {
+            if (fromLotSavingHub) return;
+            setFromLotOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hub-from-lot-title"
+            className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h3 id="hub-from-lot-title" className="text-lg font-bold text-[var(--gs-text)]">
+                Receive parcels from purchase lot
+              </h3>
+              <button
+                type="button"
+                disabled={fromLotSavingHub}
+                onClick={() => setFromLotOpen(false)}
+                className="rounded-lg p-1.5 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-[var(--gs-muted)]">
+              Choose a lot from{" "}
+              <Link href="/lots" className="font-semibold text-[var(--gs-accent)] hover:underline">
+                Lots
+              </Link>
+              . Each parcel becomes an inventory stock line tied to the lot line.
+            </p>
+
+            <label className="mt-4 block text-xs font-bold uppercase text-[var(--gs-muted)]">Purchase lot</label>
+            <select
+              value={selectedLotCodeHub}
+              onChange={(e) => {
+                setSelectedLotCodeHub(e.target.value);
+                setFromLotParcelsHub([]);
+              }}
+              className="mt-1 w-full max-w-xl rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+            >
+              <option value="">{lotSummariesHub.length ? "Select a lot…" : "No lots returned from server"}</option>
+              {lotSummariesHub.map((s) => (
+                <option key={s.id} value={s.code}>
+                  {s.code} · {s.supplier} · {s.date_iso}
+                </option>
+              ))}
+            </select>
+            {lotSummariesErrorHub ? <p className="mt-2 text-xs text-red-600">{lotSummariesErrorHub}</p> : null}
+            {!lotSummariesErrorHub && fromLotOpen && !lotSummariesHub.length ? (
+              <p className="mt-2 text-xs text-[var(--gs-muted)]">
+                No purchase lots found.{" "}
+                <Link href="/lots/new" className="font-semibold text-[var(--gs-accent)] hover:underline">
+                  Create a lot
+                </Link>{" "}
+                first.
+              </p>
+            ) : null}
+
+            {selectedLotCodeHub ? (
+              <div className="mt-4">
+                {lotDetailLoadingHub ? (
+                  <p className="text-sm text-[var(--gs-muted)]">Loading lot lines…</p>
+                ) : lotDetailHub ? (
+                  <>
+                    <p className="text-sm font-medium text-[var(--gs-text)]">
+                      Lot {lotDetailHub.lot_code} · {lotDetailHub.vendor_name}
+                    </p>
+                    <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--gs-border)]">
+                      <table className="w-full min-w-[520px] text-left text-sm">
+                        <thead className="border-b border-[var(--gs-border)] text-[10px] font-bold uppercase text-[var(--gs-muted)]">
+                          <tr>
+                            <th className="px-3 py-2">Line item</th>
+                            <th className="px-3 py-2 text-right">Qty on lot</th>
+                            <th className="px-3 py-2">UOM</th>
+                            <th className="px-3 py-2 text-right">Pieces</th>
+                            <th className="px-3 py-2 text-right"> </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--gs-border)]">
+                          {lotDetailHub.lines.map((ln) => (
+                            <tr key={ln.id}>
+                              <td className="px-3 py-2">{ln.item_name}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{ln.quantity}</td>
+                              <td className="px-3 py-2 text-[var(--gs-muted)]">{ln.uom}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{ln.pieces}</td>
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  type="button"
+                                  className="text-xs font-semibold text-[var(--gs-accent)] hover:underline"
+                                  onClick={() => appendParcelFromLineHub(ln.id, ln.item_name, ln.pieces)}
+                                >
+                                  Add parcel
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-[var(--gs-muted)]">Could not show lines for this lot.</p>
+                )}
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Inventory item type</label>
+                <select
+                  value={fromLotItemTypeIdHub}
+                  onChange={(e) => setFromLotItemTypeIdHub(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                >
+                  <option value="">{fromLotTypes.length ? "Select…" : "Loading types…"}</option>
+                  {fromLotTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label} ({t.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Primary UOM code</label>
+                <input
+                  value={fromLotPrimaryUomCodeHub}
+                  onChange={(e) => setFromLotPrimaryUomCodeHub(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  placeholder="ct"
+                />
+              </div>
+            </div>
+
+            <h4 className="mt-6 text-xs font-bold uppercase text-[var(--gs-muted)]">Parcel rows (sent to server)</h4>
+            {fromLotParcelsHub.length === 0 ? (
+              <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                Click “Add parcel” on a line above, then enter UOM quantity for each row.
+              </p>
+            ) : (
+              <div className="mt-2 space-y-3">
+                {fromLotParcelsHub.map((p) => {
+                  const lotLine = lotDetailHub?.lines.find((l) => l.id === p.purchase_lot_line_id);
+                  return (
+                    <div key={p.key} className="space-y-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/40 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-[var(--gs-muted)]">
+                          Lot line: <span className="font-medium text-[var(--gs-text)]">{lotLine?.item_name ?? "—"}</span>
+                        </p>
+                        <button
+                          type="button"
+                          className="rounded-full border border-[var(--gs-border)] px-3 py-1 text-xs font-semibold"
+                          onClick={() => setFromLotParcelsHub((rows) => rows.filter((r) => r.key !== p.key))}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <input
+                          placeholder="Parcel display name"
+                          value={p.display_name}
+                          onChange={(e) =>
+                            setFromLotParcelsHub((rows) =>
+                              rows.map((r) => (r.key === p.key ? { ...r, display_name: e.target.value } : r)),
+                            )
+                          }
+                          className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm sm:col-span-2"
+                        />
+                        <input
+                          placeholder="UOM qty to receive"
+                          value={p.primary_uom_qty}
+                          onChange={(e) =>
+                            setFromLotParcelsHub((rows) =>
+                              rows.map((r) => (r.key === p.key ? { ...r, primary_uom_qty: e.target.value } : r)),
+                            )
+                          }
+                          className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                        />
+                        <input
+                          placeholder="Pieces"
+                          value={p.pieces}
+                          onChange={(e) =>
+                            setFromLotParcelsHub((rows) => rows.map((r) => (r.key === p.key ? { ...r, pieces: e.target.value } : r)))
+                          }
+                          className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                        />
+                        <input
+                          placeholder="Public code (optional)"
+                          value={p.public_code}
+                          onChange={(e) =>
+                            setFromLotParcelsHub((rows) =>
+                              rows.map((r) => (r.key === p.key ? { ...r, public_code: e.target.value } : r)),
+                            )
+                          }
+                          className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm sm:col-span-2"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={fromLotSavingHub}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
+                onClick={() => setFromLotOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={fromLotSavingHub}
+                className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
+                onClick={() => void submitFromLotHub()}
+              >
+                {fromLotSavingHub ? "Saving…" : "Create stock from lot"}
               </button>
             </div>
           </div>
@@ -3573,86 +4485,117 @@ export function InventoryHub() {
               </button>
               <button
                 type="button"
+                disabled={inventorySaving}
                 onClick={() => {
-                  const label = addTypeDraft.label.trim();
-                  if (!label) {
-                    pushToast("Enter a type name.", "error");
-                    return;
-                  }
-                  if (addTypeDraft.uomTab === "custom" && !addTypeDraft.customUom.trim()) {
-                    pushToast("Enter a custom UOM label.", "error");
-                    return;
-                  }
-                  const mergedStd = mergeStandardFields(addTypeDraft.standardFields);
-                  if (addTypeDraft.specMode !== "builder") {
-                    if (!Object.values(mergedStd).some((r) => r.enabled)) {
-                      pushToast("Enable at least one standard field, or switch to Custom fields.", "error");
+                  void (async () => {
+                    const label = addTypeDraft.label.trim();
+                    if (!label) {
+                      pushToast("Enter a type name.", "error");
                       return;
                     }
-                  }
-                  const cleaned: CustomFieldDef[] =
-                    addTypeDraft.specMode === "builder"
-                      ? addTypeDraft.builderFields.map((f) => ({
-                          id: f.id,
-                          label: f.label.trim(),
-                          kind: f.kind,
-                          options: f.kind === "dropdown" ? (f.options ?? []).filter(Boolean) : undefined,
-                          required: f.required !== false,
-                          visible: f.visible !== false,
-                        }))
-                      : [];
-                  if (addTypeDraft.specMode === "builder") {
-                    if (cleaned.length < 1) {
-                      pushToast("Add at least one custom attribute field.", "error");
+                    if (addTypeDraft.uomTab === "custom" && !addTypeDraft.customUom.trim()) {
+                      pushToast("Enter a custom UOM label.", "error");
                       return;
                     }
-                    for (const f of cleaned) {
-                      if (!f.label) {
-                        pushToast("Each field needs a label.", "error");
-                        return;
-                      }
-                      if (f.kind === "dropdown" && (!f.options || f.options.length < 1)) {
-                        pushToast(`Add at least one option for dropdown "${f.label || "field"}".`, "error");
+                    const mergedStd = mergeStandardFields(addTypeDraft.standardFields);
+                    if (addTypeDraft.specMode !== "builder") {
+                      if (!Object.values(mergedStd).some((r) => r.enabled)) {
+                        pushToast("Enable at least one standard field, or switch to Custom fields.", "error");
                         return;
                       }
                     }
-                  }
-                  const id = editingInventoryTypeId ?? `ctype-${Date.now()}`;
-                  const fieldPreset =
-                    addTypeDraft.specMode === "rough"
-                      ? KIND_ROUGH
-                      : addTypeDraft.specMode === "cut"
-                        ? KIND_CUT
-                        : undefined;
-                  const nextType: CustomInventoryType = {
-                    id,
-                    label,
-                    uomTab: addTypeDraft.uomTab,
-                    customUomLabel: addTypeDraft.uomTab === "custom" ? addTypeDraft.customUom.trim() : undefined,
-                    fieldPreset,
-                    builderFields: cleaned,
-                    standardFields: mergedStd,
-                  };
-                  if (editingInventoryTypeId) {
-                    setCustomInventoryTypes((prev) => prev.map((x) => (x.id === editingInventoryTypeId ? nextType : x)));
-                  } else {
-                    setCustomInventoryTypes((prev) => [...prev, nextType]);
-                    setItemForm((s) => {
-                      const cf: Record<string, string> = {};
-                      for (const f of cleaned) cf[f.id] = "";
-                      return { ...s, itemTypeKey: id, customFields: cf };
+                    const cleaned: CustomFieldDef[] =
+                      addTypeDraft.specMode === "builder"
+                        ? addTypeDraft.builderFields.map((f) => ({
+                            id: f.id,
+                            label: f.label.trim(),
+                            kind: f.kind,
+                            options: f.kind === "dropdown" ? (f.options ?? []).filter(Boolean) : undefined,
+                            required: f.required !== false,
+                            visible: f.visible !== false,
+                          }))
+                        : [];
+                    if (addTypeDraft.specMode === "builder") {
+                      if (cleaned.length < 1) {
+                        pushToast("Add at least one custom attribute field.", "error");
+                        return;
+                      }
+                      for (const f of cleaned) {
+                        if (!f.label) {
+                          pushToast("Each field needs a label.", "error");
+                          return;
+                        }
+                        if (f.kind === "dropdown" && (!f.options || f.options.length < 1)) {
+                          pushToast(`Add at least one option for dropdown "${f.label || "field"}".`, "error");
+                          return;
+                        }
+                      }
+                    }
+                    const id = editingInventoryTypeId ?? `ctype-${Date.now()}`;
+                    const fieldPreset =
+                      addTypeDraft.specMode === "rough"
+                        ? KIND_ROUGH
+                        : addTypeDraft.specMode === "cut"
+                          ? KIND_CUT
+                          : undefined;
+                    const nextType: CustomInventoryType = {
+                      id,
+                      label,
+                      uomTab: addTypeDraft.uomTab,
+                      customUomLabel: addTypeDraft.uomTab === "custom" ? addTypeDraft.customUom.trim() : undefined,
+                      fieldPreset,
+                      builderFields: cleaned,
+                      standardFields: mergedStd,
+                    };
+                    const apiWrite = Boolean(getAccessToken() && invFlags && inventoryWritesAllowed(invFlags));
+                    if (apiWrite) {
+                      setInventorySaving(true);
+                      try {
+                        const dto = await persistCustomInventoryType({
+                          editingId: editingInventoryTypeId,
+                          nextType,
+                          codeHint: label,
+                        });
+                        await refetchInventoryCatalog();
+                        if (!editingInventoryTypeId) {
+                          setItemForm((s) => {
+                            const cf: Record<string, string> = {};
+                            for (const f of cleaned) cf[f.id] = "";
+                            return { ...s, itemTypeKey: dto.id, customFields: cf };
+                          });
+                        }
+                        pushToast(editingInventoryTypeId ? "Inventory type updated on the server." : "Inventory type created on the server.", "success");
+                      } catch (err) {
+                        pushToast(err instanceof Error ? err.message : "Could not save type", "error");
+                        setInventorySaving(false);
+                        return;
+                      } finally {
+                        setInventorySaving(false);
+                      }
+                    } else {
+                      if (editingInventoryTypeId) {
+                        setCustomInventoryTypes((prev) => prev.map((x) => (x.id === editingInventoryTypeId ? nextType : x)));
+                      } else {
+                        setCustomInventoryTypes((prev) => [...prev, nextType]);
+                        setItemForm((s) => {
+                          const cf: Record<string, string> = {};
+                          for (const f of cleaned) cf[f.id] = "";
+                          return { ...s, itemTypeKey: id, customFields: cf };
+                        });
+                      }
+                      pushToast("Type saved locally only (sign in and allow server writes to sync).", "info");
+                    }
+                    setAddTypeModalOpen(false);
+                    setEditingInventoryTypeId(null);
+                    setAddTypeDraft({
+                      label: "",
+                      uomTab: "kg",
+                      customUom: "",
+                      specMode: "builder",
+                      standardFields: defaultStandardFieldRules(),
+                      builderFields: [{ id: newFieldId(), label: "Field 1", kind: "text", required: true, visible: true }],
                     });
-                  }
-                  setAddTypeModalOpen(false);
-                  setEditingInventoryTypeId(null);
-                  setAddTypeDraft({
-                    label: "",
-                    uomTab: "kg",
-                    customUom: "",
-                    specMode: "builder",
-                    standardFields: defaultStandardFieldRules(),
-                    builderFields: [{ id: newFieldId(), label: "Field 1", kind: "text", required: true, visible: true }],
-                  });
+                  })();
                 }}
                 className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]"
               >
@@ -3698,7 +4641,13 @@ export function InventoryHub() {
                       : "New item"}
                 </h3>
                 {editingItemId ? (
-                  <p className="mt-0.5 text-sm text-[var(--gs-muted)]">Update fields below  demo only until API is wired.</p>
+                  <p className="mt-0.5 text-sm text-[var(--gs-muted)]">
+                    {getAccessToken() && invFlags && inventoryWritesAllowed(invFlags)
+                      ? "Changes save to the inventory server."
+                      : getAccessToken() && invFlags && !inventoryWritesAllowed(invFlags)
+                        ? "Read-only: server writes are disabled (hub_backend_writes)."
+                        : "Update fields below (local demo when not signed in or server writes off)."}
+                  </p>
                 ) : (
                   <p className="mt-0.5 text-xs text-[var(--gs-muted)]">Full-width form  sections follow ERP-style grouping.</p>
                 )}
@@ -3723,9 +4672,10 @@ export function InventoryHub() {
                   <button
                     type="submit"
                     form="gs-new-item-form"
-                    className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]"
+                    disabled={inventorySaving}
+                    className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
                   >
-                    {editingItemId ? "Save changes" : "Save item"}
+                    {inventorySaving ? "Saving…" : editingItemId ? "Save changes" : "Save item"}
                   </button>
                 )}
                 <button
@@ -4395,10 +5345,30 @@ export function InventoryHub() {
       {tab === "reports" && (
         <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
           <div className="border-b border-[var(--gs-border)] p-6 pb-4">
-            <h2 className="text-lg font-bold text-[var(--gs-text)]">Inventory reports</h2>
-            <p className="mt-1 text-sm text-[var(--gs-muted)]">
-              Live aggregates from your current stock lines (same data as Stock / Services → Stock items).
-            </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-[var(--gs-text)]">Inventory reports</h2>
+                <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                  Overview, custodian, and type-wise totals load from the inventory server when you are signed in. Analysis
+                  and item name views use stock lines currently shown in this hub (same grid as Stock items).
+                </p>
+              </div>
+              {getAccessToken() ? (
+                <button
+                  type="button"
+                  onClick={() => void reloadServerReports()}
+                  disabled={reportsApiLoading}
+                  className="shrink-0 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)] disabled:pointer-events-none disabled:opacity-50"
+                >
+                  {reportsApiLoading ? "Refreshing…" : "Refresh server reports"}
+                </button>
+              ) : null}
+            </div>
+            {reportsApiError ? (
+              <p className="mt-2 text-xs text-red-600" role="alert">
+                {reportsApiError}
+              </p>
+            ) : null}
             <div className="mt-4 flex flex-wrap gap-1 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-1">
               {(
                 [
@@ -4427,28 +5397,76 @@ export function InventoryHub() {
           </div>
           <div className="p-6 pt-4">
             {reportSubTab === "overview" ? (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Stock lines</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">{reportOverview.lineCount}</p>
-                </div>
-                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Total UOM qty</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
-                    {reportOverview.totalUom.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Total pieces</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
-                    {reportOverview.totalPieces.toLocaleString()}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Stock value (UOM × rate)</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
-                    {reportOverview.totalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-                  </p>
+              <div className="space-y-6">
+                {serverReportSummary && !reportsApiError ? (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Server totals (all active stock)</p>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Stock lines</p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
+                          {serverReportSummary.stock_line_count}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Total primary UOM</p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
+                          {Number(serverReportSummary.total_primary_uom_qty).toLocaleString(undefined, {
+                            maximumFractionDigits: 4,
+                          })}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Total pieces</p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
+                          {serverReportSummary.total_pieces.toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Total cost basis</p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
+                          {Number(serverReportSummary.total_cost_basis).toLocaleString(undefined, {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          <span className="text-sm font-semibold text-[var(--gs-muted)]">
+                            {serverReportSummary.functional_currency}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                <div>
+                  {serverReportSummary && !reportsApiError ? (
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                      Hub table roll-up (loaded lines)
+                    </p>
+                  ) : null}
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Stock lines</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">{reportOverview.lineCount}</p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Total UOM qty</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
+                        {reportOverview.totalUom.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Total pieces</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
+                        {reportOverview.totalPieces.toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Stock value (UOM × rate)</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--gs-text)]">
+                        {reportOverview.totalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -4578,37 +5596,30 @@ export function InventoryHub() {
             ) : null}
             {reportSubTab === "custodian" ? (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
-                  <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
-                    <tr>
-                      <th className="w-8 px-1 py-2" aria-hidden />
-                      <th className="px-3 py-2">Custodian</th>
-                      <th className="px-3 py-2 text-right">Lines</th>
-                      <th className="px-3 py-2 text-right">UOM qty</th>
-                      <th className="px-3 py-2 text-right">Value</th>
-                    </tr>
-                  </thead>
-                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
-                    {reportByCustodian.length === 0 ? (
+                {getAccessToken() && serverReportByCustodian.length > 0 && !reportsApiError ? (
+                  <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
+                    <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                       <tr>
-                        <td colSpan={5} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
-                          No inventory lines yet.
-                        </td>
+                        <th className="w-8 px-1 py-2" aria-hidden />
+                        <th className="px-3 py-2">Custodian</th>
+                        <th className="px-3 py-2 text-right">Lines</th>
+                        <th className="px-3 py-2 text-right">Total cost basis</th>
                       </tr>
-                    ) : (
-                      reportByCustodian.map(([name, v]) => {
-                        const open = custodianReportExpanded === name;
-                        const detailLines = reportLinesByCustodian.get(name) ?? [];
+                    </thead>
+                    <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                      {serverReportByCustodian.map((row) => {
+                        const key = row.custodian_user_id ?? "";
+                        const open = serverCustodianReportExpanded === key;
+                        const detailLines = reportLinesByServerCustodian.get(key) ?? [];
+                        const label = custodianServerReportLabel(row.custodian_user_id);
                         return (
-                          <Fragment key={name}>
+                          <Fragment key={key || "__none__"}>
                             <tr
                               className={cn(
                                 "cursor-pointer transition-colors",
                                 open ? "bg-[var(--gs-hover)]" : "hover:bg-[var(--gs-hover)]/80",
                               )}
-                              onClick={() =>
-                                setCustodianReportExpanded((prev) => (prev === name ? null : name))
-                              }
+                              onClick={() => setServerCustodianReportExpanded((prev) => (prev === key ? null : key))}
                             >
                               <td className="px-1 py-2 text-[var(--gs-muted)]">
                                 {open ? (
@@ -4617,107 +5628,250 @@ export function InventoryHub() {
                                   <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
                                 )}
                               </td>
-                              <td className="px-3 py-2 font-medium text-[var(--gs-text)]">{name}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">{v.lines}</td>
+                              <td className="px-3 py-2 font-medium text-[var(--gs-text)]">{label}</td>
+                              <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">{row.line_count}</td>
                               <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
-                                {v.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
-                                {v.value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                {Number(row.total_cost_basis).toLocaleString(undefined, {
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 2,
+                                })}{" "}
+                                <span className="text-xs text-[var(--gs-muted)]">
+                                  {serverReportSummary?.functional_currency ?? ""}
+                                </span>
                               </td>
                             </tr>
                             {open ? (
                               <tr className="bg-[var(--gs-hover)]/90">
-                                <td colSpan={5} className="p-0">
+                                <td colSpan={4} className="p-0">
                                   <div className="border-t border-[var(--gs-border)] px-3 py-3 sm:px-4">
                                     <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
-                                      Stock lines  {name}
+                                      Lines in this hub matching this custodian
                                     </p>
-                                    <div className="mt-2 overflow-x-auto rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)]">
-                                      <table className="w-full min-w-[36rem] border-collapse text-left text-xs">
-                                        <thead className="bg-[var(--gs-hover)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
-                                          <tr>
-                                            <th className="px-2 py-1.5">Item #</th>
-                                            <th className="px-2 py-1.5">Name</th>
-                                            <th className="px-2 py-1.5">Type</th>
-                                            <th className="px-2 py-1.5">Location</th>
-                                            <th className="px-2 py-1.5 text-right">UOM</th>
-                                            <th className="px-2 py-1.5 text-right">Value</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
-                                          {detailLines.map((r) => (
-                                            <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
-                                              <td className="whitespace-nowrap px-2 py-1.5 font-mono text-[var(--gs-text)]">
-                                                {r.itemNo}
-                                              </td>
-                                              <td className="max-w-[14rem] px-2 py-1.5 text-[var(--gs-text)]">{r.itemName}</td>
-                                              <td className="whitespace-nowrap px-2 py-1.5 text-[var(--gs-muted)]">
-                                                {kindLabel(r.itemKind, customInventoryTypes)}
-                                              </td>
-                                              <td className="max-w-[10rem] px-2 py-1.5 text-[var(--gs-muted)]">{r.location}</td>
-                                              <td className="px-2 py-1.5 text-right tabular-nums text-[var(--gs-text)]">
-                                                {inventoryPrimaryQty(r, customInventoryTypes).toLocaleString(undefined, {
-                                                  maximumFractionDigits: 4,
-                                                })}
-                                              </td>
-                                              <td className="px-2 py-1.5 text-right tabular-nums text-[var(--gs-text)]">
-                                                {lineAmount(r, customInventoryTypes).toLocaleString(undefined, {
-                                                  minimumFractionDigits: 0,
-                                                  maximumFractionDigits: 2,
-                                                })}
-                                              </td>
+                                    {detailLines.length === 0 ? (
+                                      <p className="mt-2 text-xs text-[var(--gs-muted)]">
+                                        No rows in the current hub load, or custodian ids are not on loaded lines yet.
+                                      </p>
+                                    ) : (
+                                      <div className="mt-2 overflow-x-auto rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)]">
+                                        <table className="w-full min-w-[36rem] border-collapse text-left text-xs">
+                                          <thead className="bg-[var(--gs-hover)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                                            <tr>
+                                              <th className="px-2 py-1.5">Item #</th>
+                                              <th className="px-2 py-1.5">Name</th>
+                                              <th className="px-2 py-1.5">Type</th>
+                                              <th className="px-2 py-1.5">Location</th>
+                                              <th className="px-2 py-1.5 text-right">UOM</th>
+                                              <th className="px-2 py-1.5 text-right">Value</th>
                                             </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
+                                          </thead>
+                                          <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                                            {detailLines.map((r) => (
+                                              <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
+                                                <td className="whitespace-nowrap px-2 py-1.5 font-mono text-[var(--gs-text)]">
+                                                  {r.itemNo}
+                                                </td>
+                                                <td className="max-w-[14rem] px-2 py-1.5 text-[var(--gs-text)]">{r.itemName}</td>
+                                                <td className="whitespace-nowrap px-2 py-1.5 text-[var(--gs-muted)]">
+                                                  {kindLabel(r.itemKind, customInventoryTypes)}
+                                                </td>
+                                                <td className="max-w-[10rem] px-2 py-1.5 text-[var(--gs-muted)]">{r.location}</td>
+                                                <td className="px-2 py-1.5 text-right tabular-nums text-[var(--gs-text)]">
+                                                  {inventoryPrimaryQty(r, customInventoryTypes).toLocaleString(undefined, {
+                                                    maximumFractionDigits: 4,
+                                                  })}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-right tabular-nums text-[var(--gs-text)]">
+                                                  {lineAmount(r, customInventoryTypes).toLocaleString(undefined, {
+                                                    minimumFractionDigits: 0,
+                                                    maximumFractionDigits: 2,
+                                                  })}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
                             ) : null}
                           </Fragment>
                         );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
+                    <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                      <tr>
+                        <th className="w-8 px-1 py-2" aria-hidden />
+                        <th className="px-3 py-2">Custodian</th>
+                        <th className="px-3 py-2 text-right">Lines</th>
+                        <th className="px-3 py-2 text-right">UOM qty</th>
+                        <th className="px-3 py-2 text-right">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                      {reportByCustodian.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
+                            No inventory lines yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        reportByCustodian.map(([name, v]) => {
+                          const open = custodianReportExpanded === name;
+                          const detailLines = reportLinesByCustodian.get(name) ?? [];
+                          return (
+                            <Fragment key={name}>
+                              <tr
+                                className={cn(
+                                  "cursor-pointer transition-colors",
+                                  open ? "bg-[var(--gs-hover)]" : "hover:bg-[var(--gs-hover)]/80",
+                                )}
+                                onClick={() =>
+                                  setCustodianReportExpanded((prev) => (prev === name ? null : name))
+                                }
+                              >
+                                <td className="px-1 py-2 text-[var(--gs-muted)]">
+                                  {open ? (
+                                    <ChevronDown className="h-4 w-4" strokeWidth={2} aria-hidden />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 font-medium text-[var(--gs-text)]">{name}</td>
+                                <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">{v.lines}</td>
+                                <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
+                                  {v.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
+                                  {v.value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                              {open ? (
+                                <tr className="bg-[var(--gs-hover)]/90">
+                                  <td colSpan={5} className="p-0">
+                                    <div className="border-t border-[var(--gs-border)] px-3 py-3 sm:px-4">
+                                      <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                                        Stock lines {name}
+                                      </p>
+                                      <div className="mt-2 overflow-x-auto rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)]">
+                                        <table className="w-full min-w-[36rem] border-collapse text-left text-xs">
+                                          <thead className="bg-[var(--gs-hover)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                                            <tr>
+                                              <th className="px-2 py-1.5">Item #</th>
+                                              <th className="px-2 py-1.5">Name</th>
+                                              <th className="px-2 py-1.5">Type</th>
+                                              <th className="px-2 py-1.5">Location</th>
+                                              <th className="px-2 py-1.5 text-right">UOM</th>
+                                              <th className="px-2 py-1.5 text-right">Value</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                                            {detailLines.map((r) => (
+                                              <tr key={r.id} className="hover:bg-[var(--gs-hover)]/80">
+                                                <td className="whitespace-nowrap px-2 py-1.5 font-mono text-[var(--gs-text)]">
+                                                  {r.itemNo}
+                                                </td>
+                                                <td className="max-w-[14rem] px-2 py-1.5 text-[var(--gs-text)]">{r.itemName}</td>
+                                                <td className="whitespace-nowrap px-2 py-1.5 text-[var(--gs-muted)]">
+                                                  {kindLabel(r.itemKind, customInventoryTypes)}
+                                                </td>
+                                                <td className="max-w-[10rem] px-2 py-1.5 text-[var(--gs-muted)]">{r.location}</td>
+                                                <td className="px-2 py-1.5 text-right tabular-nums text-[var(--gs-text)]">
+                                                  {inventoryPrimaryQty(r, customInventoryTypes).toLocaleString(undefined, {
+                                                    maximumFractionDigits: 4,
+                                                  })}
+                                                </td>
+                                                <td className="px-2 py-1.5 text-right tabular-nums text-[var(--gs-text)]">
+                                                  {lineAmount(r, customInventoryTypes).toLocaleString(undefined, {
+                                                    minimumFractionDigits: 0,
+                                                    maximumFractionDigits: 2,
+                                                  })}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
             ) : null}
             {reportSubTab === "typewise" ? (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
-                  <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
-                    <tr>
-                      <th className="px-3 py-2">Type</th>
-                      <th className="px-3 py-2 text-right">Lines</th>
-                      <th className="px-3 py-2 text-right">UOM qty</th>
-                      <th className="px-3 py-2 text-right">Value</th>
-                    </tr>
-                  </thead>
-                  <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
-                    {reportByType.length === 0 ? (
+                {getAccessToken() && serverReportByType.length > 0 && !reportsApiError ? (
+                  <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
+                    <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                       <tr>
-                        <td colSpan={4} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
-                          No inventory lines yet.
-                        </td>
+                        <th className="px-3 py-2">Item type</th>
+                        <th className="px-3 py-2 text-right">Lines</th>
+                        <th className="px-3 py-2 text-right">Total cost basis</th>
                       </tr>
-                    ) : (
-                      reportByType.map(([label, v]) => (
-                        <tr key={label} className="hover:bg-[var(--gs-hover)]/80">
-                          <td className="px-3 py-2 font-medium text-[var(--gs-text)]">{label}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">{v.lines}</td>
+                    </thead>
+                    <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                      {serverReportByType.map((row) => (
+                        <tr key={row.item_type_id} className="hover:bg-[var(--gs-hover)]/80">
+                          <td className="px-3 py-2 font-medium text-[var(--gs-text)]">{row.item_type_label}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">{row.line_count}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
-                            {v.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
-                            {v.value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                            {Number(row.total_cost_basis).toLocaleString(undefined, {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            <span className="text-xs text-[var(--gs-muted)]">
+                              {serverReportSummary?.functional_currency ?? ""}
+                            </span>
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
+                    <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                      <tr>
+                        <th className="px-3 py-2">Type</th>
+                        <th className="px-3 py-2 text-right">Lines</th>
+                        <th className="px-3 py-2 text-right">UOM qty</th>
+                        <th className="px-3 py-2 text-right">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                      {reportByType.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-3 py-4 text-sm text-[var(--gs-muted)]">
+                            No inventory lines yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        reportByType.map(([label, v]) => (
+                          <tr key={label} className="hover:bg-[var(--gs-hover)]/80">
+                            <td className="px-3 py-2 font-medium text-[var(--gs-text)]">{label}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">{v.lines}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
+                              {v.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
+                              {v.value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
             ) : null}
             <p className="mt-6 text-xs text-[var(--gs-muted)]">
@@ -4752,9 +5906,9 @@ export function InventoryHub() {
                 />
               </div>
               <AuditSaveDropdown
-                disabled={auditFilteredStockRows.length === 0}
-                onSaveNow={() => commitAudit("now")}
-                onSaveAndClose={() => commitAudit("close")}
+                disabled={auditFilteredStockRows.length === 0 || auditSaving}
+                onSaveNow={() => void commitAudit("now")}
+                onSaveAndClose={() => void commitAudit("close")}
               />
             </div>
           </div>

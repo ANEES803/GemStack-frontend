@@ -67,7 +67,7 @@ export function LedgerDrawer({ open, row, journalDetail, journalLoading, onClose
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-[var(--gs-accent)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)] sm:flex-none"
           >
             <FileText className="h-4 w-4" aria-hidden />
-            View source document
+            View journal entry
           </Link>
         </div>
       }

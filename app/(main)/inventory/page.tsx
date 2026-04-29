@@ -2,12 +2,14 @@
 
 import { Suspense } from "react";
 
-import { InventoryHubServer } from "@/components/inventory/InventoryHubServer";
+import { InventoryHub } from "@/components/inventory/InventoryHub";
+// import { InventoryHubServer } from "@/components/inventory/InventoryHubServer";
 
 export default function InventoryPage() {
   return (
     <Suspense fallback={<div className="py-10 text-center text-sm text-[var(--gs-muted)]">Loading inventory…</div>}>
-      <InventoryHubServer />
+      <InventoryHub />
+      {/* <InventoryHubServer /> */}
     </Suspense>
   );
 }

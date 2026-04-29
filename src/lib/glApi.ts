@@ -479,6 +479,24 @@ export async function createJournalEntry(body: {
   return (await response.json()) as JournalDetailDto;
 }
 
+export async function updateJournalEntry(
+  id: string,
+  body: {
+    entry_date: string;
+    reference: string;
+    memo: string;
+    tag: string;
+    lines: { account_id: string; debit: number; credit: number; description: string }[];
+  },
+): Promise<JournalDetailDto> {
+  const response = await apiAuthFetch(`${API_BASE_URL}/gl/journal-entries/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as JournalDetailDto;
+}
+
 export async function postJournalEntry(id: string): Promise<JournalDetailDto> {
   const response = await apiAuthFetch(`${API_BASE_URL}/gl/journal-entries/${encodeURIComponent(id)}/post`, {
     method: "POST",
@@ -499,6 +517,14 @@ export async function createJournalReversalDraft(journalId: string): Promise<Jou
     `${API_BASE_URL}/gl/journal-entries/${encodeURIComponent(journalId)}/reverse-draft`,
     { method: "POST" },
   );
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as JournalDetailDto;
+}
+
+export async function restoreJournalEntry(journalId: string): Promise<JournalDetailDto> {
+  const response = await apiAuthFetch(`${API_BASE_URL}/gl/journal-entries/${encodeURIComponent(journalId)}/restore`, {
+    method: "POST",
+  });
   if (!response.ok) throw new Error(await parseError(response));
   return (await response.json()) as JournalDetailDto;
 }

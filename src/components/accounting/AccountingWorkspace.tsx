@@ -21,6 +21,8 @@ import {
   listPostableGlAccounts,
   patchGlSettings,
   postJournalEntry,
+  restoreJournalEntry,
+  updateJournalEntry,
   updateGlAccount,
   type GlAccountDto,
   type GlSettingsDto,
@@ -330,8 +332,10 @@ export function AccountingWorkspace() {
   const [jeSaving, setJeSaving] = useState(false);
   const [jeError, setJeError] = useState<string | null>(null);
   const [jeAccountsError, setJeAccountsError] = useState<string | null>(null);
+  const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
   const [postableAccounts, setPostableAccounts] = useState<GlAccountDto[]>([]);
   const [journalDeleteBusyId, setJournalDeleteBusyId] = useState<string | null>(null);
+  const [journalShowDeleted, setJournalShowDeleted] = useState(false);
   const [jeLines, setJeLines] = useState<{ id: string; accountId: string; lineDesc: string; debit: number; credit: number }[]>([
     { id: "j1", accountId: "", lineDesc: "", debit: 0, credit: 0 },
     { id: "j2", accountId: "", lineDesc: "", debit: 0, credit: 0 },
@@ -455,7 +459,7 @@ export function AccountingWorkspace() {
     (async () => {
       setJournalsLoading(true);
       try {
-        const list = await listJournalEntries();
+        const list = await listJournalEntries(journalShowDeleted ? "deleted" : undefined);
         if (cancelled) return;
         setJournalRows(mapJournalSummaries(list));
       } catch (e) {
@@ -470,7 +474,7 @@ export function AccountingWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [tab, journalEditorOpen, pushToast]);
+  }, [tab, journalEditorOpen, pushToast, journalShowDeleted]);
 
   useEffect(() => {
     if (!journalEditorOpen) return;
@@ -834,6 +838,7 @@ export function AccountingWorkspace() {
   function openNewJournal() {
     setJeError(null);
     setJeAccountsError(null);
+    setEditingJournalId(null);
     setJeRef(`JE-${Date.now().toString().slice(-8)}`);
     setJeMemo("");
     setJeLines([
@@ -841,6 +846,44 @@ export function AccountingWorkspace() {
       { id: `j-${Date.now()}-b`, accountId: "", lineDesc: "", debit: 0, credit: 0 },
     ]);
     setJournalEditorOpen(true);
+  }
+
+  async function openEditDraftJournal(journalId: string) {
+    setJeError(null);
+    setJeAccountsError(null);
+    setJeSaving(true);
+    try {
+      const d = await getJournalEntry(journalId);
+      if (d.status === "deleted") {
+        pushToast("Restore this journal first, then edit it.", "info");
+        return;
+      }
+      setEditingJournalId(d.id);
+      setJeDate(d.entry_date);
+      setJeRef(d.reference || "");
+      setJeMemo(d.memo || "");
+      const nextLines = d.lines.map((ln, idx) => ({
+        id: `edit-${d.id}-${idx}`,
+        accountId: ln.account_id,
+        lineDesc: ln.description || "",
+        debit: Number.parseFloat(String(ln.debit)) || 0,
+        credit: Number.parseFloat(String(ln.credit)) || 0,
+      }));
+      setJeLines(
+        nextLines.length >= 2
+          ? nextLines
+          : [
+              ...nextLines,
+              { id: `edit-${d.id}-x`, accountId: "", lineDesc: "", debit: 0, credit: 0 },
+              { id: `edit-${d.id}-y`, accountId: "", lineDesc: "", debit: 0, credit: 0 },
+            ].slice(0, 2),
+      );
+      setJournalEditorOpen(true);
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Could not load journal for editing", "error");
+    } finally {
+      setJeSaving(false);
+    }
   }
 
   async function saveJournalDraft() {
@@ -863,17 +906,23 @@ export function AccountingWorkspace() {
     }
     setJeSaving(true);
     try {
-      await createJournalEntry({
+      const payload = {
         entry_date: jeDate,
         reference: jeRef.trim(),
         memo: jeMemo,
         tag: "",
         lines,
-      });
-      const list = await listJournalEntries();
+      };
+      if (editingJournalId) {
+        await updateJournalEntry(editingJournalId, payload);
+      } else {
+        await createJournalEntry(payload);
+      }
+      const list = await listJournalEntries(journalShowDeleted ? "deleted" : undefined);
       setJournalRows(mapJournalSummaries(list));
       setJournalEditorOpen(false);
-      pushToast("Journal saved as draft.", "success");
+      setEditingJournalId(null);
+      pushToast(editingJournalId ? "Journal updated." : "Journal saved as draft.", "success");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Could not save journal";
       setJeError(msg);
@@ -907,17 +956,21 @@ export function AccountingWorkspace() {
     }
     setJeSaving(true);
     try {
-      const draft = await createJournalEntry({
+      const payload = {
         entry_date: jeDate,
         reference: jeRef.trim(),
         memo: jeMemo,
         tag: "",
         lines,
-      });
-      await postJournalEntry(draft.id);
-      const list = await listJournalEntries();
+      };
+      const targetId = editingJournalId
+        ? (await updateJournalEntry(editingJournalId, payload)).id
+        : (await createJournalEntry(payload)).id;
+      await postJournalEntry(targetId);
+      const list = await listJournalEntries(journalShowDeleted ? "deleted" : undefined);
       setJournalRows(mapJournalSummaries(list));
       setJournalEditorOpen(false);
+      setEditingJournalId(null);
       pushToast("Journal posted.", "success");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Could not post journal";
@@ -930,8 +983,8 @@ export function AccountingWorkspace() {
 
   async function deleteDraftJournalRow(j: { id: string; ref: string }) {
     const ok = await confirm({
-      title: "Delete draft journal?",
-      message: `Delete draft journal ${j.ref}? This cannot be undone.`,
+      title: "Delete journal?",
+      message: `Soft-delete journal ${j.ref}? You can recover it later.`,
       confirmLabel: "Delete",
       variant: "danger",
     });
@@ -939,11 +992,25 @@ export function AccountingWorkspace() {
     setJournalDeleteBusyId(j.id);
     try {
       await deleteJournalEntry(j.id);
-      const list = await listJournalEntries();
+      const list = await listJournalEntries(journalShowDeleted ? "deleted" : undefined);
       setJournalRows(mapJournalSummaries(list));
-      pushToast("Draft journal deleted.", "success");
+      pushToast("Journal deleted (soft).", "success");
     } catch (e) {
       pushToast(e instanceof Error ? e.message : "Could not delete journal", "error");
+    } finally {
+      setJournalDeleteBusyId(null);
+    }
+  }
+
+  async function restoreDeletedJournalRow(j: { id: string; ref: string }) {
+    setJournalDeleteBusyId(j.id);
+    try {
+      await restoreJournalEntry(j.id);
+      const list = await listJournalEntries(journalShowDeleted ? "deleted" : undefined);
+      setJournalRows(mapJournalSummaries(list));
+      pushToast("Journal restored.", "success");
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Could not restore journal", "error");
     } finally {
       setJournalDeleteBusyId(null);
     }
@@ -1001,7 +1068,7 @@ export function AccountingWorkspace() {
     setJournalViewerError(null);
     try {
       await createJournalReversalDraft(journalViewerDetail.id);
-      const list = await listJournalEntries();
+      const list = await listJournalEntries(journalShowDeleted ? "deleted" : undefined);
       setJournalRows(mapJournalSummaries(list));
       setJournalViewerOpen(false);
       setJournalViewerDetail(null);
@@ -1561,13 +1628,22 @@ export function AccountingWorkspace() {
                 to see full history for each voucher.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => openNewJournal()}
-              className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white shadow-sm"
-            >
-              + New journal entry
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setJournalShowDeleted((v) => !v)}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+              >
+                {journalShowDeleted ? "Show active journals" : "Show deleted journals"}
+              </button>
+              <button
+                type="button"
+                onClick={() => openNewJournal()}
+                className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white shadow-sm"
+              >
+                + New journal entry
+              </button>
+            </div>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
@@ -1585,7 +1661,7 @@ export function AccountingWorkspace() {
                       <th className="px-4 py-3 text-right">Total debit</th>
                       <th className="px-4 py-3 text-right">Total credit</th>
                       <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right"> </th>
+                      <th className="px-4 py-3 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
@@ -1626,25 +1702,28 @@ export function AccountingWorkspace() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <div className="flex flex-wrap justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => void openJournalViewer(j.id)}
-                                className="rounded-lg border border-[var(--gs-border)] px-3 py-1 text-xs font-semibold text-[var(--gs-accent)] hover:bg-[var(--gs-hover)]"
-                              >
-                                View lines
-                              </button>
-                              {j.status === "draft" ? (
-                                <button
-                                  type="button"
-                                  disabled={journalDeleteBusyId === j.id}
-                                  onClick={() => void deleteDraftJournalRow({ id: j.id, ref: j.ref })}
-                                  className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:text-red-200 dark:hover:bg-red-950/40"
-                                >
-                                  {journalDeleteBusyId === j.id ? "Deleting…" : "Delete draft"}
-                                </button>
-                              ) : null}
-                            </div>
+                            <RowActionsMenu
+                              actions={
+                                j.status === "deleted"
+                                  ? [
+                                      { label: "View lines", onSelect: () => void openJournalViewer(j.id), tone: "accent" },
+                                      {
+                                        label: journalDeleteBusyId === j.id ? "Restoring..." : "Restore",
+                                        onSelect: () => void restoreDeletedJournalRow({ id: j.id, ref: j.ref }),
+                                        tone: "success",
+                                      },
+                                    ]
+                                  : [
+                                      { label: "View lines", onSelect: () => void openJournalViewer(j.id), tone: "accent" },
+                                      { label: "Edit", onSelect: () => void openEditDraftJournal(j.id), tone: "default" },
+                                      {
+                                        label: journalDeleteBusyId === j.id ? "Deleting..." : "Delete",
+                                        onSelect: () => void deleteDraftJournalRow({ id: j.id, ref: j.ref }),
+                                        tone: "danger",
+                                      },
+                                    ]
+                              }
+                            />
                           </td>
                         </tr>
                       ))
@@ -1716,7 +1795,9 @@ export function AccountingWorkspace() {
             ) : null}
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-[var(--gs-text)]">New journal entry</h2>
+                <h2 className="text-lg font-bold text-[var(--gs-text)]">
+                  {editingJournalId ? "Edit journal entry" : "New journal entry"}
+                </h2>
                 <p className="mt-1 text-sm text-[var(--gs-muted)]">
                   Choose a posting account per line. Each line is either a debit or a credit — totals must match before you post.
                 </p>
@@ -1724,7 +1805,10 @@ export function AccountingWorkspace() {
               <button
                 type="button"
                 disabled={jeSaving}
-                onClick={() => setJournalEditorOpen(false)}
+                onClick={() => {
+                  setJournalEditorOpen(false);
+                  setEditingJournalId(null);
+                }}
                 className="rounded-full p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Close"
               >
@@ -1857,7 +1941,7 @@ export function AccountingWorkspace() {
               </span>
             </div>
             <p className="mt-6 border-t border-[var(--gs-border)] pt-4 text-xs text-[var(--gs-muted)]">
-              Drafts must still be <strong>balanced</strong>. Attachments and approval workflows are not enabled in this build.
+              Journal entries must stay <strong>balanced</strong>. Attachments and approval workflows are not enabled in this build.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -1866,7 +1950,7 @@ export function AccountingWorkspace() {
                 onClick={() => void saveJournalDraft()}
                 className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {jeSaving ? "Saving…" : "Save balanced draft"}
+                {jeSaving ? "Saving…" : editingJournalId ? "Save changes" : "Save balanced draft"}
               </button>
               <button
                 type="button"
@@ -1879,7 +1963,10 @@ export function AccountingWorkspace() {
               <button
                 type="button"
                 disabled={jeSaving}
-                onClick={() => setJournalEditorOpen(false)}
+                onClick={() => {
+                  setJournalEditorOpen(false);
+                  setEditingJournalId(null);
+                }}
                 className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Cancel

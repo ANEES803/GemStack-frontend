@@ -30,6 +30,14 @@ export type StoredItemRow = {
   revenueAccountId: string;
   /** Lot code when item kind is Rough and linked to a rough purchase lot (demo) */
   linkedRoughLotCode: string;
+  /** Optional: row synced from `inv_stock_units` */
+  serverUnitId?: string;
+  rowVersion?: number;
+  serverItemTypeId?: string;
+  /** Optional: row synced from `inv_services` */
+  serverServiceId?: string;
+  serverParentUnitId?: string | null;
+  serverCustodianUserId?: string | null;
 };
 
 const STORAGE_KEY = "gemstack-items-catalog-v1";

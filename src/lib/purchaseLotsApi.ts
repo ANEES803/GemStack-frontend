@@ -183,9 +183,9 @@ export async function createPurchaseLot(body: CreatePurchaseLotBody): Promise<Pu
   return (await response.json()) as PurchaseLotDetail;
 }
 
-export async function getPurchaseLotByCode(lotCode: string): Promise<PurchaseLotDetail> {
+export async function getPurchaseLotByCode(lotCode: string, signal?: AbortSignal): Promise<PurchaseLotDetail> {
   const enc = encodeURIComponent(lotCode.trim());
-  const response = await apiAuthFetch(`${API_BASE_URL}/purchase-lots/by-code/${enc}`, { method: "GET" });
+  const response = await apiAuthFetch(`${API_BASE_URL}/purchase-lots/by-code/${enc}`, { method: "GET", signal });
   if (!response.ok) throw new Error(await parseError(response));
   return (await response.json()) as PurchaseLotDetail;
 }
