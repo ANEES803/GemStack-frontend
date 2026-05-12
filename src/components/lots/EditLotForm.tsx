@@ -1,24 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppDialog } from "@/components/ui/AppDialog";
+import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { formatMoney } from "@/lib/format";
 import { getAccessToken } from "@/lib/authClient";
+import { listPostableGlAccounts, type GlAccountDto } from "@/lib/glApi";
 import {
+  addPurchaseLotPayment,
   fetchVendors,
   getPurchaseLotByCode,
   patchPurchaseLot,
   type PurchaseLotDetail,
   type VendorDto,
 } from "@/lib/purchaseLotsApi";
+import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 import { loadLots, lotRowFromForm, saveLots, updateLotInList } from "@/lib/lotsListStorage";
 
 function cx(...parts: (string | false | undefined)[]) {
   return parts.filter(Boolean).join(" ");
 }
+
+function num(v: string): number {
+  const n = Number(v || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+const PAY_FIELD = "gs-field mt-1 min-h-[2.75rem] w-full text-sm";
 
 const FIELD_LABEL = "block text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]";
 const FIELD_INPUT =
@@ -68,7 +79,12 @@ function detailToLineRows(detail: PurchaseLotDetail): ApiLineRow[] {
 
 export function EditLotForm({ lotCode }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const todayIso = useHydratedTodayIso();
+  const { pushToast } = useAppNotifications();
   const baselineRef = useRef<string>("");
+  const openPayFromQueryRef = useRef(false);
   const [apiMode, setApiMode] = useState(false);
   const [loadStatus, setLoadStatus] = useState<"loading" | "ready" | "not_found">("loading");
   const [purchaseLotId, setPurchaseLotId] = useState<string | null>(null);
@@ -92,6 +108,18 @@ export function EditLotForm({ lotCode }: Props) {
   const [totalAmount, setTotalAmount] = useState("");
   const [lineRows, setLineRows] = useState<ApiLineRow[]>([]);
 
+  const [glAccounts, setGlAccounts] = useState<GlAccountDto[]>([]);
+  const [payOpen, setPayOpen] = useState(false);
+  const [paySubmitting, setPaySubmitting] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [paySuccess, setPaySuccess] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [paidFromAccountId, setPaidFromAccountId] = useState("");
+  const [paidToAccountId, setPaidToAccountId] = useState("");
+  const [payDate, setPayDate] = useState("");
+  const [payReference, setPayReference] = useState("");
+  const [payNotes, setPayNotes] = useState("");
+
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
@@ -101,6 +129,90 @@ export function EditLotForm({ lotCode }: Props) {
   useEffect(() => {
     setApiMode(Boolean(getAccessToken()));
   }, []);
+
+  useEffect(() => {
+    if (searchParams.get("pay") === "1") openPayFromQueryRef.current = true;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (todayIso) setPayDate((d) => d || todayIso);
+  }, [todayIso]);
+
+  const totalNum = useMemo(() => Number(totalAmount) || 0, [totalAmount]);
+  const paidNum = useMemo(() => Number(paidAmount) || 0, [paidAmount]);
+  const balanceNum = useMemo(() => Math.max(totalNum - paidNum, 0), [totalNum, paidNum]);
+  const isFullyPaid = useMemo(
+    () => (payStatus || "").toLowerCase() === "paid" || balanceNum <= 0.0005,
+    [payStatus, balanceNum],
+  );
+  const canRecordPayment = useMemo(
+    () => Boolean(apiMode && purchaseLotId && balanceNum > 0.0005),
+    [apiMode, purchaseLotId, balanceNum],
+  );
+
+  const paidFromOptions = useMemo(
+    () =>
+      glAccounts
+        .filter((a) => a.is_active && a.allow_posting && !a.is_group && (a.account_type || "").toLowerCase() === "asset")
+        .sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`)),
+    [glAccounts],
+  );
+  const paidToOptions = useMemo(
+    () =>
+      glAccounts
+        .filter((a) => a.is_active && a.allow_posting && !a.is_group)
+        .sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`)),
+    [glAccounts],
+  );
+  const defaultPayable = useMemo(
+    () =>
+      glAccounts.find((a) => (a.account_subtype || "").toLowerCase() === "payable") ??
+      glAccounts.find((a) => (a.account_type || "").toLowerCase() === "liability") ??
+      null,
+    [glAccounts],
+  );
+  const paidFromAccount = useMemo(() => glAccounts.find((a) => a.id === paidFromAccountId) ?? null, [glAccounts, paidFromAccountId]);
+  const paidToAccount = useMemo(() => glAccounts.find((a) => a.id === paidToAccountId) ?? null, [glAccounts, paidToAccountId]);
+
+  useEffect(() => {
+    if (!apiMode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listPostableGlAccounts();
+        if (!cancelled) setGlAccounts(list);
+      } catch {
+        if (!cancelled) setPayError("Could not load chart of accounts.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiMode]);
+
+  useEffect(() => {
+    if (!payOpen) return;
+    setPayError(null);
+    setPaySuccess(false);
+  }, [payOpen]);
+
+  useEffect(() => {
+    if (!payOpen) return;
+    setPayAmount(String(balanceNum || totalNum || 0));
+    setPaidFromAccountId((prev) => prev || paidFromOptions[0]?.id || "");
+    setPaidToAccountId((prev) => prev || defaultPayable?.id || paidToOptions[0]?.id || "");
+    setPayReference(referenceNo);
+    setPayNotes(memo);
+  }, [payOpen, balanceNum, totalNum, referenceNo, memo, paidFromOptions, defaultPayable, paidToOptions]);
+
+  useEffect(() => {
+    if (!openPayFromQueryRef.current) return;
+    if (loadStatus !== "ready" || !apiMode || !purchaseLotId) return;
+    openPayFromQueryRef.current = false;
+    setPayOpen(true);
+    const path = pathname || `/lots/edit/${encodeURIComponent(lotCode)}`;
+    router.replace(path, { scroll: false });
+  }, [loadStatus, apiMode, purchaseLotId, router, pathname, lotCode]);
 
   function setBaselineFromApi(detail: PurchaseLotDetail) {
     baselineRef.current = JSON.stringify({
@@ -258,6 +370,92 @@ export function EditLotForm({ lotCode }: Props) {
     }
     router.push("/lots");
   }
+
+  const submitPayment = useCallback(async () => {
+    const amount = num(payAmount);
+    if (amount <= 0) {
+      const m = "Payment amount must be greater than 0.";
+      setPayError(m);
+      pushToast(m, "error");
+      return;
+    }
+    if (amount > balanceNum) {
+      const m = `Payment cannot exceed remaining balance (${formatMoney(balanceNum, currency)}).`;
+      setPayError(m);
+      pushToast(m, "error");
+      return;
+    }
+    if (!paidFromAccountId) {
+      const m = "Paid From account is required.";
+      setPayError(m);
+      pushToast(m, "error");
+      return;
+    }
+    if (!paidToAccountId) {
+      const m = "Paid To account is required.";
+      setPayError(m);
+      pushToast(m, "error");
+      return;
+    }
+    if (!payDate) {
+      const m = "Payment date is required.";
+      setPayError(m);
+      pushToast(m, "error");
+      return;
+    }
+    if (!purchaseLotId) {
+      setPayError("Lot is not loaded.");
+      return;
+    }
+    setPaySubmitting(true);
+    setPayError(null);
+    try {
+      const detail = await addPurchaseLotPayment(purchaseLotId, {
+        amount,
+        payment_method: "bank",
+        paid_from: paidFromAccount ? `${paidFromAccount.code} - ${paidFromAccount.name}` : "",
+        paid_to: paidToAccount ? `${paidToAccount.code} - ${paidToAccount.name}` : "",
+        bank_account: paidFromAccount ? `${paidFromAccount.code} - ${paidFromAccount.name}` : "",
+        pay_date: payDate,
+        reference_no: payReference,
+        notes: payNotes,
+        gl_bank_account_id: paidFromAccountId || null,
+      });
+      setPayStatus(detail.payment_status || detail.status);
+      setPaidAmount(String(detail.paid_amount));
+      setTotalAmount(String(detail.total_amount));
+      setPaySuccess(true);
+      pushToast(
+        (detail.payment_status || detail.status || "").toLowerCase() === "paid"
+          ? "Payment recorded. Lot marked as paid."
+          : "Payment recorded. Lot marked as partially paid.",
+        "success",
+      );
+      window.setTimeout(() => {
+        setPayOpen(false);
+        setPaySuccess(false);
+      }, 1200);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Payment failed";
+      setPayError(msg);
+      pushToast(msg, "error");
+    } finally {
+      setPaySubmitting(false);
+    }
+  }, [
+    payAmount,
+    balanceNum,
+    currency,
+    paidFromAccountId,
+    paidToAccountId,
+    payDate,
+    payReference,
+    payNotes,
+    purchaseLotId,
+    paidFromAccount,
+    paidToAccount,
+    pushToast,
+  ]);
 
   function updateLineRow(id: string, patch: Partial<ApiLineRow>) {
     setLineRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -423,14 +621,17 @@ export function EditLotForm({ lotCode }: Props) {
         </p>
       </div>
       {formError ? (
-        <div className="mb-4 rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+        <div className="gs-banner-danger mb-4 px-4 py-3">
           {formError}
         </div>
       ) : null}
       {apiMode && postedToGl ? (
-        <div className="mb-4 rounded-lg border border-amber-400/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
-          This lot is posted to the general ledger. You can change lot code, supplier, dates, payment terms, reference, and memo.
-          Line items, totals, and currency cannot be edited here.
+        <div
+          className="mb-4 rounded-lg border border-[var(--gs-border-strong)] bg-[var(--gs-accent-soft)] px-4 py-3 text-sm leading-relaxed text-[var(--gs-text)]"
+          role="status"
+        >
+          This lot is posted to the general ledger. You can change lot code, supplier, dates, payment terms, reference, and memo. Line items,
+          totals, and currency cannot be edited here.
         </div>
       ) : null}
       <form
@@ -456,7 +657,7 @@ export function EditLotForm({ lotCode }: Props) {
               className={cx(FIELD_INPUT, lotCodeError ? "border-red-500 ring-1 ring-red-400/50" : undefined)}
               required
             />
-            {lotCodeError ? <p className="mt-1 text-xs text-red-600 dark:text-red-400">{lotCodeError}</p> : null}
+            {lotCodeError ? <p className="gs-text-danger mt-1 rounded-md bg-[var(--gs-danger-bg)] px-2 py-1 text-xs">{lotCodeError}</p> : null}
           </div>
           <div>
             <label htmlFor="edit-lot-date" className={FIELD_LABEL}>
@@ -555,11 +756,32 @@ export function EditLotForm({ lotCode }: Props) {
                 className={FIELD_INPUT}
               />
             </div>
-            <div className="rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/40 px-4 py-3 text-sm">
+            <div className="flex flex-col gap-3 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/40 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
               <p className="font-semibold text-[var(--gs-text)]">
                 Payment: {humanizePaymentStatus(payStatus)} · Paid {formatMoney(Number(paidAmount) || 0, currency)} /{" "}
                 {formatMoney(Number(totalAmount) || 0, currency)}
+                <span className="mt-1 block text-xs font-normal text-[var(--gs-muted)]">
+                  Balance: {formatMoney(balanceNum, currency)}
+                </span>
               </p>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {canRecordPayment ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPayError(null);
+                      setPayOpen(true);
+                    }}
+                    className="rounded-xl bg-[var(--gs-accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
+                  >
+                    Record payment
+                  </button>
+                ) : isFullyPaid ? (
+                  <span className="inline-flex items-center rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2.5 text-xs font-semibold text-[var(--gs-muted)]">
+                    Fully paid
+                  </span>
+                ) : null}
+              </div>
             </div>
             <div>
               <p className={FIELD_LABEL}>Line items</p>
@@ -750,6 +972,150 @@ export function EditLotForm({ lotCode }: Props) {
           </button>
         </div>
       </form>
+
+      <AppDialog
+        open={payOpen}
+        onClose={() => {
+          if (paySubmitting) return;
+          setPayOpen(false);
+        }}
+        titleId="edit-lot-pay-title"
+        title={isFullyPaid ? "Payment details" : "Record payment"}
+        size="full"
+        description={
+          isFullyPaid
+            ? "This lot is fully paid. You cannot post another payment while the balance is zero."
+            : "Same form as when creating a lot. Pick where cash leaves the business (Paid from) and which account shows the bill being paid (Paid to—often Accounts payable). A journal posts when the lot is on the GL."
+        }
+        footer={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={paySubmitting}
+              onClick={() => setPayOpen(false)}
+              className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              disabled={!canRecordPayment || paySubmitting || paySuccess}
+              onClick={() => void submitPayment()}
+              className="inline-flex min-w-[10rem] items-center justify-center rounded-lg bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {paySubmitting ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" aria-hidden />
+                  Recording…
+                </span>
+              ) : (
+                "Submit payment"
+              )}
+            </button>
+          </div>
+        }
+      >
+        <div className="grid gap-4 lg:grid-cols-3">
+          {paySuccess ? (
+            <div className="gs-banner-success px-3 py-3 sm:col-span-2">
+              Payment saved successfully.
+            </div>
+          ) : null}
+          {payError ? (
+            <div className="gs-banner-danger px-3 py-3 sm:col-span-2">
+              {payError}
+            </div>
+          ) : null}
+          {!canRecordPayment && !isFullyPaid ? (
+            <div className="sm:col-span-2 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)] px-3 py-2 text-sm text-[var(--gs-text)]">
+              Sign in and load this lot from the server to record payments.
+            </div>
+          ) : null}
+          {isFullyPaid ? (
+            <div className="sm:col-span-2 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)] px-3 py-2 text-sm text-[var(--gs-text)]">
+              Balance is {formatMoney(balanceNum, currency)}. No further payment can be recorded for this lot.
+            </div>
+          ) : null}
+          <div className="lg:col-span-3 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)] px-3 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Money flow</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--gs-text)]">
+              {paidFromAccount ? `${paidFromAccount.code} - ${paidFromAccount.name}` : "Select Paid From"} →{" "}
+              {paidToAccount ? `${paidToAccount.code} - ${paidToAccount.name}` : "Select Paid To"}
+            </p>
+          </div>
+          <div className="lg:col-span-1">
+            <label className="gs-label">Paid from</label>
+            <p className="mt-1 text-xs leading-snug text-[var(--gs-muted)]">
+              Bank or cash account — the asset account money leaves when you pay the supplier.
+            </p>
+            <select
+              value={paidFromAccountId}
+              onChange={(e) => setPaidFromAccountId(e.target.value)}
+              className={PAY_FIELD}
+              disabled={!canRecordPayment || isFullyPaid}
+            >
+              <option value="">Select account…</option>
+              {paidFromOptions.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.code} - {account.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="lg:col-span-1">
+            <label className="gs-label">Paid to</label>
+            <p className="mt-1 text-xs leading-snug text-[var(--gs-muted)]">
+              Usually Accounts payable (or similar) — the liability side so the books show you paid down what you owed for this lot.
+            </p>
+            <select
+              value={paidToAccountId}
+              onChange={(e) => setPaidToAccountId(e.target.value)}
+              className={PAY_FIELD}
+              disabled={!canRecordPayment || isFullyPaid}
+            >
+              <option value="">Select account…</option>
+              {paidToOptions.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.code} - {account.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="lg:col-span-1">
+            <label className="gs-label">Vendor / Supplier</label>
+            <input value={supplier} readOnly className={`${PAY_FIELD} bg-[var(--gs-hover)]`} />
+          </div>
+          <div>
+            <label className="gs-label">Amount</label>
+            <input
+              value={payAmount}
+              onChange={(e) => setPayAmount(e.target.value)}
+              className={PAY_FIELD}
+              disabled={!canRecordPayment || isFullyPaid}
+            />
+            <p className="mt-1 text-xs text-[var(--gs-muted)]">Remaining: {formatMoney(balanceNum, currency)}</p>
+          </div>
+          <div>
+            <label className="gs-label">Date</label>
+            <input
+              type="date"
+              value={payDate}
+              onChange={(e) => setPayDate(e.target.value)}
+              className={PAY_FIELD}
+              disabled={!canRecordPayment || isFullyPaid}
+            />
+          </div>
+          <div>
+            <label className="gs-label">Reference No</label>
+            <input value={payReference} onChange={(e) => setPayReference(e.target.value)} className={PAY_FIELD} />
+          </div>
+          <div className="lg:col-span-3">
+            <label className="gs-label">Notes (optional)</label>
+            <textarea rows={3} value={payNotes} onChange={(e) => setPayNotes(e.target.value)} className={`${PAY_FIELD} min-h-[5rem] resize-y py-3`} />
+          </div>
+        </div>
+      </AppDialog>
+
       <AppDialog
         open={confirmSaveOpen}
         onClose={() => setConfirmSaveOpen(false)}

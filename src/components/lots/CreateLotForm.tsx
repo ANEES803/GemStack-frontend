@@ -7,6 +7,7 @@ import { AppDialog } from "@/components/ui/AppDialog";
 import { ToastStack, type ToastItem } from "@/components/ui/ToastStack";
 import { formatMoney } from "@/lib/format";
 import { getAccessToken } from "@/lib/authClient";
+import { listPostableGlAccounts, type GlAccountDto } from "@/lib/glApi";
 import { downloadLotPurchasePdf } from "@/lib/lotPurchasePdf";
 import {
   addPurchaseLotPayment,
@@ -49,14 +50,6 @@ type LotLine = {
   rate: string;
 };
 
-type PayMethod = "Cash" | "Bank" | "Cheque";
-
-const BANK_ACCOUNTS = [
-  "HBL - GemStack Trading (PK12-HABB-0011223344)",
-  "UBL - GemStack Operating (PK34-UNIL-5566778899)",
-  "MCB - GemStack Collections (PK78-MCBA-1100220033)",
-];
-const TO_ACCOUNT_OPTIONS = ["Supplier / Vendor", "Accounts Payable", "Expense Clearing"] as const;
 const LOT_IDS_STORAGE_KEY = "gemstack:lot-ids";
 const SUPPLIERS_STORAGE_KEY = "gemstack:suppliers";
 const DEFAULT_SUPPLIERS = ["Sapphire Co.", "Global Gems Ltd", "Ceylon Traders"];
@@ -124,13 +117,12 @@ export function CreateLotForm() {
   const [error, setError] = useState<string | null>(null);
 
   const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState<PayMethod>("Cash");
-  const [paidFrom, setPaidFrom] = useState("");
-  const [paidTo, setPaidTo] = useState("Supplier / Vendor");
-  const [payBankAccount, setPayBankAccount] = useState("");
+  const [paidFromAccountId, setPaidFromAccountId] = useState("");
+  const [paidToAccountId, setPaidToAccountId] = useState("");
   const [payDate, setPayDate] = useState("");
   const [payReference, setPayReference] = useState("");
   const [payNotes, setPayNotes] = useState("");
+  const [glAccounts, setGlAccounts] = useState<GlAccountDto[]>([]);
 
   const [lines, setLines] = useState<LotLine[]>([emptyLine()]);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
@@ -141,6 +133,8 @@ export function CreateLotForm() {
 
   const [addVendorOpen, setAddVendorOpen] = useState(false);
   const [newVendorName, setNewVendorName] = useState("");
+  const [newVendorContact, setNewVendorContact] = useState("");
+  const [newVendorAddress, setNewVendorAddress] = useState("");
   const [newVendorSubmitting, setNewVendorSubmitting] = useState(false);
   const toastIdRef = useRef(0);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -249,29 +243,54 @@ export function CreateLotForm() {
   const selectedSupplierEmail = email;
   const isFullyPaid = status === "Paid";
   const canRecordMorePayment = balance > 0;
+  const paidFromOptions = useMemo(
+    () =>
+      glAccounts
+        .filter((a) => a.is_active && a.allow_posting && !a.is_group && (a.account_type || "").toLowerCase() === "asset")
+        .sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`)),
+    [glAccounts],
+  );
+  const paidToOptions = useMemo(
+    () =>
+      glAccounts
+        .filter((a) => a.is_active && a.allow_posting && !a.is_group)
+        .sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`)),
+    [glAccounts],
+  );
+  const defaultPayable = useMemo(
+    () =>
+      glAccounts.find((a) => (a.account_subtype || "").toLowerCase() === "payable") ??
+      glAccounts.find((a) => (a.account_type || "").toLowerCase() === "liability") ??
+      null,
+    [glAccounts],
+  );
+  const paidFromAccount = useMemo(() => glAccounts.find((a) => a.id === paidFromAccountId) ?? null, [glAccounts, paidFromAccountId]);
+  const paidToAccount = useMemo(() => glAccounts.find((a) => a.id === paidToAccountId) ?? null, [glAccounts, paidToAccountId]);
 
   useEffect(() => {
     if (!payOpen) return;
     setPayAmount(String(balance || total || 0));
-    setPayMethod("Cash");
-    setPaidFrom("");
-    setPaidTo("Supplier / Vendor");
-    setPayBankAccount("");
+    setPaidFromAccountId((prev) => prev || paidFromOptions[0]?.id || "");
+    setPaidToAccountId((prev) => prev || defaultPayable?.id || paidToOptions[0]?.id || "");
     setPayReference(referenceNo);
     setPayNotes(memo);
-  }, [payOpen, balance, total, referenceNo, memo]);
+  }, [payOpen, balance, total, referenceNo, memo, paidFromOptions, defaultPayable, paidToOptions]);
 
   useEffect(() => {
-    if (paidFrom === "Cash") {
-      setPayMethod("Cash");
-      setPayBankAccount("");
-      return;
-    }
-    if (paidFrom.startsWith("Bank:")) {
-      setPayMethod("Bank");
-      setPayBankAccount(paidFrom.replace("Bank: ", ""));
-    }
-  }, [paidFrom]);
+    if (!apiMode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const accounts = await listPostableGlAccounts();
+        if (!cancelled) setGlAccounts(accounts);
+      } catch {
+        if (!cancelled) setPayError("Could not load chart of accounts.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiMode]);
 
   function updateLine(id: string, key: keyof LotLine, value: string) {
     setLines((prev) => prev.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
@@ -380,7 +399,7 @@ export function CreateLotForm() {
           return;
         }
         if (action === "save-pay") {
-          pushToast("Lot saved. Opening Pay Now.", "success");
+          pushToast("Lot saved. Opening payment.", "success");
           setPayOpen(true);
           return;
         }
@@ -416,7 +435,7 @@ export function CreateLotForm() {
       return;
     }
     if (action === "save-pay") {
-      pushToast("Lot saved. Opening Pay Now.", "success");
+      pushToast("Lot saved. Opening payment.", "success");
       setPayOpen(true);
       return;
     }
@@ -437,20 +456,14 @@ export function CreateLotForm() {
       pushToast(m, "error");
       return;
     }
-    if (!paidFrom) {
+    if (!paidFromAccountId) {
       const m = "Paid From account is required.";
       setPayError(m);
       pushToast(m, "error");
       return;
     }
-    if (!paidTo) {
+    if (!paidToAccountId) {
       const m = "Paid To account is required.";
-      setPayError(m);
-      pushToast(m, "error");
-      return;
-    }
-    if (payMethod === "Bank" && !payBankAccount) {
-      const m = "Please select a company bank account.";
       setPayError(m);
       pushToast(m, "error");
       return;
@@ -468,13 +481,14 @@ export function CreateLotForm() {
       try {
         const detail = await addPurchaseLotPayment(savedPurchaseLotId, {
           amount,
-          payment_method: payMethod.toLowerCase(),
-          paid_from: paidFrom,
-          paid_to: paidTo,
-          bank_account: payMethod === "Bank" ? payBankAccount : "",
+          payment_method: "bank",
+          paid_from: paidFromAccount ? `${paidFromAccount.code} - ${paidFromAccount.name}` : "",
+          paid_to: paidToAccount ? `${paidToAccount.code} - ${paidToAccount.name}` : "",
+          bank_account: paidFromAccount ? `${paidFromAccount.code} - ${paidFromAccount.name}` : "",
           pay_date: payDate,
           reference_no: payReference,
           notes: payNotes,
+          gl_bank_account_id: paidFromAccountId || null,
         });
         setPaidAmount(Number(detail.paid_amount));
         setStatus(humanizeLotStatus(detail.status));
@@ -523,7 +537,15 @@ export function CreateLotForm() {
   function downloadLotPdf() {
     const pdfLines = lines.map((line) => ({
       item: line.itemName || "—",
-      description: [line.category, line.lotDetails, line.type].filter(Boolean).join(" / ") || "—",
+      description:
+        line.lotDetails.trim() ||
+        [
+          line.category ? `Category: ${line.category}` : "",
+          line.type ? `Type: ${line.type}` : "",
+        ]
+          .filter(Boolean)
+          .join(" | ") ||
+        "—",
       qtyUom: `${line.weight || "0"} ${uomLabel(line.uom || "ct")} · pc ${line.pieces || "0"}`,
       rate: formatMoney(num(line.rate), "USD"),
       amount: formatMoney(num(line.weight) * num(line.rate), "USD"),
@@ -589,6 +611,8 @@ export function CreateLotForm() {
     const ADD_NEW_SUPPLIER_VALUE = "__add_new_supplier__";
     if (value === ADD_NEW_SUPPLIER_VALUE) {
       setNewVendorName("");
+      setNewVendorContact("");
+      setNewVendorAddress("");
       setAddVendorOpen(true);
       return;
     }
@@ -603,15 +627,21 @@ export function CreateLotForm() {
 
   async function submitNewVendor(): Promise<void> {
     const nextName = newVendorName.trim();
-    if (!nextName) {
-      pushToast("Enter a supplier name.", "error");
+    const nextContact = newVendorContact.trim();
+    const nextAddress = newVendorAddress.trim();
+    if (!nextName || !nextContact || !nextAddress) {
+      pushToast("Name, contact number, and address are required.", "error");
       return;
     }
     if (newVendorSubmitting) return;
     setNewVendorSubmitting(true);
     try {
       if (apiMode) {
-        const nv = await createVendor({ name: nextName });
+        const nv = await createVendor({
+          name: nextName,
+          contact_number: nextContact,
+          address_line_1: nextAddress,
+        });
         const merged = [...vendors, nv].sort((a, b) => a.name.localeCompare(b.name));
         setVendors(merged);
         setSupplierOptions(merged.map((x) => x.name));
@@ -620,6 +650,8 @@ export function CreateLotForm() {
         setError(null);
         setAddVendorOpen(false);
         setNewVendorName("");
+        setNewVendorContact("");
+        setNewVendorAddress("");
         pushToast(`Supplier "${nv.name}" added.`, "success");
         return;
       }
@@ -632,6 +664,8 @@ export function CreateLotForm() {
       }
       setAddVendorOpen(false);
       setNewVendorName("");
+      setNewVendorContact("");
+      setNewVendorAddress("");
       pushToast(exists ? `Supplier "${nextName}" selected.` : `Supplier "${nextName}" added.`, "success");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to create vendor";
@@ -650,7 +684,7 @@ export function CreateLotForm() {
         </div>
       </div>
 
-      {error ? <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">{error}</div> : null}
+      {error ? <div className="gs-banner-danger px-4 py-3">{error}</div> : null}
 
       <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-4">
         <div className="grid gap-4 lg:grid-cols-12">
@@ -708,7 +742,7 @@ export function CreateLotForm() {
                 }}
                 className={`${FIELD} ${lotIdError ? "border-red-500 ring-1 ring-red-400/60" : ""}`}
               />
-              {lotIdError ? <p className="mt-1 text-xs text-red-600 dark:text-red-400">{lotIdError}</p> : null}
+              {lotIdError ? <p className="gs-text-danger mt-1 rounded-md bg-[var(--gs-danger-bg)] px-2 py-1 text-xs">{lotIdError}</p> : null}
             </div>
             <div>
               <label className="gs-label">Attachments</label>
@@ -740,7 +774,7 @@ export function CreateLotForm() {
                     : "h-10 min-h-10 flex-1 rounded-lg bg-[var(--gs-accent)] px-2 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
                 }
               >
-                {isFullyPaid ? "Edit payment" : "Pay Now"}
+                {isFullyPaid ? "View payment" : "Record payment"}
               </button>
             </div>
             <p className="mt-1 text-xs text-[var(--gs-muted)]">
@@ -817,7 +851,7 @@ export function CreateLotForm() {
                       <button
                         type="button"
                         onClick={() => removeRow(l.id)}
-                        className="inline-flex min-h-[2.5rem] items-center justify-center rounded-lg border border-red-300 bg-red-50 px-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200 dark:hover:bg-red-950"
+                        className="inline-flex min-h-[2.5rem] items-center justify-center rounded-lg border border-[var(--gs-danger-border)] bg-[var(--gs-danger-bg)] px-2.5 text-xs font-semibold text-[var(--gs-danger-fg)] hover:opacity-90"
                       >
                         Delete
                       </button>
@@ -971,6 +1005,8 @@ export function CreateLotForm() {
         onClose={() => {
           setAddVendorOpen(false);
           setNewVendorName("");
+          setNewVendorContact("");
+          setNewVendorAddress("");
         }}
         titleId="add-vendor-title"
         title="Add supplier"
@@ -983,6 +1019,8 @@ export function CreateLotForm() {
               onClick={() => {
                 setAddVendorOpen(false);
                 setNewVendorName("");
+                setNewVendorContact("");
+                setNewVendorAddress("");
               }}
               className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
             >
@@ -1016,6 +1054,26 @@ export function CreateLotForm() {
           placeholder="e.g. Ceylon Traders"
           className={`${FIELD} mt-1`}
         />
+        <label className="gs-label mt-3" htmlFor="new-vendor-contact">
+          Contact number
+        </label>
+        <input
+          id="new-vendor-contact"
+          value={newVendorContact}
+          onChange={(e) => setNewVendorContact(e.target.value)}
+          placeholder="e.g. +92 300 1234567"
+          className={`${FIELD} mt-1`}
+        />
+        <label className="gs-label mt-3" htmlFor="new-vendor-address">
+          Address
+        </label>
+        <input
+          id="new-vendor-address"
+          value={newVendorAddress}
+          onChange={(e) => setNewVendorAddress(e.target.value)}
+          placeholder="Street / area / city"
+          className={`${FIELD} mt-1`}
+        />
       </AppDialog>
 
       <AppDialog
@@ -1025,11 +1083,12 @@ export function CreateLotForm() {
           setPayOpen(false);
         }}
         titleId="pay-dialog-title"
-        title={isFullyPaid ? "Payment details" : "Pay Now"}
+        title={isFullyPaid ? "Payment details" : "Record payment"}
+        size="full"
         description={
           isFullyPaid
             ? "This lot is fully paid. Review details below; you cannot post another payment while the balance is zero."
-            : "Record supplier payment for this lot."
+            : "Same payment form as on Edit lot: pay the supplier now or any time later. Pick where cash leaves the business (Paid from) and which account shows the bill being paid (Paid to—often Accounts payable)."
         }
         footer={
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1060,64 +1119,62 @@ export function CreateLotForm() {
           </div>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-3">
           {paySuccess ? (
-            <div className="sm:col-span-2 rounded-lg border border-emerald-400/50 bg-emerald-500/10 px-3 py-3 text-sm font-medium text-emerald-900 dark:text-emerald-100">
+            <div className="gs-banner-success px-3 py-3 sm:col-span-2">
               Payment saved successfully. This window will close in a moment.
             </div>
           ) : null}
           {payError ? (
-            <div className="sm:col-span-2 rounded-lg border border-red-400/50 bg-red-500/10 px-3 py-3 text-sm text-red-800 dark:text-red-100">
+            <div className="gs-banner-danger px-3 py-3 sm:col-span-2">
               {payError}
             </div>
           ) : null}
           {!canRecordMorePayment ? (
-            <div className="sm:col-span-2 rounded-lg border border-emerald-400/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-900 dark:text-emerald-100">
+            <div className="gs-banner-success px-3 py-2 sm:col-span-2 text-sm">
               Balance is {formatMoney(balance, "USD")}. No further payment can be recorded for this lot.
             </div>
           ) : null}
-          <div className="sm:col-span-2 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)] px-3 py-3">
+          <div className="lg:col-span-3 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)] px-3 py-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Money flow</p>
             <p className="mt-1 text-sm font-semibold text-[var(--gs-text)]">
-              {paidFrom || "Select Paid From"} → {paidTo === "Supplier / Vendor" ? `Supplier: ${selectedSupplierName || "-"}` : paidTo}
+              {paidFromAccount ? `${paidFromAccount.code} - ${paidFromAccount.name}` : "Select Paid From"} →{" "}
+              {paidToAccount ? `${paidToAccount.code} - ${paidToAccount.name}` : "Select Paid To"}
             </p>
           </div>
-          <div>
-            <label className="gs-label">Paid From</label>
+          <div className="lg:col-span-1">
+            <label className="gs-label">Paid from</label>
+            <p className="mt-1 text-xs leading-snug text-[var(--gs-muted)]">
+              Bank or cash account — the asset account money leaves when you pay the supplier.
+            </p>
             <select
-              value={paidFrom}
-              onChange={(e) => setPaidFrom(e.target.value)}
+              value={paidFromAccountId}
+              onChange={(e) => setPaidFromAccountId(e.target.value)}
               className={`${FIELD} !mt-1`}
             >
               <option value="">Select account...</option>
-              <option value="Cash">Cash</option>
-              {BANK_ACCOUNTS.map((account) => (
-                <option key={account} value={`Bank: ${account}`}>
-                  Bank: {account}
+              {paidFromOptions.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.code} - {account.name}
                 </option>
               ))}
             </select>
           </div>
-          <div>
-            <label className="gs-label">Paid To</label>
-            <select value={paidTo} onChange={(e) => setPaidTo(e.target.value)} className={`${FIELD} !mt-1`}>
-              {TO_ACCOUNT_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+          <div className="lg:col-span-1">
+            <label className="gs-label">Paid to</label>
+            <p className="mt-1 text-xs leading-snug text-[var(--gs-muted)]">
+              Usually Accounts payable (or similar) — the liability side so the books show you paid down what you owed for this lot.
+            </p>
+            <select value={paidToAccountId} onChange={(e) => setPaidToAccountId(e.target.value)} className={`${FIELD} !mt-1`}>
+              <option value="">Select account...</option>
+              {paidToOptions.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.code} - {account.name}
                 </option>
               ))}
             </select>
-            {paidTo === "Supplier / Vendor" ? (
-              <p className="mt-1 text-xs text-[var(--gs-muted)]">Supplier: {selectedSupplierName || "-"}</p>
-            ) : null}
           </div>
-          {paidFrom.startsWith("Bank:") ? (
-            <div className="sm:col-span-2 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2">
-              <p className="text-xs font-semibold text-[var(--gs-muted)]">Bank account details</p>
-              <p className="mt-1 text-sm text-[var(--gs-text)]">{paidFrom.replace("Bank: ", "")}</p>
-            </div>
-          ) : null}
-          <div>
+          <div className="lg:col-span-1">
             <label className="gs-label">Vendor / Supplier</label>
             <input value={selectedSupplierName} readOnly className={`${FIELD} !mt-1 bg-[var(--gs-hover)]`} />
           </div>
@@ -1127,27 +1184,6 @@ export function CreateLotForm() {
             <p className="mt-1 text-xs text-[var(--gs-muted)]">Remaining: {formatMoney(balance, "USD")}</p>
           </div>
           <div>
-            <label className="gs-label">Payment method</label>
-            <select value={payMethod} onChange={(e) => setPayMethod(e.target.value as PayMethod)} className={`${FIELD} !mt-1`}>
-              <option>Cash</option>
-              <option>Bank</option>
-              <option>Cheque</option>
-            </select>
-          </div>
-          {payMethod === "Bank" ? (
-            <div>
-              <label className="gs-label">Company Bank Account</label>
-              <select value={payBankAccount} onChange={(e) => setPayBankAccount(e.target.value)} className={`${FIELD} !mt-1`}>
-                <option value="">Select account...</option>
-                {BANK_ACCOUNTS.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-          <div>
             <label className="gs-label">Date</label>
             <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className={`${FIELD} !mt-1`} />
           </div>
@@ -1155,7 +1191,7 @@ export function CreateLotForm() {
             <label className="gs-label">Reference No</label>
             <input value={payReference} onChange={(e) => setPayReference(e.target.value)} className={`${FIELD} !mt-1`} />
           </div>
-          <div className="sm:col-span-2">
+          <div className="lg:col-span-3">
             <label className="gs-label">Notes (optional)</label>
             <textarea rows={3} value={payNotes} onChange={(e) => setPayNotes(e.target.value)} className={`${FIELD} !mt-1 min-h-[5rem] resize-y py-3`} />
           </div>

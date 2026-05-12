@@ -96,6 +96,7 @@ function CreateMenu() {
     { label: "New customer", href: "/sales?tab=customers" },
     { label: "New item", href: "/inventory?tab=items" },
     { label: "New payment", href: "/sales?tab=receipts" },
+    { label: "New journal entry", href: "/accounting?tab=journal_list&new=1" },
   ] as const;
 
   return (

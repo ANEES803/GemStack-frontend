@@ -15,6 +15,8 @@ export type LotListRow = {
   dateDisplay: string;
   /** From API: settlement + commercial terms, e.g. "Paid · Net 30". */
   paymentSummary?: string;
+  /** From API: true when balance remains and lot is not fully paid. */
+  canRecordPayment?: boolean;
 };
 
 const STORAGE_KEY = "gemstack-lots-list-v1";

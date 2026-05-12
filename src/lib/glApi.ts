@@ -257,6 +257,9 @@ export async function createGlAccount(body: {
   allow_posting: boolean;
   account_subtype?: string | null;
   is_active: boolean;
+  opening_balance?: number | null;
+  opening_balance_offset_account_id?: string | null;
+  opening_balance_entry_date?: string | null;
 }): Promise<GlAccountDto> {
   const response = await apiAuthFetch(`${API_BASE_URL}/gl/accounts`, {
     method: "POST",

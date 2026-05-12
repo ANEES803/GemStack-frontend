@@ -342,7 +342,9 @@ export function BalanceSheetPage() {
       </div>
 
       {loadError ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">{loadError}</div>
+        <div className="rounded-xl border border-[var(--gs-border-strong)] bg-[var(--gs-accent-soft)] px-4 py-3 text-sm text-[var(--gs-text)]">
+          {loadError}
+        </div>
       ) : null}
 
       {loading ? (

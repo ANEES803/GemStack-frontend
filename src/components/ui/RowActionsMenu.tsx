@@ -40,15 +40,15 @@ export function inferActionTone(label: string): ActionTone {
 function toneClass(tone: ActionTone) {
   switch (tone) {
     case "danger":
-      return "text-red-700 hover:bg-red-50 active:bg-red-100/80";
+      return "text-[var(--gs-danger-fg)] hover:bg-[var(--gs-danger-hover-bg)] active:opacity-90";
     case "accent":
-      return "text-[var(--gs-accent)] hover:bg-[var(--gs-accent-soft)] active:bg-orange-100/60";
+      return "text-[var(--gs-accent)] hover:bg-[var(--gs-accent-soft)] active:bg-orange-100/60 dark:active:bg-orange-950/40";
     case "success":
-      return "text-emerald-800 hover:bg-emerald-100 hover:text-emerald-950 active:bg-emerald-200/70 dark:text-emerald-200 dark:hover:bg-emerald-950/60 dark:hover:text-emerald-50";
+      return "text-[var(--gs-success-fg)] hover:bg-[var(--gs-success-hover-bg)] active:opacity-90";
     case "warning":
-      return "text-amber-900 hover:bg-amber-50 active:bg-amber-100/70";
+      return "text-[var(--gs-warning-fg)] hover:bg-[var(--gs-warning-bg)] active:opacity-90";
     case "info":
-      return "text-sky-900 hover:bg-sky-50 active:bg-sky-100/70";
+      return "text-sky-800 hover:bg-sky-100 active:bg-sky-200/70 dark:text-sky-100 dark:hover:bg-sky-950/55 dark:active:bg-sky-950/75";
     default:
       return "text-[var(--gs-text)] hover:bg-[var(--gs-hover)] active:bg-[var(--gs-hover)]/80";
   }

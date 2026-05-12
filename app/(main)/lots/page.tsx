@@ -35,6 +35,10 @@ function summaryToLotRow(s: PurchaseLotSummary): LotListRow {
   const disp = formatLotDisplays(carats, cost, s.date_iso);
   const terms = (s.payment_terms || "").trim() || "—";
   const payStatus = (s.payment_status || s.status || "").trim();
+  const paid = Number(s.paid_amount || 0);
+  const balance = Math.max(cost - paid, 0);
+  const paySt = payStatus.toLowerCase();
+  const canRecordPayment = balance > 0.005 && paySt !== "paid";
   return {
     id: s.id,
     code: s.code,
@@ -44,6 +48,7 @@ function summaryToLotRow(s: PurchaseLotSummary): LotListRow {
     dateIso: s.date_iso,
     ...disp,
     paymentSummary: `${paymentStatusLabel(payStatus)} · ${terms}`,
+    canRecordPayment,
   };
 }
 
@@ -359,6 +364,16 @@ export default function LotsPage() {
                         align="right"
                         actions={[
                           { label: "Edit", tone: "accent", onSelect: () => handleEdit(row) },
+                          ...(listSource === "api" && row.canRecordPayment
+                            ? [
+                                {
+                                  label: "Record payment",
+                                  tone: "success" as const,
+                                  onSelect: () =>
+                                    router.push(`/lots/edit/${encodeURIComponent(row.code)}?pay=1`),
+                                },
+                              ]
+                            : []),
                           { label: "Delete", tone: "danger", onSelect: () => setDeleteTarget(row) },
                         ]}
                       />

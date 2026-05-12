@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { EditLotForm } from "@/components/lots/EditLotForm";
 
 type Props = {
@@ -12,7 +14,9 @@ export default async function EditLotPage({ params }: Props) {
   const lotCode = decodeURIComponent(id);
   return (
     <div className="px-4 py-8 sm:px-6">
-      <EditLotForm lotCode={lotCode} />
+      <Suspense fallback={<div className="text-center text-sm text-[var(--gs-muted)]">Loading lot…</div>}>
+        <EditLotForm lotCode={lotCode} />
+      </Suspense>
     </div>
   );
 }

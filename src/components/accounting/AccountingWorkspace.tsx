@@ -322,6 +322,9 @@ export function AccountingWorkspace() {
     allowTransactions: true,
     status: "Active" as "Active" | "Inactive",
     accountSubtype: "",
+    openingBalance: "",
+    openingBalanceOffsetId: "none" as string | "none",
+    openingBalanceEntryDate: "",
   });
 
   const [openingSub, setOpeningSub] = useState<null | "trial" | "customer" | "vendor" | "inventory">(null);
@@ -630,6 +633,17 @@ export function AccountingWorkspace() {
     return opts;
   }, [coaRows, coaForm.type, editingAccountId, coaParentSearch, coaForm.parentId]);
 
+  /** Posting accounts that can appear on the other side of an optional opening-balance journal. */
+  const coaOpeningOffsetOptions = useMemo(
+    () =>
+      coaRows
+        .filter((r) => r.status === "Active" && !r.isGroup && r.allowPosting)
+        .slice()
+        .sort((a, b) => a.code.localeCompare(b.code))
+        .map((r) => ({ id: r.id, label: `${r.code} — ${r.name}` })),
+    [coaRows],
+  );
+
   useEffect(() => {
     if (!coaModal) return;
     if (coaForm.parentId === "none") return;
@@ -662,6 +676,9 @@ export function AccountingWorkspace() {
       allowTransactions: true,
       status: "Active",
       accountSubtype: "",
+      openingBalance: "",
+      openingBalanceOffsetId: "none",
+      openingBalanceEntryDate: todayIso || "",
     });
     setCoaParentSearch("");
     setCoaModal("add");
@@ -699,6 +716,9 @@ export function AccountingWorkspace() {
       allowTransactions: row.allowPosting,
       status: row.status,
       accountSubtype: row.accountSubtype ?? "",
+      openingBalance: "",
+      openingBalanceOffsetId: "none",
+      openingBalanceEntryDate: todayIso || "",
     });
     setCoaParentSearch("");
     setCoaModal({ edit: row });
@@ -735,6 +755,39 @@ export function AccountingWorkspace() {
     const parentId = coaForm.parentId === "none" ? null : coaForm.parentId;
     const subtypeTrim = coaForm.accountSubtype.trim();
     const account_subtype = subtypeTrim ? subtypeTrim : null;
+
+    let openingExtra: {
+      opening_balance: number;
+      opening_balance_offset_account_id: string;
+      opening_balance_entry_date: string;
+    } | null = null;
+    if (coaModal === "add" && !coaForm.isGroup && coaForm.allowTransactions) {
+      const rawOb = coaForm.openingBalance.trim().replace(/,/g, "");
+      if (rawOb !== "") {
+        const n = Number.parseFloat(rawOb);
+        if (!Number.isFinite(n) || n < 0) {
+          pushToast("Opening balance must be a valid zero or positive number.", "error");
+          return;
+        }
+        if (n > 0) {
+          if (coaForm.openingBalanceOffsetId === "none") {
+            pushToast("Select an offset account for the opening balance, or leave the amount empty.", "error");
+            return;
+          }
+          const entryDate = coaForm.openingBalanceEntryDate.trim();
+          if (!entryDate) {
+            pushToast("Choose an effective date for the opening balance.", "error");
+            return;
+          }
+          openingExtra = {
+            opening_balance: n,
+            opening_balance_offset_account_id: coaForm.openingBalanceOffsetId,
+            opening_balance_entry_date: entryDate,
+          };
+        }
+      }
+    }
+
     setCoaSaving(true);
     try {
       if (coaModal === "add") {
@@ -747,6 +800,7 @@ export function AccountingWorkspace() {
           allow_posting: coaForm.allowTransactions,
           is_active: coaForm.status === "Active",
           account_subtype,
+          ...(openingExtra ? openingExtra : {}),
         });
       } else if (coaModal && typeof coaModal === "object") {
         await updateGlAccount(coaModal.edit.id, {
@@ -759,7 +813,14 @@ export function AccountingWorkspace() {
         });
       }
       await refreshCoa({ silent: true });
-      pushToast(coaModal === "add" ? "Account created." : "Account updated.", "success");
+      pushToast(
+        coaModal === "add"
+          ? openingExtra
+            ? "Account created with posted opening balance."
+            : "Account created."
+          : "Account updated.",
+        "success",
+      );
       if (andNew) {
         openCoaAdd();
       } else {
@@ -835,7 +896,7 @@ export function AccountingWorkspace() {
     setJeLines((prev) => (prev.length <= 2 ? prev : prev.filter((l) => l.id !== id)));
   }
 
-  function openNewJournal() {
+  const openNewJournal = useCallback(() => {
     setJeError(null);
     setJeAccountsError(null);
     setEditingJournalId(null);
@@ -846,7 +907,18 @@ export function AccountingWorkspace() {
       { id: `j-${Date.now()}-b`, accountId: "", lineDesc: "", debit: 0, credit: 0 },
     ]);
     setJournalEditorOpen(true);
-  }
+  }, []);
+
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    const t = searchParams.get("tab");
+    if (t !== "journal_list") {
+      router.replace("/accounting?tab=journal_list&new=1", { scroll: false });
+      return;
+    }
+    openNewJournal();
+    router.replace("/accounting?tab=journal_list", { scroll: false });
+  }, [openNewJournal, router, searchParams]);
 
   async function openEditDraftJournal(journalId: string) {
     setJeError(null);
@@ -1177,7 +1249,9 @@ export function AccountingWorkspace() {
             </div>
           </div>
           {coaError ? (
-            <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-950">{coaError}</div>
+            <div className="border-b border-[var(--gs-border-strong)] bg-[var(--gs-accent-soft)] px-5 py-3 text-sm text-[var(--gs-text)]">
+              {coaError}
+            </div>
           ) : null}
           {coaLoading ? (
             <div className="border-b border-[var(--gs-border)]">
@@ -1409,7 +1483,7 @@ export function AccountingWorkspace() {
               vouchers create journal entries against these accounts.
             </p>
           </div>
-          {glPostingErr ? <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-800">{glPostingErr}</div> : null}
+          {glPostingErr ? <div className="gs-strip-danger px-5 py-3">{glPostingErr}</div> : null}
           <div className="p-5">
             {glPostingLoad || !glPostingSettings ? (
               <LoadingBlock label="Loading GL settings…" className="py-10" />
@@ -1573,7 +1647,7 @@ export function AccountingWorkspace() {
               <h2 className="text-lg font-bold text-[var(--gs-text)]">Opening balances</h2>
               <p className="text-sm text-[var(--gs-muted)]">Complete each section, then finalize  front-end demo only.</p>
             </div>
-            <span className="inline-flex w-fit items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-100">
+            <span className="inline-flex w-fit items-center rounded-full bg-[var(--gs-accent-soft)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[var(--gs-text)] ring-1 ring-[var(--gs-border-strong)]">
               {openingStatus}
             </span>
           </div>
@@ -2332,6 +2406,9 @@ export function AccountingWorkspace() {
                           ...f,
                           isGroup: checked,
                           allowTransactions: checked ? false : true,
+                          ...(checked
+                            ? { openingBalance: "", openingBalanceOffsetId: "none" as const }
+                            : {}),
                         }));
                       }}
                       className="rounded border-[var(--gs-border-strong)] disabled:cursor-not-allowed"
@@ -2343,7 +2420,14 @@ export function AccountingWorkspace() {
                       type="checkbox"
                       checked={coaForm.allowTransactions}
                       disabled={coaForm.isGroup || coaSaving}
-                      onChange={(e) => setCoaForm((f) => ({ ...f, allowTransactions: e.target.checked }))}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        setCoaForm((f) => ({
+                          ...f,
+                          allowTransactions: v,
+                          ...(!v ? { openingBalance: "", openingBalanceOffsetId: "none" as const } : {}),
+                        }));
+                      }}
                       className="rounded border-[var(--gs-border-strong)] disabled:cursor-not-allowed"
                     />
                     Allow posting
@@ -2361,9 +2445,72 @@ export function AccountingWorkspace() {
                     </select>
                   </div>
                 </div>
-                <p className="rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/50 px-3 py-2 text-xs text-[var(--gs-muted)] sm:col-span-2">
-                  Opening balances use <strong>journal entries</strong>. Posted activity updates balances in the list.
-                </p>
+                {coaModal === "add" && !coaForm.isGroup && coaForm.allowTransactions ? (
+                  <div className="space-y-3 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/40 p-4 sm:col-span-2">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Opening balance</span>
+                      <span className="ml-2 text-xs font-normal normal-case text-[var(--gs-muted)]">(optional)</span>
+                      <p className="mt-1 text-xs text-[var(--gs-muted)]">
+                        If you enter an amount, GemStack posts a balanced journal: this account on its normal side (debit for assets and
+                        expenses, credit for liabilities, equity, and revenue) and the offset account on the other side. Leave the amount blank
+                        to skip.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Amount</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={coaForm.openingBalance}
+                          disabled={coaSaving}
+                          onChange={(e) => setCoaForm((f) => ({ ...f, openingBalance: e.target.value }))}
+                          placeholder="0 — leave empty to skip"
+                          className="gs-field mt-1 font-mono disabled:cursor-not-allowed disabled:opacity-60"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Effective date</label>
+                        <input
+                          type="date"
+                          value={coaForm.openingBalanceEntryDate}
+                          disabled={coaSaving}
+                          onChange={(e) => setCoaForm((f) => ({ ...f, openingBalanceEntryDate: e.target.value }))}
+                          className="gs-field mt-1 disabled:cursor-not-allowed disabled:opacity-60"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                          Offset account <span className="font-normal normal-case">(other side of the entry)</span>
+                        </label>
+                        <select
+                          value={coaForm.openingBalanceOffsetId}
+                          disabled={coaSaving}
+                          onChange={(e) => setCoaForm((f) => ({ ...f, openingBalanceOffsetId: e.target.value }))}
+                          className="gs-field mt-1 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <option value="none">Select if using an opening amount…</option>
+                          {coaOpeningOffsetOptions.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        {coaOpeningOffsetOptions.length === 0 ? (
+                          <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+                            You need at least one other active posting account in the chart to use as the offset.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/50 px-3 py-2 text-xs text-[var(--gs-muted)] sm:col-span-2">
+                    {coaModal === "add"
+                      ? "Optional opening balance is available when the account is not a group and allows posting."
+                      : "Opening balances are posted via journal entries. Edit the account here; use Journal entries to change balances."}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2 border-t border-[var(--gs-border)] bg-[var(--gs-card)] p-4 sm:p-6">

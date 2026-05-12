@@ -20,8 +20,31 @@ async function parseError(response: Response): Promise<string> {
 export type VendorDto = {
   id: string;
   business_id: string;
+  vendor_code: string;
+  legal_name: string;
+  display_name: string;
   name: string;
+  contact_person: string;
+  contact_number: string;
   email: string | null;
+  website: string;
+  address_line_1: string;
+  address_line_2: string;
+  city: string;
+  state_province: string;
+  postal_code: string;
+  country: string;
+  tax_id: string;
+  payment_terms: string;
+  currency: string;
+  opening_balance: string;
+  withholding_tax_rate: string;
+  bank_account_name: string;
+  bank_account_no_or_iban: string;
+  bank_name: string;
+  swift_bic: string;
+  status: string;
+  notes: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -124,19 +147,61 @@ export async function fetchApAging(asOfIso: string): Promise<ApAgingLineDto[]> {
   return (await response.json()) as ApAgingLineDto[];
 }
 
-export async function fetchVendors(): Promise<VendorDto[]> {
-  const response = await apiAuthFetch(`${API_BASE_URL}/vendors`, { method: "GET" });
+export async function fetchVendors(includeInactive = false): Promise<VendorDto[]> {
+  const response = await apiAuthFetch(`${API_BASE_URL}/vendors?include_inactive=${includeInactive ? "true" : "false"}`, { method: "GET" });
   if (!response.ok) throw new Error(await parseError(response));
   return (await response.json()) as VendorDto[];
 }
 
-export async function createVendor(body: { name: string; email?: string | null }): Promise<VendorDto> {
+export type VendorUpsertBody = {
+  vendor_code?: string | null;
+  legal_name?: string | null;
+  display_name?: string | null;
+  name: string;
+  contact_person?: string | null;
+  contact_number: string;
+  email?: string | null;
+  website?: string | null;
+  address_line_1: string;
+  address_line_2?: string | null;
+  city?: string | null;
+  state_province?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  tax_id?: string | null;
+  payment_terms?: string | null;
+  currency?: string | null;
+  opening_balance?: number | null;
+  withholding_tax_rate?: number | null;
+  bank_account_name?: string | null;
+  bank_account_no_or_iban?: string | null;
+  bank_name?: string | null;
+  swift_bic?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  is_active?: boolean | null;
+};
+
+export async function createVendor(body: VendorUpsertBody): Promise<VendorDto> {
   const response = await apiAuthFetch(`${API_BASE_URL}/vendors`, {
     method: "POST",
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await parseError(response));
   return (await response.json()) as VendorDto;
+}
+
+export async function updateVendor(vendorId: string, body: Partial<VendorUpsertBody>): Promise<VendorDto> {
+  const response = await apiAuthFetch(`${API_BASE_URL}/vendors/${vendorId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as VendorDto;
+}
+
+export async function archiveVendor(vendorId: string): Promise<VendorDto> {
+  return updateVendor(vendorId, { status: "inactive", is_active: false });
 }
 
 export async function suggestNextLotCode(): Promise<string> {
@@ -221,6 +286,7 @@ export type AddLotPaymentBody = {
   pay_date: string;
   reference_no: string;
   notes: string;
+  gl_bank_account_id?: string | null;
 };
 
 export async function deletePurchaseLot(lotId: string): Promise<void> {

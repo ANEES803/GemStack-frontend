@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Tailwind v4: tie the `dark:` variant to the `.dark` class on <html>.
+   Without this, every `dark:*` utility silently no-ops when the user
+   toggles dark mode manually (Tailwind v4 defaults `dark:` to the
+   `prefers-color-scheme` media query). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
@@ -37,6 +43,22 @@
   --gs-gradient-from: #ffffff;
   --gs-gradient-via: #ffffff;
   --gs-gradient-to: #ffffff;
+
+  /* Semantic reds/greens/pinks — readable on light surfaces */
+  --gs-danger-fg: #991b1b;
+  --gs-danger-bg: #fee2e2;
+  --gs-danger-border: #f87171;
+  --gs-danger-hover-bg: #fecaca;
+  --gs-success-fg: #065f46;
+  --gs-success-bg: #d1fae5;
+  --gs-success-border: #34d399;
+  --gs-success-hover-bg: #a7f3d0;
+  --gs-credit-fg: #9d174d;
+  --gs-credit-bg: #ffe4e6;
+  --gs-credit-border: #fb7185;
+  --gs-warning-fg: #92400e;
+  --gs-warning-bg: #fef3c7;
+  --gs-warning-border: #fbbf24;
 }
 
 html {
@@ -86,6 +108,22 @@ html.dark {
   --gs-gradient-from: #2b2b32;
   --gs-gradient-via: #303038;
   --gs-gradient-to: #383840;
+
+  /* Semantic colors — bright text on tinted panels (dark mode) */
+  --gs-danger-fg: #fecaca;
+  --gs-danger-bg: rgba(127, 29, 29, 0.42);
+  --gs-danger-border: #f87171;
+  --gs-danger-hover-bg: rgba(248, 113, 113, 0.22);
+  --gs-success-fg: #bbf7d0;
+  --gs-success-bg: rgba(6, 78, 59, 0.45);
+  --gs-success-border: #34d399;
+  --gs-success-hover-bg: rgba(52, 211, 153, 0.2);
+  --gs-credit-fg: #fbcfe8;
+  --gs-credit-bg: rgba(131, 24, 67, 0.42);
+  --gs-credit-border: #f472b6;
+  --gs-warning-fg: #fde68a;
+  --gs-warning-bg: rgba(120, 53, 15, 0.45);
+  --gs-warning-border: #fbbf24;
 }
 
 *,
@@ -173,5 +211,73 @@ tbody.gs-striped-rows > tr:hover:not(.coa-chart-group) {
 /* Scrollport behind wide tables — avoids “white hole” next to thead in dark mode */
 .gs-table-scroll {
   background-color: var(--gs-card);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Semantic status — red / green / pink(credit) readable in light & dark mode */
+/* -------------------------------------------------------------------------- */
+
+.gs-banner-danger {
+  border-radius: 0.75rem;
+  border: 1px solid var(--gs-danger-border);
+  background: var(--gs-danger-bg);
+  color: var(--gs-danger-fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.gs-banner-success {
+  border-radius: 0.75rem;
+  border: 1px solid var(--gs-success-border);
+  background: var(--gs-success-bg);
+  color: var(--gs-success-fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.gs-strip-danger {
+  border-bottom: 1px solid var(--gs-danger-border);
+  background: var(--gs-danger-bg);
+  color: var(--gs-danger-fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.gs-strip-success {
+  border-bottom: 1px solid var(--gs-success-border);
+  background: var(--gs-success-bg);
+  color: var(--gs-success-fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.gs-text-danger {
+  color: var(--gs-danger-fg);
+  font-weight: 600;
+}
+
+.gs-text-success {
+  color: var(--gs-success-fg);
+  font-weight: 600;
+}
+
+/** Ledger / report credit amounts (pink-rose family) */
+.gs-text-credit {
+  color: var(--gs-credit-fg);
+  font-weight: 600;
+}
+
+.gs-hover-danger:hover {
+  background-color: var(--gs-danger-hover-bg) !important;
+  color: var(--gs-danger-fg) !important;
+}
+
+.gs-hover-success:hover {
+  background-color: var(--gs-success-hover-bg) !important;
+  color: var(--gs-success-fg) !important;
 }
 

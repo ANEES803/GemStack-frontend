@@ -11,7 +11,7 @@ type AppDialogProps = {
   description?: ReactNode;
   children: ReactNode;
   footer: ReactNode;
-  size?: "md" | "lg";
+  size?: "md" | "lg" | "xl" | "full";
 };
 
 export function AppDialog({ open, onClose, titleId, title, description, children, footer, size = "lg" }: AppDialogProps) {
@@ -39,7 +39,14 @@ export function AppDialog({ open, onClose, titleId, title, description, children
 
   if (!open || !mounted) return null;
 
-  const maxW = size === "md" ? "sm:max-w-md" : "sm:max-w-lg";
+  const maxW =
+    size === "md"
+      ? "sm:max-w-md"
+      : size === "xl"
+        ? "sm:max-w-6xl"
+        : size === "full"
+          ? "max-w-[98vw] h-[94dvh]"
+          : "sm:max-w-lg";
 
   return createPortal(
     <div className="fixed inset-0 z-[240] flex items-center justify-center p-4" role="presentation">

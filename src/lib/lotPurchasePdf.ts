@@ -109,10 +109,13 @@ export function downloadLotPurchasePdf(data: LotPurchasePdfData): void {
   y += 6;
 
   const colItem = MARGIN;
-  const colDesc = MARGIN + 32;
-  const colQty = pageW - MARGIN - 58;
-  const colRate = pageW - MARGIN - 38;
+  const colDesc = MARGIN + 28;
+  const colQty = pageW - MARGIN - 48;
+  const colRate = pageW - MARGIN - 26;
   const colAmt = pageW - MARGIN - 2;
+  const itemWidth = colDesc - colItem - 3;
+  const descWidth = colQty - colDesc - 4;
+  const qtyWidth = colRate - colQty - 3;
 
   doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
@@ -130,9 +133,10 @@ export function downloadLotPurchasePdf(data: LotPurchasePdfData): void {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   for (const row of data.lines) {
-    const itemLines = splitLines(doc, row.item, 28);
-    const descLines = splitLines(doc, row.description, maxTextW - 70);
-    const n = Math.max(itemLines.length, descLines.length, 1);
+    const itemLines = splitLines(doc, row.item, itemWidth);
+    const descLines = splitLines(doc, row.description, descWidth);
+    const qtyLines = splitLines(doc, row.qtyUom, qtyWidth);
+    const n = Math.max(itemLines.length, descLines.length, qtyLines.length, 1);
     const lineH = 3.6;
     const rowH = n * lineH + 2;
     ensureSpace(rowH);
@@ -143,7 +147,9 @@ export function downloadLotPurchasePdf(data: LotPurchasePdfData): void {
     for (let i = 0; i < descLines.length; i++) {
       doc.text(descLines[i]!, colDesc, y + (i + 1) * lineH);
     }
-    doc.text(row.qtyUom, colQty, y + lineH, { align: "right" });
+    for (let i = 0; i < qtyLines.length; i++) {
+      doc.text(qtyLines[i]!, colQty + qtyWidth, y + (i + 1) * lineH, { align: "right" });
+    }
     doc.text(row.rate, colRate, y + lineH, { align: "right" });
     doc.text(row.amount, colAmt, y + lineH, { align: "right" });
     y += rowH;
