@@ -9,7 +9,6 @@ import {
   FileText,
   Import,
   MoreVertical,
-  Package,
   Pencil,
   Plus,
   Search,
@@ -70,18 +69,40 @@ import {
   patchStockFromItemForm,
   persistCustomInventoryType,
 } from "@/lib/inventoryHubInventoryApi";
-import type { InvInventoryFeatureFlags, InvItemTypeDto } from "@/lib/invApi";
+import type {
+  InvInventoryFeatureFlags,
+  InvItemTypeDto,
+  InvLineageDto,
+  InvLotBalanceDto,
+  InvLotVarianceReason,
+  InvStockMovementDto,
+  InvStockUnitDto,
+} from "@/lib/invApi";
 import {
+  adjustStockUnitWeight,
+  autoSplitLotLine,
   closeAuditSession,
   createAuditSession,
   createService,
   createStockUnitsFromPurchaseLot,
+  cutStockUnit,
+  customSplitLotLine,
   fetchInventoryFeatureFlags,
   fetchItemTypes,
+  fetchLotBalance,
   fetchReportByCustodian,
   fetchReportByType,
   fetchReportSummary,
+  fetchStockUnitLineage,
+  fetchStockUnitMovements,
+  fetchStockUnitQrPng,
+  fetchStockUnitLabelPdf,
+  fetchStockUnitLabelsBatchPdf,
+  freezeStockUnit,
+  rebalanceStockUnits,
+  recordStockLoss,
   splitStockUnits,
+  unfreezeStockUnit,
   updateItemType,
   updateService,
   voidStockUnit,
@@ -311,13 +332,34 @@ function persistHiddenCategoryPresets(names: string[]) {
 /** Default category labels merged with custom and row-derived values */
 const DEFAULT_CATEGORY_OPTIONS = ["Faceted", "Services", "Rough"] as const;
 
-/** Demo placeholder PNG (1×1)  replace with real QR data URL from API. */
-const DUMMY_NEW_ITEM_QR_DATA_URL =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const LINEAGE_TREE_STEP_PX = 14;
 
-type AddTypeSpecMode = "rough" | "cut" | "builder";
+function lineageIdMap(data: InvLineageDto): Map<string, InvStockUnitDto> {
+  const m = new Map<string, InvStockUnitDto>();
+  m.set(data.unit.id, data.unit);
+  for (const u of data.ancestors) m.set(u.id, u);
+  for (const u of data.children) m.set(u.id, u);
+  for (const u of data.descendants) m.set(u.id, u);
+  return m;
+}
+
+/** Number of parent hops from ``unitId`` down until the focal unit is reached. */
+function stepsDownToFocal(unitId: string, focalId: string, byId: Map<string, InvStockUnitDto>): number {
+  let steps = 0;
+  let cur = byId.get(unitId);
+  while (cur && cur.id !== focalId) {
+    if (!cur.parent_unit_id) return steps;
+    const p = byId.get(cur.parent_unit_id);
+    if (!p) return steps;
+    cur = p;
+    steps += 1;
+  }
+  return steps;
+}
 
 const GRADE_OPTIONS = ["AAA", "AA", "A", "B", "C", "Commercial", ""] as const;
+
+type AddTypeSpecMode = "rough" | "cut" | "builder";
 
 type SplitDraftRow = {
   id: string;
@@ -1602,12 +1644,20 @@ export function InventoryHub() {
   /** Serialized `normalizeItemForm` when the modal opened  for dirty detection */
   const [itemFormBaselineKey, setItemFormBaselineKey] = useState<string | null>(null);
   /** Shown after a new inventory item is saved (not edit or service). */
-  const [newItemQrDataUrl, setNewItemQrDataUrl] = useState<string | null>(null);
+  const [newItemQrUnitId, setNewItemQrUnitId] = useState<string | null>(null);
+  const [newItemQrBlobUrl, setNewItemQrBlobUrl] = useState<string | null>(null);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [customInventoryTypes, setCustomInventoryTypes] = useState<CustomInventoryType[]>([]);
   const [addTypeModalOpen, setAddTypeModalOpen] = useState(false);
   const [viewAllTypesOpen, setViewAllTypesOpen] = useState(false);
   const [splitParcelOpen, setSplitParcelOpen] = useState(false);
+  /** Toolbar: single entry point for creating stock (plan Part 1). */
+  const [addStockMenuOpen, setAddStockMenuOpen] = useState(false);
+  /** Split modal: smaller parcels vs one row per physical piece (plan Part 2). */
+  const [splitMode, setSplitMode] = useState<"parcels" | "pieces">("parcels");
+  const [splitPiecesCount, setSplitPiecesCount] = useState("");
+  const [splitPerPieceUom, setSplitPerPieceUom] = useState("");
+  const [splitPerPieceRate, setSplitPerPieceRate] = useState("");
   const [splitSourceId, setSplitSourceId] = useState("");
   const [splitRows, setSplitRows] = useState<SplitDraftRow[]>([]);
   const [splitError, setSplitError] = useState<string | null>(null);
@@ -1649,6 +1699,65 @@ export function InventoryHub() {
     { key: string; purchase_lot_line_id: string; display_name: string; primary_uom_qty: string; pieces: string; public_code: string }[]
   >([]);
   const [fromLotSavingHub, setFromLotSavingHub] = useState(false);
+  /** Phase 1: Receive-from-lot mode toggle (auto = Mode A, custom = Mode B). */
+  const [fromLotMode, setFromLotMode] = useState<"auto" | "custom">("auto");
+  /** Mode A: per-line auto-split inputs keyed by purchase_lot_line_id. */
+  const [autoSplitDraft, setAutoSplitDraft] = useState<
+    Record<string, { n: string; basis: "equal_weight" | "equal_pieces" }>
+  >({});
+  /** Mode B: variance reason + memo when custom-split sums do not equal the lot line. */
+  const [customSplitVarianceReason, setCustomSplitVarianceReason] = useState<InvLotVarianceReason | "">("");
+  const [customSplitVarianceMemo, setCustomSplitVarianceMemo] = useState("");
+  /** Phase 1: row-level action modals. */
+  const [adjustWeightTarget, setAdjustWeightTarget] = useState<ItemRow | null>(null);
+  const [adjustWeightDraft, setAdjustWeightDraft] = useState<{
+    qty: string;
+    pieces: string;
+    reason: InvLotVarianceReason;
+    memo: string;
+  }>({ qty: "", pieces: "", reason: "re_measure", memo: "" });
+  const [adjustWeightSaving, setAdjustWeightSaving] = useState(false);
+  const [rebalanceTarget, setRebalanceTarget] = useState<ItemRow | null>(null);
+  const [rebalanceDraft, setRebalanceDraft] = useState<{
+    toUnitId: string;
+    qty: string;
+    pieces: string;
+    reason: InvLotVarianceReason;
+    memo: string;
+  }>({ toUnitId: "", qty: "", pieces: "", reason: "re_measure", memo: "" });
+  const [rebalanceSaving, setRebalanceSaving] = useState(false);
+  const [lossTarget, setLossTarget] = useState<ItemRow | null>(null);
+  const [lossDraft, setLossDraft] = useState<{
+    qty: string;
+    pieces: string;
+    reason: InvLotVarianceReason;
+    memo: string;
+  }>({ qty: "", pieces: "0", reason: "dust", memo: "" });
+  const [lossSaving, setLossSaving] = useState(false);
+  /** Cache of latest lot balances keyed by purchase_lot_id (for the inline strip). */
+  const [lotBalances, setLotBalances] = useState<Record<string, InvLotBalanceDto>>({});
+  /** History tab inside the child-parcels drawer. */
+  const [parcelDrawerTab, setParcelDrawerTab] = useState<"children" | "history" | "lineage">("children");
+  const [drawerHistoryRows, setDrawerHistoryRows] = useState<InvStockMovementDto[]>([]);
+  const [drawerHistoryLoading, setDrawerHistoryLoading] = useState(false);
+  const [drawerHistoryError, setDrawerHistoryError] = useState<string | null>(null);
+  const [lineageData, setLineageData] = useState<InvLineageDto | null>(null);
+  const [lineageLoading, setLineageLoading] = useState(false);
+  const [lineageError, setLineageError] = useState<string | null>(null);
+  /** Phase 3: group catalog table rows under purchase lot headers. */
+  const [groupCatalogByLot, setGroupCatalogByLot] = useState(false);
+  /** Lot keys (UUID or `__none__`) whose section is collapsed when grouping is on. */
+  const [collapsedLotIds, setCollapsedLotIds] = useState<Set<string>>(() => new Set());
+  /** Phase 2: cut wizard */
+  const [cutWizardSource, setCutWizardSource] = useState<ItemRow | null>(null);
+  const [cutWizardTypes, setCutWizardTypes] = useState<InvItemTypeDto[]>([]);
+  const [cutCutTypeIdHub, setCutCutTypeIdHub] = useState("");
+  const [cutOutputRows, setCutOutputRows] = useState<
+    { id: string; display_name: string; primary_uom_qty: string; pieces: string; public_code: string }[]
+  >(() => [{ id: crypto.randomUUID(), display_name: "", primary_uom_qty: "", pieces: "1", public_code: "" }]);
+  const [cutLossReason, setCutLossReason] = useState<InvLotVarianceReason | "">("");
+  const [cutMemo, setCutMemo] = useState("");
+  const [cutSaving, setCutSaving] = useState(false);
   const [addTypeDraft, setAddTypeDraft] = useState<{
     label: string;
     uomTab: UomTab;
@@ -2112,11 +2221,23 @@ export function InventoryHub() {
   }, [splitRows]);
 
   const splitLiveError = useMemo(() => {
-    if (!splitSourceRow) return null;
+    if (!splitSourceRow || splitMode === "pieces") return null;
     if (splitTotals.uom > splitSourceRow.uom) return "Split UOM exceeds available source UOM.";
     if (splitTotals.pieces > splitSourceRow.pieces) return "Split pieces exceed available source pieces.";
     return null;
-  }, [splitSourceRow, splitTotals]);
+  }, [splitSourceRow, splitTotals, splitMode]);
+
+  const splitPiecesPreview = useMemo(() => {
+    if (!splitSourceRow || splitMode !== "pieces") return null;
+    const n = Number.parseInt(splitPiecesCount.trim(), 10);
+    const perU = Number(splitPerPieceUom);
+    if (!Number.isFinite(n) || n < 1 || !Number.isFinite(perU) || perU <= 0) return null;
+    return {
+      n,
+      remainingUom: Math.max(0, splitSourceRow.uom - n * perU),
+      remainingPieces: Math.max(0, splitSourceRow.pieces - n),
+    };
+  }, [splitSourceRow, splitMode, splitPiecesCount, splitPerPieceUom]);
 
   const auditVisibleStockRows = useMemo(
     () => inventoryStockRows.filter((r) => !auditClosedItemIds.has(r.id)),
@@ -2306,6 +2427,41 @@ export function InventoryHub() {
     itemKindFilterKeys,
   ]);
 
+  /** Flattened rows + optional lot group headers for the stock catalog table (Phase 3). */
+  const catalogTableEntries = useMemo(() => {
+    type Entry = { kind: "row"; r: ItemRow } | { kind: "lot_header"; lotKey: string; title: string; rowCount: number };
+    if (!groupCatalogByLot) {
+      return items.map((r) => ({ kind: "row" as const, r }));
+    }
+    const by = new Map<string, ItemRow[]>();
+    for (const r of items) {
+      const k = r.serverPurchaseLotId ?? "__none__";
+      const arr = by.get(k) ?? [];
+      arr.push(r);
+      by.set(k, arr);
+    }
+    const keys = Array.from(by.keys()).sort((a, b) => {
+      if (a === "__none__") return 1;
+      if (b === "__none__") return -1;
+      const ta = lotBalances[a]?.lot_code ?? a;
+      const tb = lotBalances[b]?.lot_code ?? b;
+      return ta.localeCompare(tb);
+    });
+    const out: Entry[] = [];
+    for (const k of keys) {
+      const groupRows = by.get(k) ?? [];
+      const title =
+        k === "__none__"
+          ? `No purchase lot (${groupRows.length})`
+          : `${lotBalances[k]?.lot_code ?? `Lot ${k.slice(0, 8)}…`} (${groupRows.length})`;
+      out.push({ kind: "lot_header", lotKey: k, title, rowCount: groupRows.length });
+      if (!collapsedLotIds.has(k)) {
+        for (const r of groupRows) out.push({ kind: "row", r });
+      }
+    }
+    return out;
+  }, [items, groupCatalogByLot, collapsedLotIds, lotBalances]);
+
   const formAmountPreview = useMemo(() => {
     if (itemForm.entryType === "service") {
       const rate = Number(itemForm.rate);
@@ -2360,7 +2516,11 @@ export function InventoryHub() {
     setEditingItemId(null);
     setItemForm(emptyItemForm());
     setItemFormBaselineKey(null);
-    setNewItemQrDataUrl(null);
+    setNewItemQrBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setNewItemQrUnitId(null);
   }, []);
 
   const requestCloseItemModal = useCallback(() => {
@@ -2379,7 +2539,11 @@ export function InventoryHub() {
     setEditingItemId(null);
     setDiscardConfirmOpen(false);
     setAddTypeModalOpen(false);
-    setNewItemQrDataUrl(null);
+    setNewItemQrBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setNewItemQrUnitId(null);
     setItemForm(initial);
     setItemFormBaselineKey(itemFormSnapshot(initial));
     setItemModalOpen(true);
@@ -2421,6 +2585,10 @@ export function InventoryHub() {
   }
 
   function openSplitParcel() {
+    setSplitMode("parcels");
+    setSplitPiecesCount("");
+    setSplitPerPieceUom("");
+    setSplitPerPieceRate("");
     setSplitSourceId("");
     setSplitRows([
       {
@@ -2437,6 +2605,10 @@ export function InventoryHub() {
 
   function openSplitParcelFromRow(r: ItemRow) {
     if (r.entryType !== "inventory") return;
+    setSplitMode("parcels");
+    setSplitPiecesCount("");
+    setSplitPerPieceUom("");
+    setSplitPerPieceRate("");
     setSplitSourceId(r.id);
     setSplitRows([
       {
@@ -2453,7 +2625,26 @@ export function InventoryHub() {
 
   function openParcelLinesDrawer(r: ItemRow) {
     if (r.entryType !== "inventory") return;
+    setParcelDrawerTab("children");
+    setDrawerHistoryRows([]);
+    setDrawerHistoryError(null);
+    setLineageData(null);
+    setLineageError(null);
     setParcelLinesParent(r);
+  }
+
+  function navigateLineageToStockUnit(unit: InvStockUnitDto) {
+    const row = inventoryStockRows.find((x) => (x.serverUnitId ?? x.id) === unit.id);
+    if (!row) {
+      pushToast("Yeh stock line abhi table mein nahi mili — filters ya refresh check karein.", "info");
+      return;
+    }
+    setDrawerHistoryRows([]);
+    setDrawerHistoryError(null);
+    setLineageData(null);
+    setLineageError(null);
+    setParcelDrawerTab("lineage");
+    setParcelLinesParent(row);
   }
 
   function appendParcelFromLineHub(lineId: string, itemName: string, linePieces: number) {
@@ -2522,6 +2713,555 @@ export function InventoryHub() {
     }
   }
 
+  // -------- Phase 1: lot mass-balance + receive modes ------------------
+
+  const refreshLotBalance = useCallback(
+    async (lotId: string | undefined | null) => {
+      if (!lotId || !getAccessToken()) return;
+      try {
+        const bal = await fetchLotBalance(lotId);
+        setLotBalances((prev) => ({ ...prev, [lotId]: bal }));
+      } catch {
+        // Non-fatal: balance strip just disappears for that lot.
+      }
+    },
+    [],
+  );
+
+  /** Mode A: split this lot line into N equal parcels. */
+  async function submitAutoSplitLine(lineId: string) {
+    if (!lotDetailHub) return;
+    if (!fromLotItemTypeIdHub) {
+      pushToast("Pick an inventory item type first.", "error");
+      return;
+    }
+    const draft = autoSplitDraft[lineId] ?? { n: "", basis: "equal_weight" };
+    const n = Number.parseInt(draft.n, 10);
+    if (!Number.isFinite(n) || n < 1) {
+      pushToast("Enter how many parcels to create (1 or more).", "error");
+      return;
+    }
+    setFromLotSavingHub(true);
+    try {
+      const created = await autoSplitLotLine(lotDetailHub.id, lineId, {
+        item_type_id: fromLotItemTypeIdHub,
+        n_parcels: n,
+        basis: draft.basis,
+        primary_uom_code: fromLotPrimaryUomCodeHub.trim() || "ct",
+        client_ref: `hub-auto-split-${lineId}-${Date.now()}`,
+      });
+      pushToast(`Auto-split created ${created.length} parcel(s).`, "success");
+      setAutoSplitDraft((prev) => ({ ...prev, [lineId]: { n: "", basis: draft.basis } }));
+      await refreshLotBalance(lotDetailHub.id);
+      if (inventoryCatalogSource === "server" || (invFlags && catalogShouldLoadFromServer(invFlags))) {
+        await refetchInventoryCatalog();
+      }
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Auto-split failed", "error");
+    } finally {
+      setFromLotSavingHub(false);
+    }
+  }
+
+  /** Mode B: persist user-typed parcels for the FIRST lot line referenced (mass-balance enforced). */
+  async function submitCustomSplitFromHub() {
+    if (!lotDetailHub) {
+      pushToast("Select a purchase lot and wait for it to load.", "error");
+      return;
+    }
+    if (!fromLotItemTypeIdHub) {
+      pushToast("Pick an inventory item type first.", "error");
+      return;
+    }
+    if (!fromLotParcelsHub.length) {
+      pushToast("Add at least one parcel row from a lot line.", "error");
+      return;
+    }
+    // Group parcels by purchase_lot_line_id, then submit one custom-split per line.
+    const byLine = new Map<string, typeof fromLotParcelsHub>();
+    for (const p of fromLotParcelsHub) {
+      const key = p.purchase_lot_line_id;
+      if (!key) continue;
+      const arr = byLine.get(key) ?? [];
+      arr.push(p);
+      byLine.set(key, arr);
+    }
+    if (!byLine.size) {
+      pushToast("Each parcel must be linked to a lot line.", "error");
+      return;
+    }
+    setFromLotSavingHub(true);
+    try {
+      let totalCreated = 0;
+      for (const [lineId, parcels] of byLine.entries()) {
+        const cleanParcels = parcels
+          .map((p) => ({
+            display_name: p.display_name.trim(),
+            public_code: p.public_code.trim(),
+            primary_uom_qty: p.primary_uom_qty.trim() || "0",
+            pieces: Number.parseInt(p.pieces, 10) || 0,
+          }))
+          .filter((p) => p.display_name);
+        if (!cleanParcels.length) continue;
+        const created = await customSplitLotLine(lotDetailHub.id, lineId, {
+          item_type_id: fromLotItemTypeIdHub,
+          parcels: cleanParcels,
+          primary_uom_code: fromLotPrimaryUomCodeHub.trim() || "ct",
+          variance_reason: customSplitVarianceReason || null,
+          variance_memo: customSplitVarianceMemo,
+          client_ref: `hub-custom-split-${lineId}-${Date.now()}`,
+        });
+        totalCreated += created.length;
+      }
+      pushToast(`Custom split created ${totalCreated} parcel(s).`, "success");
+      setFromLotOpen(false);
+      setSelectedLotCodeHub("");
+      setLotDetailHub(null);
+      setFromLotParcelsHub([]);
+      setCustomSplitVarianceReason("");
+      setCustomSplitVarianceMemo("");
+      await refreshLotBalance(lotDetailHub.id);
+      if (inventoryCatalogSource === "server" || (invFlags && catalogShouldLoadFromServer(invFlags))) {
+        await refetchInventoryCatalog();
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Custom split failed";
+      // 422 with code lot_split_variance_unexplained means user must pick a reason.
+      if (msg.toLowerCase().includes("variance")) {
+        pushToast("Sums do not equal the lot. Pick a variance reason and retry.", "error");
+      } else {
+        pushToast(msg, "error");
+      }
+    } finally {
+      setFromLotSavingHub(false);
+    }
+  }
+
+  /** Live mass-balance preview across all parcels currently typed in Mode B. */
+  const customSplitTotals = useMemo(() => {
+    let qtySum = 0;
+    let pcSum = 0;
+    for (const p of fromLotParcelsHub) {
+      const qty = Number(p.primary_uom_qty);
+      if (Number.isFinite(qty) && qty > 0) qtySum += qty;
+      const pc = Number.parseInt(p.pieces, 10);
+      if (Number.isFinite(pc) && pc > 0) pcSum += pc;
+    }
+    let lotQty = 0;
+    let lotPc = 0;
+    if (lotDetailHub) {
+      // Sum only the lot lines that have at least one typed parcel referencing them.
+      const referenced = new Set(fromLotParcelsHub.map((p) => p.purchase_lot_line_id).filter(Boolean));
+      for (const ln of lotDetailHub.lines) {
+        if (!referenced.has(ln.id)) continue;
+        lotQty += Number(ln.quantity) || 0;
+        lotPc += Number(ln.pieces) || 0;
+      }
+    }
+    const varianceQty = Math.round((lotQty - qtySum) * 10000) / 10000;
+    const variancePc = lotPc - pcSum;
+    return { qtySum, pcSum, lotQty, lotPc, varianceQty, variancePc };
+  }, [fromLotParcelsHub, lotDetailHub]);
+
+  // -------- Phase 1: row-level actions (adjust / rebalance / loss) -----
+
+  function openAdjustWeight(r: ItemRow) {
+    if (r.entryType !== "inventory") return;
+    if (r.isLocked) {
+      pushToast("This parcel is locked (sold/frozen) and cannot be adjusted.", "error");
+      return;
+    }
+    setAdjustWeightTarget(r);
+    setAdjustWeightDraft({
+      qty: String(r.uom),
+      pieces: String(r.pieces),
+      reason: "re_measure",
+      memo: "",
+    });
+  }
+
+  async function submitAdjustWeight() {
+    if (!adjustWeightTarget) return;
+    const unitId = adjustWeightTarget.serverUnitId ?? adjustWeightTarget.id;
+    if (!isServerUuid(unitId)) {
+      pushToast("Local-only row. Save to server first.", "error");
+      return;
+    }
+    const qty = Number(adjustWeightDraft.qty);
+    const pieces = Number.parseInt(adjustWeightDraft.pieces, 10);
+    if (!Number.isFinite(qty) || qty < 0) {
+      pushToast("Enter a valid weight.", "error");
+      return;
+    }
+    if (!Number.isFinite(pieces) || pieces < 0) {
+      pushToast("Enter a valid piece count.", "error");
+      return;
+    }
+    setAdjustWeightSaving(true);
+    try {
+      await adjustStockUnitWeight(unitId, {
+        primary_uom_qty: String(qty),
+        pieces,
+        reason: adjustWeightDraft.reason,
+        memo: adjustWeightDraft.memo,
+        expected_row_version: adjustWeightTarget.rowVersion ?? null,
+        client_ref: `hub-adjust-${unitId}-${Date.now()}`,
+      });
+      pushToast("Weight adjusted; reason logged.", "success");
+      setAdjustWeightTarget(null);
+      await refreshLotBalance(adjustWeightTarget.serverPurchaseLotId);
+      if (inventoryCatalogSource === "server" || (invFlags && catalogShouldLoadFromServer(invFlags))) {
+        await refetchInventoryCatalog();
+      }
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Adjust weight failed", "error");
+    } finally {
+      setAdjustWeightSaving(false);
+    }
+  }
+
+  function openRebalance(r: ItemRow) {
+    if (r.entryType !== "inventory") return;
+    if (r.isLocked) {
+      pushToast("This parcel is locked (sold/frozen) and cannot be adjusted.", "error");
+      return;
+    }
+    setRebalanceTarget(r);
+    setRebalanceDraft({ toUnitId: "", qty: "", pieces: "0", reason: "re_measure", memo: "" });
+  }
+
+  /** Sibling parcels (same lot) the user can rebalance INTO. */
+  const rebalanceSiblingOptions = useMemo(() => {
+    if (!rebalanceTarget) return [] as { id: string; label: string }[];
+    const lotId = rebalanceTarget.serverPurchaseLotId;
+    if (!lotId) return [];
+    return rows
+      .filter(
+        (r) =>
+          r.entryType === "inventory" &&
+          r.serverPurchaseLotId === lotId &&
+          (r.serverUnitId ?? r.id) !== (rebalanceTarget.serverUnitId ?? rebalanceTarget.id) &&
+          isServerUuid(r.serverUnitId ?? r.id) &&
+          !r.isLocked,
+      )
+      .map((r) => ({ id: r.serverUnitId ?? r.id, label: `${r.itemName} (${r.uom} ${rebalanceTarget?.itemNo ? "" : ""}${r.itemNo ? `, ${r.itemNo}` : ""})` }));
+  }, [rebalanceTarget, rows]);
+
+  async function submitRebalance() {
+    if (!rebalanceTarget) return;
+    const fromUnitId = rebalanceTarget.serverUnitId ?? rebalanceTarget.id;
+    if (!isServerUuid(fromUnitId)) {
+      pushToast("Local-only row. Save to server first.", "error");
+      return;
+    }
+    if (!rebalanceDraft.toUnitId) {
+      pushToast("Pick a sibling parcel to receive the moved weight.", "error");
+      return;
+    }
+    const qty = Number(rebalanceDraft.qty);
+    const pieces = Number.parseInt(rebalanceDraft.pieces, 10) || 0;
+    if ((!Number.isFinite(qty) || qty <= 0) && pieces <= 0) {
+      pushToast("Enter qty and/or pieces to move (must be > 0).", "error");
+      return;
+    }
+    setRebalanceSaving(true);
+    try {
+      await rebalanceStockUnits({
+        from_unit_id: fromUnitId,
+        to_unit_id: rebalanceDraft.toUnitId,
+        qty_delta: String(Math.max(0, qty || 0)),
+        pieces_delta: pieces,
+        reason: rebalanceDraft.reason,
+        memo: rebalanceDraft.memo,
+        client_ref: `hub-rebal-${fromUnitId}-${Date.now()}`,
+      });
+      pushToast("Weight moved between parcels; lot still balances.", "success");
+      setRebalanceTarget(null);
+      await refreshLotBalance(rebalanceTarget.serverPurchaseLotId);
+      if (inventoryCatalogSource === "server" || (invFlags && catalogShouldLoadFromServer(invFlags))) {
+        await refetchInventoryCatalog();
+      }
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Rebalance failed", "error");
+    } finally {
+      setRebalanceSaving(false);
+    }
+  }
+
+  function openRecordLoss(r: ItemRow) {
+    if (r.entryType !== "inventory") return;
+    if (r.isLocked) {
+      pushToast("This parcel is locked (sold/frozen) and cannot be adjusted.", "error");
+      return;
+    }
+    setLossTarget(r);
+    setLossDraft({ qty: "", pieces: "0", reason: "dust", memo: "" });
+  }
+
+  async function submitRecordLoss() {
+    if (!lossTarget) return;
+    const unitId = lossTarget.serverUnitId ?? lossTarget.id;
+    if (!isServerUuid(unitId)) {
+      pushToast("Local-only row. Save to server first.", "error");
+      return;
+    }
+    const qty = Number(lossDraft.qty);
+    const pieces = Number.parseInt(lossDraft.pieces, 10) || 0;
+    if ((!Number.isFinite(qty) || qty <= 0) && pieces <= 0) {
+      pushToast("Enter qty and/or pieces lost (must be > 0).", "error");
+      return;
+    }
+    setLossSaving(true);
+    try {
+      await recordStockLoss(unitId, {
+        qty: String(Math.max(0, qty || 0)),
+        pieces,
+        reason: lossDraft.reason,
+        memo: lossDraft.memo,
+        expected_row_version: lossTarget.rowVersion ?? null,
+        client_ref: `hub-loss-${unitId}-${Date.now()}`,
+      });
+      pushToast("Loss recorded; lot mass-balance updated.", "success");
+      setLossTarget(null);
+      await refreshLotBalance(lossTarget.serverPurchaseLotId);
+      if (inventoryCatalogSource === "server" || (invFlags && catalogShouldLoadFromServer(invFlags))) {
+        await refetchInventoryCatalog();
+      }
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Record loss failed", "error");
+    } finally {
+      setLossSaving(false);
+    }
+  }
+
+  async function toggleStockLock(r: ItemRow) {
+    const unitId = r.serverUnitId ?? r.id;
+    if (!isServerUuid(unitId)) {
+      pushToast("Local-only row. Save to server first.", "error");
+      return;
+    }
+    try {
+      if (r.isLocked) {
+        await unfreezeStockUnit(unitId);
+        pushToast("Stock unit unlocked.", "success");
+      } else {
+        await freezeStockUnit(unitId, { lock_reason: "Manually locked from inventory hub" });
+        pushToast("Stock unit locked. Adjustments are now refused.", "success");
+      }
+      if (inventoryCatalogSource === "server" || (invFlags && catalogShouldLoadFromServer(invFlags))) {
+        await refetchInventoryCatalog();
+      }
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Lock toggle failed", "error");
+    }
+  }
+
+  async function openRowStockLabelPdf(r: ItemRow) {
+    const uid = r.serverUnitId ?? r.id;
+    if (!isServerUuid(uid)) {
+      pushToast("Sirf server par save hui lines ke liye label / QR.", "info");
+      return;
+    }
+    try {
+      const blob = await fetchStockUnitLabelPdf(uid, "single");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Label PDF nahi khuli.", "error");
+    }
+  }
+
+  async function openCutWizard(r: ItemRow) {
+    if (r.entryType !== "inventory") return;
+    if (!getAccessToken()) {
+      pushToast("Sign in to cut on the server.", "error");
+      return;
+    }
+    if (!isServerUuid(r.serverUnitId ?? r.id)) {
+      pushToast("Local-only row. Save to the server first.", "error");
+      return;
+    }
+    if (r.isLocked) {
+      pushToast("This parcel is locked and cannot be cut.", "error");
+      return;
+    }
+    if (getInventoryTypeUiMode(r.itemKind, customInventoryTypes) !== "rough") {
+      pushToast("Only rough-style items can be sent to cutting.", "error");
+      return;
+    }
+    if (!(r.uom > 0)) {
+      pushToast("Nothing left to cut on this line (weight is zero).", "error");
+      return;
+    }
+    let types = cutWizardTypes;
+    if (!types.length) {
+      try {
+        types = await fetchItemTypes();
+        setCutWizardTypes(types);
+      } catch (e) {
+        pushToast(e instanceof Error ? e.message : "Could not load item types", "error");
+        return;
+      }
+    }
+    const cutId = types.find((t) => (t.code || "").toLowerCase() === "cut")?.id ?? "";
+    setCutCutTypeIdHub(cutId);
+    setCutWizardSource(r);
+    setCutOutputRows([
+      {
+        id: crypto.randomUUID(),
+        display_name: `${r.itemName || "Rough"} — Cut 1`.slice(0, 512),
+        primary_uom_qty: "",
+        pieces: "1",
+        public_code: "",
+      },
+    ]);
+    setCutLossReason("");
+    setCutMemo("");
+  }
+
+  async function submitCutWizard() {
+    if (!cutWizardSource) return;
+    const unitId = cutWizardSource.serverUnitId ?? cutWizardSource.id;
+    if (!cutCutTypeIdHub) {
+      pushToast("Pick the Cut inventory type.", "error");
+      return;
+    }
+    const outs = cutOutputRows
+      .map((row) => ({
+        display_name: row.display_name.trim(),
+        public_code: row.public_code.trim(),
+        primary_uom_qty: row.primary_uom_qty.trim(),
+        pieces: Number.parseInt(row.pieces, 10) || 0,
+      }))
+      .filter((o) => o.display_name && Number(o.primary_uom_qty) > 0);
+    if (!outs.length) {
+      pushToast("Add at least one cut line with a name and positive weight.", "error");
+      return;
+    }
+    const sumQty = outs.reduce((a, o) => a + Number(o.primary_uom_qty), 0);
+    const sumPc = outs.reduce((a, o) => a + o.pieces, 0);
+    const lossQty = cutWizardSource.uom - sumQty;
+    const lossPc = cutWizardSource.pieces - sumPc;
+    const needsReason = lossQty > 0.0001 || lossPc > 0;
+    if (needsReason && !cutLossReason) {
+      pushToast("Pick a loss reason — cutting removed weight or pieces vs the rough parcel.", "error");
+      return;
+    }
+    const lotIdForRefresh = cutWizardSource.serverPurchaseLotId ?? null;
+    setCutSaving(true);
+    try {
+      await cutStockUnit(unitId, {
+        cut_item_type_id: cutCutTypeIdHub,
+        outputs: outs.map((o) => ({
+          display_name: o.display_name,
+          primary_uom_qty: String(o.primary_uom_qty),
+          pieces: o.pieces,
+          ...(o.public_code ? { public_code: o.public_code } : {}),
+        })),
+        loss_reason: cutLossReason || null,
+        memo: cutMemo,
+        expected_source_row_version: cutWizardSource.rowVersion ?? null,
+        client_ref: `hub-cut-${unitId}-${Date.now()}`,
+      });
+      pushToast("Cut completed. Rough line is consumed; new cut lines were created.", "success");
+      setCutWizardSource(null);
+      if (lotIdForRefresh) void refreshLotBalance(lotIdForRefresh);
+      if (inventoryCatalogSource === "server" || (invFlags && catalogShouldLoadFromServer(invFlags))) {
+        await refetchInventoryCatalog();
+      }
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Cut failed", "error");
+    } finally {
+      setCutSaving(false);
+    }
+  }
+
+  // Refresh lot balance whenever a relevant lot is referenced in the catalog.
+  useEffect(() => {
+    if (!getAccessToken()) return;
+    const lotIds = new Set<string>();
+    for (const r of rows) {
+      if (r.serverPurchaseLotId) lotIds.add(r.serverPurchaseLotId);
+    }
+    for (const lotId of lotIds) {
+      if (!lotBalances[lotId]) void refreshLotBalance(lotId);
+    }
+    // Intentional: only re-run when the rows array identity changes; balances cache is updated in-place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
+  // History tab inside the parcel-lines drawer: lazy-load on tab switch.
+  useEffect(() => {
+    if (!parcelLinesParent || parcelDrawerTab !== "history") return;
+    const unitId = parcelLinesParent.serverUnitId ?? parcelLinesParent.id;
+    if (!isServerUuid(unitId)) {
+      setDrawerHistoryRows([]);
+      setDrawerHistoryError("Local-only row. Save to server to see history.");
+      return;
+    }
+    setDrawerHistoryLoading(true);
+    setDrawerHistoryError(null);
+    fetchStockUnitMovements(unitId, 100)
+      .then((mvs) => setDrawerHistoryRows(mvs))
+      .catch((err) => setDrawerHistoryError(err instanceof Error ? err.message : "Could not load history"))
+      .finally(() => setDrawerHistoryLoading(false));
+  }, [parcelLinesParent, parcelDrawerTab]);
+
+  // Lineage tab (Phase 3): lazy-load family tree.
+  useEffect(() => {
+    if (!parcelLinesParent || parcelDrawerTab !== "lineage") return;
+    const unitId = parcelLinesParent.serverUnitId ?? parcelLinesParent.id;
+    if (!isServerUuid(unitId)) {
+      setLineageData(null);
+      setLineageError("Local-only row. Save to server to see lineage.");
+      return;
+    }
+    setLineageLoading(true);
+    setLineageError(null);
+    setLineageData(null);
+    fetchStockUnitLineage(unitId)
+      .then((d) => setLineageData(d))
+      .catch((err) => setLineageError(err instanceof Error ? err.message : "Could not load lineage"))
+      .finally(() => setLineageLoading(false));
+  }, [parcelLinesParent, parcelDrawerTab]);
+
+  useEffect(() => {
+    if (!newItemQrUnitId || !getAccessToken()) {
+      setNewItemQrBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      return;
+    }
+    let cancelled = false;
+    void fetchStockUnitQrPng(newItemQrUnitId, 256)
+      .then((blob) => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setNewItemQrBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) pushToast("QR image server se load nahi hui.", "error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [newItemQrUnitId, pushToast]);
+
+  // Reset lazy drawer payloads when the parent row changes (tab is set by open handlers).
+  useEffect(() => {
+    if (parcelLinesParent) {
+      setDrawerHistoryRows([]);
+      setDrawerHistoryError(null);
+      setLineageData(null);
+      setLineageError(null);
+    }
+  }, [parcelLinesParent]);
+
   function addSplitRow() {
     setSplitError(null);
     setSplitRows((prev) => [
@@ -2548,6 +3288,22 @@ export function InventoryHub() {
 
   function splitValidationMessage(): string | null {
     if (!splitSourceRow) return "Select a parcel / lot to split.";
+
+    if (splitMode === "pieces") {
+      const n = Number.parseInt(splitPiecesCount.trim(), 10);
+      if (!Number.isFinite(n) || n < 1) return "Enter how many pieces to break out (whole number, at least 1).";
+      if (n > splitSourceRow.pieces) return `You can break out at most ${splitSourceRow.pieces} piece(s) on this line.`;
+      const perU = Number(splitPerPieceUom);
+      if (!Number.isFinite(perU) || perU <= 0) return "Enter a positive weight (UOM) for each new piece row.";
+      const totalOut = n * perU;
+      if (totalOut - splitSourceRow.uom > 1e-6) return "Pieces × per-piece weight cannot exceed parent UOM.";
+      if (splitPerPieceRate.trim() !== "") {
+        const rate = Number(splitPerPieceRate);
+        if (!Number.isFinite(rate) || rate < 0) return "Invalid per-piece rate.";
+      }
+      return null;
+    }
+
     if (!splitRows.length) return "Add at least one split row.";
 
     let hasSplitValue = false;
@@ -2594,7 +3350,57 @@ export function InventoryHub() {
     const apiWrite = Boolean(getAccessToken() && invFlags && inventoryWritesAllowed(invFlags));
     const apiSplit = apiWrite && inventorySplitAllowed(invFlags) && isServerUuid(splitSourceRow.id);
 
-    if (apiSplit) {
+    if (splitMode === "pieces" && apiSplit) {
+      setSplitBusy(true);
+      setSplitError(null);
+      try {
+        const n = Number.parseInt(splitPiecesCount.trim(), 10);
+        const perU = Number(splitPerPieceUom);
+        const rateRaw = splitPerPieceRate.trim() === "" ? splitSourceRow.rate : Number(splitPerPieceRate);
+        const parsedRate = Number.isFinite(rateRaw) && rateRaw >= 0 ? rateRaw : splitSourceRow.rate;
+        const parent = splitSourceRow;
+        const children = Array.from({ length: n }, (_, i) => {
+          const display_name = `${parent.itemName} #${i + 1}`.slice(0, 512);
+          const slug = parent.itemName.trim().replace(/[^\w.-]+/g, "_").slice(0, 40) || "piece";
+          return {
+            display_name,
+            public_code: `${slug}-pc${i + 1}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`.slice(0, 80),
+            primary_uom_qty: String(perU),
+            pieces: 1,
+            cost_basis_total: String(Math.max(0, parsedRate * perU)),
+          };
+        });
+        const created = await splitStockUnits({
+          source_unit_id: parent.id,
+          children,
+          client_ref: `hub-split-pieces-${Date.now()}`,
+          expected_source_row_version: parent.rowVersion ?? 1,
+        });
+        await refetchInventoryCatalog();
+        setSplitParcelOpen(false);
+        setSplitError(null);
+        pushToast(`Pieces split saved (${created.length} new line(s)). Opening label sheet…`, "success");
+        try {
+          const blob = await fetchStockUnitLabelsBatchPdf({
+            stock_unit_ids: created.map((c) => c.id),
+            layout: "3x6",
+          });
+          const url = URL.createObjectURL(blob);
+          window.open(url, "_blank", "noopener,noreferrer");
+          window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+        } catch {
+          pushToast("Label PDF nahi khuli — split save ho chuka hai.", "info");
+        }
+      } catch (err) {
+        setSplitError(err instanceof Error ? err.message : "Split failed");
+        pushToast(err instanceof Error ? err.message : "Split failed", "error");
+      } finally {
+        setSplitBusy(false);
+      }
+      return;
+    }
+
+    if (splitMode === "parcels" && apiSplit) {
       setSplitBusy(true);
       setSplitError(null);
       try {
@@ -2641,6 +3447,55 @@ export function InventoryHub() {
       }
       return;
     }
+    if (splitMode === "pieces") {
+      const nowPieces = Date.now();
+      const n = Number.parseInt(splitPiecesCount.trim(), 10);
+      const perU = Number(splitPerPieceUom);
+      const rateRaw = splitPerPieceRate.trim() === "" ? splitSourceRow.rate : Number(splitPerPieceRate);
+      const parsedRate = Number.isFinite(rateRaw) && rateRaw >= 0 ? rateRaw : splitSourceRow.rate;
+      const parent = splitSourceRow;
+      const existingNos = new Set(rows.map((r) => r.itemNo.trim()).filter((s) => s !== ""));
+      const sourceBaseNo = parent.itemNo.trim() || `LOT-${nowPieces}`;
+      let splitSeq = 1;
+      const nextItemNo = () => {
+        while (existingNos.has(`${sourceBaseNo}-P${splitSeq}`)) splitSeq += 1;
+        const next = `${sourceBaseNo}-P${splitSeq}`;
+        existingNos.add(next);
+        splitSeq += 1;
+        return next;
+      };
+      const newRows: ItemRow[] = Array.from({ length: n }, (_, i) => ({
+        ...parent,
+        id: `split-${nowPieces}-pc-${i}-${Math.random().toString(36).slice(2, 8)}`,
+        itemNo: nextItemNo(),
+        itemName: `${parent.itemName} #${i + 1}`.slice(0, 512),
+        uom: perU,
+        pieces: 1,
+        rate: parsedRate,
+        details: `Pieces split from ${parent.itemNo || parent.itemName}${parent.details ? ` | ${parent.details}` : ""}`,
+      } satisfies ItemRow));
+      const remainingUom = Math.max(0, parent.uom - n * perU);
+      const remainingPieces = Math.max(0, parent.pieces - n);
+      const sourceMarked = remainingUom === 0 && remainingPieces === 0 ? "Consumed by split" : "Split";
+      setRows((prev) => [
+        ...newRows,
+        ...prev.map((r) =>
+          r.id !== parent.id
+            ? r
+            : {
+                ...r,
+                uom: remainingUom,
+                pieces: remainingPieces,
+                details: `${sourceMarked}: ${newRows.length} piece row(s).${r.details ? ` | ${r.details}` : ""}`,
+              },
+        ),
+      ]);
+      setSplitParcelOpen(false);
+      setSplitError(null);
+      pushToast(`Local pieces split: ${newRows.length} new line(s).`, "success");
+      return;
+    }
+
     const now = Date.now();
     const existingNos = new Set(rows.map((r) => r.itemNo.trim()).filter((s) => s !== ""));
     const sourceBaseNo = splitSourceRow.itemNo.trim() || `LOT-${now}`;
@@ -2739,7 +3594,11 @@ export function InventoryHub() {
     setEditingItemId(row.id);
     setDiscardConfirmOpen(false);
     setAddTypeModalOpen(false);
-    setNewItemQrDataUrl(null);
+    setNewItemQrBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setNewItemQrUnitId(null);
     setItemForm(next);
     setItemFormBaselineKey(itemFormSnapshot(next));
     setItemModalOpen(true);
@@ -3068,9 +3927,12 @@ export function InventoryHub() {
             locationEnabled: rLoc.enabled,
             custodianEnabled: rCust.enabled,
           });
+          await refetchInventoryCatalog();
+          forceCloseItemModal();
+          pushToast("Item updated on the server.", "success");
         } else if (!editingItemId) {
           const types = await fetchItemTypes();
-          await createStockFromItemForm({
+          const created = await createStockFromItemForm({
             types,
             form: itemForm,
             effUom,
@@ -3080,14 +3942,14 @@ export function InventoryHub() {
             locationEnabled: rLoc.enabled,
             custodianEnabled: rCust.enabled,
           });
+          await refetchInventoryCatalog();
+          setNewItemQrUnitId(created.id);
+          pushToast("Item created on the server — QR / label niche.", "success");
         } else {
           pushToast("This line is not on the server yet. Refresh after enabling server inventory, or delete the local row.", "error");
           setInventorySaving(false);
           return;
         }
-        await refetchInventoryCatalog();
-        forceCloseItemModal();
-        pushToast(wasEdit ? "Item updated on the server." : "Item created on the server.", "success");
       } catch (err) {
         pushToast(err instanceof Error ? err.message : "Inventory save failed", "error");
       } finally {
@@ -3102,19 +3964,39 @@ export function InventoryHub() {
       return;
     }
     setRows((prev) => [rowPayload, ...prev]);
-    setNewItemQrDataUrl(DUMMY_NEW_ITEM_QR_DATA_URL);
     setItemFormBaselineKey(itemFormSnapshot(itemForm));
   }
 
-  const downloadNewItemQr = useCallback(() => {
-    if (!newItemQrDataUrl) return;
-    const safeNo = itemForm.itemNo.trim().replace(/[^\w.-]+/g, "_") || "item";
-    const a = document.createElement("a");
-    a.href = newItemQrDataUrl;
-    a.download = `${safeNo}-qr.png`;
-    a.rel = "noopener";
-    a.click();
-  }, [newItemQrDataUrl, itemForm.itemNo]);
+  const downloadNewItemQr = useCallback(async () => {
+    const uid = newItemQrUnitId;
+    if (!uid) return;
+    try {
+      const blob = await fetchStockUnitQrPng(uid, 256);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const safeNo = itemForm.itemNo.trim().replace(/[^\w.-]+/g, "_") || "item";
+      a.href = url;
+      a.download = `${safeNo}-qr.png`;
+      a.rel = "noopener";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      pushToast("QR download failed.", "error");
+    }
+  }, [newItemQrUnitId, itemForm.itemNo, pushToast]);
+
+  const printNewItemLabelPdf = useCallback(async () => {
+    const uid = newItemQrUnitId;
+    if (!uid) return;
+    try {
+      const blob = await fetchStockUnitLabelPdf(uid, "single");
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Label PDF failed", "error");
+    }
+  }, [newItemQrUnitId, pushToast]);
 
   const commitAudit = useCallback(
     async (mode: "now" | "close") => {
@@ -3308,7 +4190,9 @@ export function InventoryHub() {
                 {itemCatalogScope === "stock" ? (
                   <p className="mt-2 text-xs text-[var(--gs-muted)]">
                     Click a stock row (outside Actions) to open{" "}
-                    <span className="font-semibold text-[var(--gs-text)]">child parcels & splits</span> linked to that line.
+                    <span className="font-semibold text-[var(--gs-text)]">child parcels & splits</span>. To break a
+                    parcel into smaller bags or individual pieces, use that row&apos;s{" "}
+                    <span className="font-semibold text-[var(--gs-text)]">Actions → Split parcel</span>.
                   </p>
                 ) : null}
               </div>
@@ -3345,35 +4229,69 @@ export function InventoryHub() {
                   onImportFiles={handleImportFiles}
                 />
                 {itemCatalogScope === "stock" ? (
-                  <>
+                  <div className="relative">
                     <button
                       type="button"
-                      onClick={openSplitParcel}
-                      className="inline-flex items-center gap-1 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
+                      onClick={() => setAddStockMenuOpen((o) => !o)}
+                      className="inline-flex items-center gap-1 rounded-full bg-[var(--gs-accent)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
+                      aria-expanded={addStockMenuOpen}
+                      aria-haspopup="menu"
                     >
-                      <Table className="h-3.5 w-3.5 text-[var(--gs-muted)]" strokeWidth={2} aria-hidden />
-                      Split Parcel
+                      <Plus className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+                      Add stock
+                      <ChevronDown className="h-3.5 w-3.5 opacity-90" strokeWidth={2} aria-hidden />
                     </button>
-                    {getAccessToken() && invFlags && inventoryWritesAllowed(invFlags) ? (
-                      <button
-                        type="button"
-                        onClick={() => setFromLotOpen(true)}
-                        className="inline-flex items-center gap-1 rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
-                      >
-                        <Package className="h-3.5 w-3.5 text-[var(--gs-muted)]" strokeWidth={2} aria-hidden />
-                        Receive from lot
-                      </button>
+                    {addStockMenuOpen ? (
+                      <>
+                        <button
+                          type="button"
+                          className="fixed inset-0 z-[105] cursor-default bg-transparent"
+                          aria-label="Close add stock menu"
+                          onClick={() => setAddStockMenuOpen(false)}
+                        />
+                        <div
+                          role="menu"
+                          className="absolute right-0 top-full z-[106] mt-1 min-w-[15rem] overflow-hidden rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-xl"
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="block w-full px-3 py-2 text-left text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+                            onClick={() => {
+                              setAddStockMenuOpen(false);
+                              openNewItemModal();
+                            }}
+                          >
+                            Type it in manually
+                          </button>
+                          {getAccessToken() && invFlags && inventoryWritesAllowed(invFlags) ? (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="block w-full px-3 py-2 text-left text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+                              onClick={() => {
+                                setAddStockMenuOpen(false);
+                                setFromLotOpen(true);
+                              }}
+                            >
+                              Receive from purchase lot
+                            </button>
+                          ) : null}
+                        </div>
+                      </>
                     ) : null}
-                  </>
+                  </div>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={openNewItemModal}
-                  className="inline-flex items-center gap-1 rounded-full bg-[var(--gs-accent)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
-                >
-                  <Plus className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
-                  {itemCatalogScope === "services" ? "New service" : "New item"}
-                </button>
+                {itemCatalogScope === "services" ? (
+                  <button
+                    type="button"
+                    onClick={openNewItemModal}
+                    className="inline-flex items-center gap-1 rounded-full bg-[var(--gs-accent)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)]"
+                  >
+                    <Plus className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+                    New service
+                  </button>
+                ) : null}
               </div>
             </div>
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
@@ -3385,6 +4303,17 @@ export function InventoryHub() {
                   selectedKeys={itemKindFilterKeys}
                   onChange={setItemKindFilterKeys}
                 />
+              ) : null}
+              {itemCatalogScope === "stock" ? (
+                <label className="inline-flex cursor-pointer select-none items-center gap-2 self-center rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-2 text-xs font-semibold text-[var(--gs-text)] shadow-sm">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-[var(--gs-border)]"
+                    checked={groupCatalogByLot}
+                    onChange={(e) => setGroupCatalogByLot(e.target.checked)}
+                  />
+                  Group by purchase lot
+                </label>
               ) : null}
               <input
                 value={itemSearch}
@@ -3574,7 +4503,36 @@ export function InventoryHub() {
                 </tr>
               </thead>
               <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)] overflow-visible">
-                {items.map((r) => {
+                {catalogTableEntries.map((entry) => {
+                  if (entry.kind === "lot_header") {
+                    const isCollapsed = collapsedLotIds.has(entry.lotKey);
+                    return (
+                      <tr key={`lot-h-${entry.lotKey}`} className="bg-[var(--gs-hover)]/80">
+                        <td colSpan={12} className="px-2 py-1.5">
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-card)]"
+                            onClick={() =>
+                              setCollapsedLotIds((prev) => {
+                                const n = new Set(prev);
+                                if (n.has(entry.lotKey)) n.delete(entry.lotKey);
+                                else n.add(entry.lotKey);
+                                return n;
+                              })
+                            }
+                          >
+                            <ChevronRight
+                              className={cn("h-4 w-4 shrink-0 text-[var(--gs-muted)] transition-transform", !isCollapsed && "rotate-90")}
+                              strokeWidth={2}
+                              aria-hidden
+                            />
+                            {entry.title}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  const r = entry.r;
                   const amt = lineAmount(r, customInventoryTypes);
                   const specText = formatSpecCell(r, customInventoryTypes);
                   return (
@@ -3605,9 +4563,32 @@ export function InventoryHub() {
                       </td>
                       <td
                         className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle font-medium text-[var(--gs-text)]"
-                        title={r.itemName}
+                        title={r.lockReason ? `${r.itemName} (locked: ${r.lockReason})` : r.itemName}
                       >
-                        {r.itemName}
+                        <span className="inline-flex items-center gap-1.5">
+                          {r.itemName}
+                          {r.isLocked ? (
+                            <span
+                              className="inline-flex items-center rounded-full border border-amber-400/50 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300"
+                              title={r.lockReason || "Locked"}
+                            >
+                              Locked
+                            </span>
+                          ) : null}
+                          {r.serverPurchaseLotId && lotBalances[r.serverPurchaseLotId] ? (
+                            <span
+                              className={cn(
+                                "inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                                lotBalances[r.serverPurchaseLotId].balanced
+                                  ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                  : "border-amber-400/50 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                              )}
+                              title={`Lot ${lotBalances[r.serverPurchaseLotId].lot_code}: ${lotBalances[r.serverPurchaseLotId].lot_total_qty} = ${lotBalances[r.serverPurchaseLotId].current_parcels_qty} + ${lotBalances[r.serverPurchaseLotId].recorded_loss_qty} loss`}
+                            >
+                              {lotBalances[r.serverPurchaseLotId].balanced ? "Lot ✓" : `Δ ${lotBalances[r.serverPurchaseLotId].variance_qty}`}
+                            </span>
+                          ) : null}
+                        </span>
                       </td>
                       <td
                         className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle text-[var(--gs-muted)]"
@@ -3654,17 +4635,54 @@ export function InventoryHub() {
                           <ItemRowActionMenu
                             onEdit={() => openEditItemModal(r)}
                             onDelete={() => void deleteItem(r.id)}
-                            extraItems={[
-                              {
-                                label: "Child parcels / splits…",
-                                onSelect: () => openParcelLinesDrawer(r),
-                              },
-                              {
-                                label: "Split parcel…",
-                                icon: "split",
-                                onSelect: () => openSplitParcelFromRow(r),
-                              },
-                            ]}
+                            extraItems={(() => {
+                              const items: { label: string; onSelect: () => void; danger?: boolean; icon?: "split" }[] = [
+                                {
+                                  label: "Child parcels / splits…",
+                                  onSelect: () => openParcelLinesDrawer(r),
+                                },
+                              ];
+                              if (!r.isLocked) {
+                                items.push(
+                                  {
+                                    label: "Split parcel…",
+                                    icon: "split",
+                                    onSelect: () => openSplitParcelFromRow(r),
+                                  },
+                                  {
+                                    label: "Adjust weight…",
+                                    onSelect: () => openAdjustWeight(r),
+                                  },
+                                  {
+                                    label: "Rebalance with sibling…",
+                                    onSelect: () => openRebalance(r),
+                                  },
+                                  {
+                                    label: "Record loss / dust…",
+                                    onSelect: () => openRecordLoss(r),
+                                  },
+                                );
+                                if (getInventoryTypeUiMode(r.itemKind, customInventoryTypes) === "rough") {
+                                  items.push({
+                                    label: "Cut to faceted…",
+                                    onSelect: () => void openCutWizard(r),
+                                  });
+                                }
+                              }
+                              if (r.entryType === "inventory" && isServerUuid(r.serverUnitId ?? r.id)) {
+                                items.push({
+                                  label: "QR / print label (PDF)",
+                                  onSelect: () => void openRowStockLabelPdf(r),
+                                });
+                              }
+                              if (r.entryType === "inventory" && isServerUuid(r.serverUnitId ?? r.id)) {
+                                items.push({
+                                  label: r.isLocked ? "Unlock parcel" : "Lock (mark as sold)",
+                                  onSelect: () => void toggleStockLock(r),
+                                });
+                              }
+                              return items;
+                            })()}
                           />
                         </div>
                       </td>
@@ -3715,39 +4733,231 @@ export function InventoryHub() {
                 This line is itself a split child of another stock unit (parent link is set on the server).
               </p>
             ) : null}
+
+            {/* Phase 1: tabs (Children vs History audit trail) */}
+            <div className="border-b border-[var(--gs-border)] px-4">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setParcelDrawerTab("children")}
+                  className={cn(
+                    "border-b-2 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition",
+                    parcelDrawerTab === "children"
+                      ? "border-[var(--gs-accent)] text-[var(--gs-accent)]"
+                      : "border-transparent text-[var(--gs-muted)] hover:text-[var(--gs-text)]",
+                  )}
+                >
+                  Children
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setParcelDrawerTab("history")}
+                  className={cn(
+                    "border-b-2 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition",
+                    parcelDrawerTab === "history"
+                      ? "border-[var(--gs-accent)] text-[var(--gs-accent)]"
+                      : "border-transparent text-[var(--gs-muted)] hover:text-[var(--gs-text)]",
+                  )}
+                >
+                  History / Audit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setParcelDrawerTab("lineage")}
+                  className={cn(
+                    "border-b-2 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition",
+                    parcelDrawerTab === "lineage"
+                      ? "border-[var(--gs-accent)] text-[var(--gs-accent)]"
+                      : "border-transparent text-[var(--gs-muted)] hover:text-[var(--gs-text)]",
+                  )}
+                >
+                  Lineage
+                </button>
+              </div>
+            </div>
+
             <div className="p-4">
-              {parcelChildRows.length === 0 ? (
-                <p className="text-sm text-[var(--gs-muted)]">
-                  No child lines reference this unit yet. Use <span className="font-semibold text-[var(--gs-text)]">Split parcel</span>{" "}
-                  to create parcels that appear here.
-                </p>
-              ) : (
-                <div className="overflow-x-auto rounded-xl border border-[var(--gs-border)]">
-                  <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
-                    <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
-                      <tr>
-                        <th className="px-3 py-2">Item #</th>
-                        <th className="px-3 py-2">Name</th>
-                        <th className="px-3 py-2 text-right">UOM</th>
-                        <th className="px-3 py-2 text-right">Pieces</th>
-                        <th className="px-3 py-2">Location</th>
-                      </tr>
-                    </thead>
-                    <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
-                      {parcelChildRows.map((c) => (
-                        <tr key={c.id} className="hover:bg-[var(--gs-hover)]/80">
-                          <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-[var(--gs-text)]">{c.itemNo}</td>
-                          <td className="max-w-[14rem] px-3 py-2 font-medium text-[var(--gs-text)]">{c.itemName}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
-                            {c.uom.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-muted)]">{c.pieces}</td>
-                          <td className="px-3 py-2 text-xs text-[var(--gs-muted)]">{c.location || "—"}</td>
+              {parcelDrawerTab === "children" ? (
+                parcelChildRows.length === 0 ? (
+                  <p className="text-sm text-[var(--gs-muted)]">
+                    No child lines reference this unit yet. Use <span className="font-semibold text-[var(--gs-text)]">Split parcel</span>{" "}
+                    to create parcels that appear here.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-[var(--gs-border)]">
+                    <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
+                      <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                        <tr>
+                          <th className="px-3 py-2">Item #</th>
+                          <th className="px-3 py-2">Name</th>
+                          <th className="px-3 py-2 text-right">UOM</th>
+                          <th className="px-3 py-2 text-right">Pieces</th>
+                          <th className="px-3 py-2">Location</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                        {parcelChildRows.map((c) => (
+                          <tr key={c.id} className="hover:bg-[var(--gs-hover)]/80">
+                            <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-[var(--gs-text)]">{c.itemNo}</td>
+                            <td className="max-w-[14rem] px-3 py-2 font-medium text-[var(--gs-text)]">
+                              {c.itemName}
+                              {c.isLocked ? (
+                                <span className="ml-1 inline-flex items-center rounded-full border border-amber-400/50 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                                  Locked
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
+                              {c.uom.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-muted)]">{c.pieces}</td>
+                            <td className="px-3 py-2 text-xs text-[var(--gs-muted)]">{c.location || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              ) : parcelDrawerTab === "history" ? (
+                <>
+                  {drawerHistoryLoading ? (
+                    <p className="text-sm text-[var(--gs-muted)]">Loading history…</p>
+                  ) : drawerHistoryError ? (
+                    <p className="text-sm text-red-600">{drawerHistoryError}</p>
+                  ) : drawerHistoryRows.length === 0 ? (
+                    <p className="text-sm text-[var(--gs-muted)]">No movements yet for this stock unit.</p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-[var(--gs-border)]">
+                      <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
+                        <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                          <tr>
+                            <th className="px-3 py-2">When</th>
+                            <th className="px-3 py-2">Type</th>
+                            <th className="px-3 py-2 text-right">Δ Qty</th>
+                            <th className="px-3 py-2 text-right">Δ Pcs</th>
+                            <th className="px-3 py-2">Reason / memo</th>
+                          </tr>
+                        </thead>
+                        <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                          {drawerHistoryRows.map((m) => {
+                            const reason =
+                              m.extra_metadata && typeof m.extra_metadata === "object" && "reason" in m.extra_metadata
+                                ? String((m.extra_metadata as { reason?: unknown }).reason ?? "")
+                                : "";
+                            return (
+                              <tr key={m.id} className="hover:bg-[var(--gs-hover)]/80">
+                                <td className="whitespace-nowrap px-3 py-2 text-xs text-[var(--gs-muted)]">
+                                  {m.occurred_at.replace("T", " ").slice(0, 19)}
+                                </td>
+                                <td className="px-3 py-2 text-xs font-semibold text-[var(--gs-text)]">{m.movement_type}</td>
+                                <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-text)]">
+                                  {m.qty_delta_primary_uom}
+                                </td>
+                                <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-muted)]">{m.pieces_delta}</td>
+                                <td className="px-3 py-2 text-xs text-[var(--gs-muted)]">
+                                  {reason ? (
+                                    <span className="mr-1 inline-flex items-center rounded-full border border-[var(--gs-border)] bg-[var(--gs-hover)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--gs-text)]">
+                                      {reason}
+                                    </span>
+                                  ) : null}
+                                  {m.memo}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {lineageLoading ? (
+                    <p className="text-sm text-[var(--gs-muted)]">Loading lineage…</p>
+                  ) : lineageError ? (
+                    <p className="text-sm text-red-600">{lineageError}</p>
+                  ) : !lineageData ? (
+                    <p className="text-sm text-[var(--gs-muted)]">No lineage data.</p>
+                  ) : (
+                    <div className="space-y-3 text-sm">
+                      <p className="text-[11px] text-[var(--gs-muted)]">
+                        Row dabao — woh unit is drawer mein khul jayegi (Lineage tab yahi rehta hai).
+                      </p>
+                      {(() => {
+                        const d = lineageData;
+                        const byId = lineageIdMap(d);
+                        const focalId = d.unit.id;
+                        const ancLen = d.ancestors.length;
+                        const rowBtn =
+                          "flex w-full rounded-lg border border-transparent px-2 py-1.5 text-left text-[var(--gs-text)] transition hover:border-[var(--gs-border)] hover:bg-[var(--gs-hover)]/90";
+                        return (
+                          <div className="space-y-1 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/30 p-2">
+                            <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                              Family tree
+                            </div>
+                            <div className="space-y-0.5">
+                              {d.ancestors.map((a, i) => (
+                                <button
+                                  key={a.id}
+                                  type="button"
+                                  className={rowBtn}
+                                  style={{ paddingLeft: 8 + i * LINEAGE_TREE_STEP_PX }}
+                                  onClick={() => navigateLineageToStockUnit(a)}
+                                >
+                                  <span className="font-mono text-[10px] text-[var(--gs-muted)]">{a.public_code}</span>{" "}
+                                  <span className="font-medium">{a.display_name}</span>{" "}
+                                  <span className="text-[var(--gs-muted)]">· {a.item_type_label}</span>
+                                </button>
+                              ))}
+                              <div
+                                className="rounded-md border border-[var(--gs-accent)]/50 bg-[var(--gs-card)]/90 px-2 py-1.5"
+                                style={{ marginLeft: 8 + ancLen * LINEAGE_TREE_STEP_PX }}
+                              >
+                                <span className="text-[10px] font-bold uppercase text-[var(--gs-accent)]">Current</span>
+                                <div className="mt-0.5 font-mono text-[10px] text-[var(--gs-text)]">{d.unit.public_code}</div>
+                                <div className="text-xs font-medium text-[var(--gs-text)]">{d.unit.display_name}</div>
+                                <div className="text-[10px] text-[var(--gs-muted)]">{d.unit.item_type_label}</div>
+                              </div>
+                              {d.children.length === 0 ? (
+                                <p className="pl-2 text-xs text-[var(--gs-muted)]">No direct children.</p>
+                              ) : null}
+                              {d.children.map((c) => (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  className={rowBtn}
+                                  style={{ paddingLeft: 8 + (ancLen + 1) * LINEAGE_TREE_STEP_PX }}
+                                  onClick={() => navigateLineageToStockUnit(c)}
+                                >
+                                  <span className="font-mono text-[10px] text-[var(--gs-muted)]">{c.public_code}</span>{" "}
+                                  <span className="font-medium">{c.display_name}</span>{" "}
+                                  <span className="text-[var(--gs-muted)]">· {c.item_type_label}</span>
+                                </button>
+                              ))}
+                              {d.descendants.map((x) => {
+                                const steps = stepsDownToFocal(x.id, focalId, byId);
+                                const pl = 8 + (ancLen + steps) * LINEAGE_TREE_STEP_PX;
+                                return (
+                                  <button
+                                    key={x.id}
+                                    type="button"
+                                    className={rowBtn}
+                                    style={{ paddingLeft: pl }}
+                                    onClick={() => navigateLineageToStockUnit(x)}
+                                  >
+                                    <span className="font-mono text-[10px] text-[var(--gs-muted)]">{x.public_code}</span>{" "}
+                                    <span className="font-medium">{x.display_name}</span>{" "}
+                                    <span className="text-[var(--gs-muted)]">· {x.item_type_label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -3812,7 +5022,110 @@ export function InventoryHub() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-[var(--gs-border)]">
+              <div className="flex flex-wrap gap-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/40 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSplitError(null);
+                    setSplitMode("parcels");
+                  }}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                    splitMode === "parcels"
+                      ? "bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm"
+                      : "text-[var(--gs-muted)] hover:text-[var(--gs-text)]",
+                  )}
+                >
+                  Split into smaller parcels
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSplitError(null);
+                    setSplitMode("pieces");
+                    if (splitSourceRow) {
+                      const pcs = splitSourceRow.pieces;
+                      const defU = pcs > 0 ? splitSourceRow.uom / pcs : splitSourceRow.uom;
+                      setSplitPiecesCount("1");
+                      setSplitPerPieceUom(String(defU));
+                      setSplitPerPieceRate(String(splitSourceRow.rate));
+                    }
+                  }}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                    splitMode === "pieces"
+                      ? "bg-[var(--gs-card)] text-[var(--gs-text)] shadow-sm"
+                      : "text-[var(--gs-muted)] hover:text-[var(--gs-text)]",
+                  )}
+                >
+                  Break into individual pieces
+                </button>
+              </div>
+
+              {splitMode === "pieces" ? (
+                <div className="space-y-3 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/30 p-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                        Pieces to break out
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={splitSourceRow ? splitSourceRow.pieces : 1}
+                        value={splitPiecesCount}
+                        onChange={(e) => setSplitPiecesCount(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 py-2 text-sm tabular-nums outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                      />
+                      <p className="mt-0.5 text-[10px] text-[var(--gs-muted)]">
+                        Max {splitSourceRow ? splitSourceRow.pieces : 0} (parent pieces)
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                        Per-piece UOM / weight
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={splitPerPieceUom}
+                        onChange={(e) => setSplitPerPieceUom(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 py-2 text-sm tabular-nums outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                        Per-piece rate (optional)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={splitPerPieceRate}
+                        onChange={(e) => setSplitPerPieceRate(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] px-2 py-2 text-sm tabular-nums outline-none focus:border-[var(--gs-accent)] focus:ring-1 focus:ring-[var(--gs-accent)]"
+                        placeholder={splitSourceRow ? String(splitSourceRow.rate) : "0"}
+                      />
+                    </div>
+                  </div>
+                  {splitPiecesPreview && splitSourceRow ? (
+                    <p className="text-xs text-[var(--gs-muted)]">
+                      Parent will be left with{" "}
+                      <span className="font-semibold tabular-nums text-[var(--gs-text)]">
+                        {splitPiecesPreview.remainingUom.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                      </span>{" "}
+                      UOM and{" "}
+                      <span className="font-semibold tabular-nums text-[var(--gs-text)]">{splitPiecesPreview.remainingPieces}</span>{" "}
+                      pieces.{" "}
+                      <span className="font-semibold text-[var(--gs-text)]">{splitPiecesPreview.n}</span> new row(s) will be
+                      created (each 1 piece).
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto rounded-xl border border-[var(--gs-border)]">
                 <table className="w-full min-w-[42rem] text-xs">
                   <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                     <tr>
@@ -3888,10 +5201,12 @@ export function InventoryHub() {
                   {" | "}Pieces: <span className="font-semibold text-[var(--gs-text)]">{splitTotals.pieces}</span>
                 </div>
               </div>
+                </>
+              )}
 
-              {splitLiveError || splitError ? (
+              {(splitMode === "parcels" && splitLiveError) || splitError ? (
                 <div className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300">
-                  {splitLiveError ?? splitError}
+                  {(splitMode === "parcels" ? splitLiveError : null) ?? splitError}
                 </div>
               ) : null}
             </div>
@@ -3909,7 +5224,7 @@ export function InventoryHub() {
                 onClick={() => void submitSplitParcel()}
                 className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
               >
-                Split
+                {splitBusy ? "Saving…" : splitMode === "pieces" ? "Create piece rows" : "Split"}
               </button>
             </div>
           </div>
@@ -3981,54 +5296,6 @@ export function InventoryHub() {
               </p>
             ) : null}
 
-            {selectedLotCodeHub ? (
-              <div className="mt-4">
-                {lotDetailLoadingHub ? (
-                  <p className="text-sm text-[var(--gs-muted)]">Loading lot lines…</p>
-                ) : lotDetailHub ? (
-                  <>
-                    <p className="text-sm font-medium text-[var(--gs-text)]">
-                      Lot {lotDetailHub.lot_code} · {lotDetailHub.vendor_name}
-                    </p>
-                    <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--gs-border)]">
-                      <table className="w-full min-w-[520px] text-left text-sm">
-                        <thead className="border-b border-[var(--gs-border)] text-[10px] font-bold uppercase text-[var(--gs-muted)]">
-                          <tr>
-                            <th className="px-3 py-2">Line item</th>
-                            <th className="px-3 py-2 text-right">Qty on lot</th>
-                            <th className="px-3 py-2">UOM</th>
-                            <th className="px-3 py-2 text-right">Pieces</th>
-                            <th className="px-3 py-2 text-right"> </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--gs-border)]">
-                          {lotDetailHub.lines.map((ln) => (
-                            <tr key={ln.id}>
-                              <td className="px-3 py-2">{ln.item_name}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{ln.quantity}</td>
-                              <td className="px-3 py-2 text-[var(--gs-muted)]">{ln.uom}</td>
-                              <td className="px-3 py-2 text-right tabular-nums">{ln.pieces}</td>
-                              <td className="px-3 py-2 text-right">
-                                <button
-                                  type="button"
-                                  className="text-xs font-semibold text-[var(--gs-accent)] hover:underline"
-                                  onClick={() => appendParcelFromLineHub(ln.id, ln.item_name, ln.pieces)}
-                                >
-                                  Add parcel
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-[var(--gs-muted)]">Could not show lines for this lot.</p>
-                )}
-              </div>
-            ) : null}
-
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Inventory item type</label>
@@ -4056,74 +5323,280 @@ export function InventoryHub() {
               </div>
             </div>
 
-            <h4 className="mt-6 text-xs font-bold uppercase text-[var(--gs-muted)]">Parcel rows (sent to server)</h4>
-            {fromLotParcelsHub.length === 0 ? (
-              <p className="mt-1 text-sm text-[var(--gs-muted)]">
-                Click “Add parcel” on a line above, then enter UOM quantity for each row.
-              </p>
-            ) : (
-              <div className="mt-2 space-y-3">
-                {fromLotParcelsHub.map((p) => {
-                  const lotLine = lotDetailHub?.lines.find((l) => l.id === p.purchase_lot_line_id);
-                  return (
-                    <div key={p.key} className="space-y-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/40 p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-xs text-[var(--gs-muted)]">
-                          Lot line: <span className="font-medium text-[var(--gs-text)]">{lotLine?.item_name ?? "—"}</span>
-                        </p>
-                        <button
-                          type="button"
-                          className="rounded-full border border-[var(--gs-border)] px-3 py-1 text-xs font-semibold"
-                          onClick={() => setFromLotParcelsHub((rows) => rows.filter((r) => r.key !== p.key))}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <input
-                          placeholder="Parcel display name"
-                          value={p.display_name}
-                          onChange={(e) =>
-                            setFromLotParcelsHub((rows) =>
-                              rows.map((r) => (r.key === p.key ? { ...r, display_name: e.target.value } : r)),
-                            )
-                          }
-                          className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm sm:col-span-2"
-                        />
-                        <input
-                          placeholder="UOM qty to receive"
-                          value={p.primary_uom_qty}
-                          onChange={(e) =>
-                            setFromLotParcelsHub((rows) =>
-                              rows.map((r) => (r.key === p.key ? { ...r, primary_uom_qty: e.target.value } : r)),
-                            )
-                          }
-                          className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
-                        />
-                        <input
-                          placeholder="Pieces"
-                          value={p.pieces}
-                          onChange={(e) =>
-                            setFromLotParcelsHub((rows) => rows.map((r) => (r.key === p.key ? { ...r, pieces: e.target.value } : r)))
-                          }
-                          className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
-                        />
-                        <input
-                          placeholder="Public code (optional)"
-                          value={p.public_code}
-                          onChange={(e) =>
-                            setFromLotParcelsHub((rows) =>
-                              rows.map((r) => (r.key === p.key ? { ...r, public_code: e.target.value } : r)),
-                            )
-                          }
-                          className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm sm:col-span-2"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            {selectedLotCodeHub && lotDetailHub ? (
+              <>
+                <p className="mt-4 text-sm font-medium text-[var(--gs-text)]">
+                  Lot {lotDetailHub.lot_code} · {lotDetailHub.vendor_name}
+                </p>
+                {lotBalances[lotDetailHub.id] ? (
+                  <div
+                    className={cn(
+                      "mt-2 rounded-xl border px-3 py-2 text-xs",
+                      lotBalances[lotDetailHub.id].balanced
+                        ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        : "border-amber-400/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                    )}
+                  >
+                    <span className="font-semibold">Lot balance:</span>{" "}
+                    {lotBalances[lotDetailHub.id].lot_total_qty} = current parcels{" "}
+                    {lotBalances[lotDetailHub.id].current_parcels_qty} + recorded loss{" "}
+                    {lotBalances[lotDetailHub.id].recorded_loss_qty}
+                    {lotBalances[lotDetailHub.id].balanced ? " ✓" : ` (variance ${lotBalances[lotDetailHub.id].variance_qty})`}
+                  </div>
+                ) : null}
+
+                {/* Mode tabs */}
+                <div className="mt-4 inline-flex rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setFromLotMode("auto")}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                      fromLotMode === "auto"
+                        ? "bg-[var(--gs-accent)] text-white shadow-sm"
+                        : "text-[var(--gs-muted)] hover:bg-[var(--gs-card)]",
+                    )}
+                  >
+                    Mode A · Auto-equal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFromLotMode("custom")}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                      fromLotMode === "custom"
+                        ? "bg-[var(--gs-accent)] text-white shadow-sm"
+                        : "text-[var(--gs-muted)] hover:bg-[var(--gs-card)]",
+                    )}
+                  >
+                    Mode B · Custom divisions
+                  </button>
+                </div>
+                <p className="mt-1 text-[11px] text-[var(--gs-muted)]">
+                  {fromLotMode === "auto"
+                    ? "Pick a lot line, type how many equal parcels you want, and click Create."
+                    : "Type each parcel by hand. The mass-balance strip shows whether your sums match the lot."}
+                </p>
+
+                {lotDetailLoadingHub ? (
+                  <p className="mt-2 text-sm text-[var(--gs-muted)]">Loading lot lines…</p>
+                ) : (
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--gs-border)]">
+                    <table className="w-full min-w-[640px] text-left text-sm">
+                      <thead className="border-b border-[var(--gs-border)] text-[10px] font-bold uppercase text-[var(--gs-muted)]">
+                        <tr>
+                          <th className="px-3 py-2">Line item</th>
+                          <th className="px-3 py-2 text-right">Qty</th>
+                          <th className="px-3 py-2">UOM</th>
+                          <th className="px-3 py-2 text-right">Pieces</th>
+                          <th className="px-3 py-2 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--gs-border)]">
+                        {lotDetailHub.lines.map((ln) => {
+                          const draft = autoSplitDraft[ln.id] ?? { n: String(ln.pieces || 1), basis: "equal_weight" as const };
+                          return (
+                            <tr key={ln.id}>
+                              <td className="px-3 py-2">{ln.item_name}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{ln.quantity}</td>
+                              <td className="px-3 py-2 text-[var(--gs-muted)]">{ln.uom}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{ln.pieces}</td>
+                              <td className="px-3 py-2 text-right">
+                                {fromLotMode === "auto" ? (
+                                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={draft.n}
+                                      onChange={(e) =>
+                                        setAutoSplitDraft((prev) => ({
+                                          ...prev,
+                                          [ln.id]: { ...draft, n: e.target.value },
+                                        }))
+                                      }
+                                      className="h-8 w-16 rounded-lg border border-[var(--gs-border)] px-2 text-right text-xs"
+                                      aria-label="Number of parcels"
+                                    />
+                                    <select
+                                      value={draft.basis}
+                                      onChange={(e) =>
+                                        setAutoSplitDraft((prev) => ({
+                                          ...prev,
+                                          [ln.id]: { ...draft, basis: e.target.value as "equal_weight" | "equal_pieces" },
+                                        }))
+                                      }
+                                      className="h-8 rounded-lg border border-[var(--gs-border)] px-1 text-xs"
+                                      aria-label="Split basis"
+                                    >
+                                      <option value="equal_weight">Equal weight</option>
+                                      <option value="equal_pieces">Equal pieces</option>
+                                    </select>
+                                    <button
+                                      type="button"
+                                      disabled={fromLotSavingHub}
+                                      className="rounded-full bg-[var(--gs-accent)] px-3 py-1 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
+                                      onClick={() => void submitAutoSplitLine(ln.id)}
+                                    >
+                                      Auto-split
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="text-xs font-semibold text-[var(--gs-accent)] hover:underline"
+                                    onClick={() => appendParcelFromLineHub(ln.id, ln.item_name, ln.pieces)}
+                                  >
+                                    Add parcel row
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            ) : null}
+
+            {fromLotMode === "custom" && selectedLotCodeHub ? (
+              <>
+                <h4 className="mt-6 text-xs font-bold uppercase text-[var(--gs-muted)]">Custom parcel rows</h4>
+                {fromLotParcelsHub.length === 0 ? (
+                  <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                    Click &ldquo;Add parcel row&rdquo; on a line above, then type each parcel&apos;s weight and pieces.
+                  </p>
+                ) : (
+                  <div className="mt-2 space-y-3">
+                    {fromLotParcelsHub.map((p) => {
+                      const lotLine = lotDetailHub?.lines.find((l) => l.id === p.purchase_lot_line_id);
+                      return (
+                        <div key={p.key} className="space-y-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/40 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs text-[var(--gs-muted)]">
+                              Lot line: <span className="font-medium text-[var(--gs-text)]">{lotLine?.item_name ?? "—"}</span>
+                            </p>
+                            <button
+                              type="button"
+                              className="rounded-full border border-[var(--gs-border)] px-3 py-1 text-xs font-semibold"
+                              onClick={() => setFromLotParcelsHub((rs) => rs.filter((r) => r.key !== p.key))}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <input
+                              placeholder="Parcel display name"
+                              value={p.display_name}
+                              onChange={(e) =>
+                                setFromLotParcelsHub((rs) =>
+                                  rs.map((r) => (r.key === p.key ? { ...r, display_name: e.target.value } : r)),
+                                )
+                              }
+                              className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm sm:col-span-2"
+                            />
+                            <input
+                              placeholder="UOM qty"
+                              value={p.primary_uom_qty}
+                              onChange={(e) =>
+                                setFromLotParcelsHub((rs) =>
+                                  rs.map((r) => (r.key === p.key ? { ...r, primary_uom_qty: e.target.value } : r)),
+                                )
+                              }
+                              className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                            />
+                            <input
+                              placeholder="Pieces"
+                              value={p.pieces}
+                              onChange={(e) =>
+                                setFromLotParcelsHub((rs) =>
+                                  rs.map((r) => (r.key === p.key ? { ...r, pieces: e.target.value } : r)),
+                                )
+                              }
+                              className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                            />
+                            <input
+                              placeholder="Public code (optional)"
+                              value={p.public_code}
+                              onChange={(e) =>
+                                setFromLotParcelsHub((rs) =>
+                                  rs.map((r) => (r.key === p.key ? { ...r, public_code: e.target.value } : r)),
+                                )
+                              }
+                              className="rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm sm:col-span-2"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Live mass-balance strip for Mode B */}
+                {fromLotParcelsHub.length > 0 ? (
+                  <div
+                    className={cn(
+                      "mt-3 rounded-xl border px-3 py-2 text-xs",
+                      Math.abs(customSplitTotals.varianceQty) < 0.0001 && customSplitTotals.variancePc === 0
+                        ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        : "border-amber-400/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                    )}
+                  >
+                    <p>
+                      <span className="font-semibold">Lot lines (referenced):</span> {customSplitTotals.lotQty}{" "}
+                      {fromLotPrimaryUomCodeHub} / {customSplitTotals.lotPc} pcs
+                    </p>
+                    <p>
+                      <span className="font-semibold">Your parcels sum:</span> {customSplitTotals.qtySum.toFixed(4)}{" "}
+                      {fromLotPrimaryUomCodeHub} / {customSplitTotals.pcSum} pcs
+                    </p>
+                    <p>
+                      <span className="font-semibold">Variance:</span> {customSplitTotals.varianceQty.toFixed(4)}{" "}
+                      {fromLotPrimaryUomCodeHub} / {customSplitTotals.variancePc} pcs
+                      {Math.abs(customSplitTotals.varianceQty) < 0.0001 && customSplitTotals.variancePc === 0
+                        ? " ✓"
+                        : ""}
+                    </p>
+                  </div>
+                ) : null}
+
+                {/* Variance reason (only when sums don't match) */}
+                {fromLotParcelsHub.length > 0 &&
+                (Math.abs(customSplitTotals.varianceQty) >= 0.0001 || customSplitTotals.variancePc !== 0) ? (
+                  <div className="mt-3 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-3">
+                    <label className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                      Variance reason *
+                    </label>
+                    <select
+                      value={customSplitVarianceReason}
+                      onChange={(e) =>
+                        setCustomSplitVarianceReason(e.target.value as InvLotVarianceReason | "")
+                      }
+                      className="mt-1.5 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    >
+                      <option value="">Pick a reason…</option>
+                      <option value="re_measure">Re-measure (weights differ from invoice)</option>
+                      <option value="dust">Dust / breakage</option>
+                      <option value="data_entry_error">Data entry error</option>
+                      <option value="lost">Lost / missing</option>
+                      <option value="found_extra">Found extra (more than invoice)</option>
+                      <option value="cutting_prep">Cutting prep loss</option>
+                      <option value="other">Other (see memo)</option>
+                    </select>
+                    <input
+                      value={customSplitVarianceMemo}
+                      onChange={(e) => setCustomSplitVarianceMemo(e.target.value)}
+                      placeholder="Memo (optional but helpful for audit)"
+                      className="mt-2 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-[11px] text-[var(--gs-muted)]">
+                      Variance is logged as a permanent audit entry on the lot. Cannot be hidden later.
+                    </p>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
 
             <div className="mt-6 flex justify-end gap-2">
               <button
@@ -4132,15 +5605,582 @@ export function InventoryHub() {
                 className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
                 onClick={() => setFromLotOpen(false)}
               >
+                Close
+              </button>
+              {fromLotMode === "custom" ? (
+                <button
+                  type="button"
+                  disabled={fromLotSavingHub || !fromLotParcelsHub.length}
+                  className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
+                  onClick={() => void submitCustomSplitFromHub()}
+                >
+                  {fromLotSavingHub ? "Saving…" : "Create custom parcels"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ---- Phase 1: Adjust weight modal ---- */}
+      {adjustWeightTarget ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4"
+          role="presentation"
+          onClick={() => {
+            if (adjustWeightSaving) return;
+            setAdjustWeightTarget(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="adjust-weight-title"
+            className="w-full max-w-md rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h3 id="adjust-weight-title" className="text-base font-bold text-[var(--gs-text)]">
+                Re-measure parcel
+              </h3>
+              <button
+                type="button"
+                disabled={adjustWeightSaving}
+                onClick={() => setAdjustWeightTarget(null)}
+                className="rounded-lg p-1.5 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-[var(--gs-muted)]">
+              <span className="font-medium text-[var(--gs-text)]">{adjustWeightTarget.itemName}</span> · current{" "}
+              {adjustWeightTarget.uom} / {adjustWeightTarget.pieces} pcs
+            </p>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">New weight</label>
+                <input
+                  value={adjustWeightDraft.qty}
+                  onChange={(e) => setAdjustWeightDraft((d) => ({ ...d, qty: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">New pieces</label>
+                <input
+                  value={adjustWeightDraft.pieces}
+                  onChange={(e) => setAdjustWeightDraft((d) => ({ ...d, pieces: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm tabular-nums"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Reason *</label>
+              <select
+                value={adjustWeightDraft.reason}
+                onChange={(e) =>
+                  setAdjustWeightDraft((d) => ({ ...d, reason: e.target.value as InvLotVarianceReason }))
+                }
+                className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+              >
+                <option value="re_measure">Re-measure</option>
+                <option value="dust">Dust / breakage</option>
+                <option value="data_entry_error">Data entry error</option>
+                <option value="found_extra">Found extra</option>
+                <option value="cutting_prep">Cutting prep</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Memo</label>
+              <textarea
+                value={adjustWeightDraft.memo}
+                onChange={(e) => setAdjustWeightDraft((d) => ({ ...d, memo: e.target.value }))}
+                rows={2}
+                className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                placeholder="Optional context for the audit log"
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={adjustWeightSaving}
+                onClick={() => setAdjustWeightTarget(null)}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-xs font-semibold disabled:opacity-50"
+              >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={fromLotSavingHub}
-                className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
-                onClick={() => void submitFromLotHub()}
+                disabled={adjustWeightSaving}
+                onClick={() => void submitAdjustWeight()}
+                className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
               >
-                {fromLotSavingHub ? "Saving…" : "Create stock from lot"}
+                {adjustWeightSaving ? "Saving…" : "Save adjustment"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ---- Phase 1: Rebalance modal ---- */}
+      {rebalanceTarget ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4"
+          role="presentation"
+          onClick={() => {
+            if (rebalanceSaving) return;
+            setRebalanceTarget(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rebalance-title"
+            className="w-full max-w-md rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h3 id="rebalance-title" className="text-base font-bold text-[var(--gs-text)]">
+                Move weight between sibling parcels
+              </h3>
+              <button
+                type="button"
+                disabled={rebalanceSaving}
+                onClick={() => setRebalanceTarget(null)}
+                className="rounded-lg p-1.5 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-[var(--gs-muted)]">
+              From: <span className="font-medium text-[var(--gs-text)]">{rebalanceTarget.itemName}</span> ({rebalanceTarget.uom}{" "}
+              / {rebalanceTarget.pieces} pcs)
+            </p>
+
+            <div className="mt-3">
+              <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Move to (sibling on same lot)</label>
+              <select
+                value={rebalanceDraft.toUnitId}
+                onChange={(e) => setRebalanceDraft((d) => ({ ...d, toUnitId: e.target.value }))}
+                className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+              >
+                <option value="">{rebalanceSiblingOptions.length ? "Pick a sibling…" : "No siblings on this lot"}</option>
+                {rebalanceSiblingOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Qty to move</label>
+                <input
+                  value={rebalanceDraft.qty}
+                  onChange={(e) => setRebalanceDraft((d) => ({ ...d, qty: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Pieces to move</label>
+                <input
+                  value={rebalanceDraft.pieces}
+                  onChange={(e) => setRebalanceDraft((d) => ({ ...d, pieces: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm tabular-nums"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Reason *</label>
+              <select
+                value={rebalanceDraft.reason}
+                onChange={(e) => setRebalanceDraft((d) => ({ ...d, reason: e.target.value as InvLotVarianceReason }))}
+                className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+              >
+                <option value="re_measure">Re-measure</option>
+                <option value="data_entry_error">Data entry error</option>
+                <option value="cutting_prep">Cutting prep</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Memo</label>
+              <textarea
+                value={rebalanceDraft.memo}
+                onChange={(e) => setRebalanceDraft((d) => ({ ...d, memo: e.target.value }))}
+                rows={2}
+                className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={rebalanceSaving}
+                onClick={() => setRebalanceTarget(null)}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-xs font-semibold disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={rebalanceSaving || !rebalanceDraft.toUnitId}
+                onClick={() => void submitRebalance()}
+                className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
+              >
+                {rebalanceSaving ? "Saving…" : "Move weight"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ---- Phase 1: Record loss modal ---- */}
+      {lossTarget ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4"
+          role="presentation"
+          onClick={() => {
+            if (lossSaving) return;
+            setLossTarget(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="loss-title"
+            className="w-full max-w-md rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h3 id="loss-title" className="text-base font-bold text-[var(--gs-text)]">
+                Record loss / dust
+              </h3>
+              <button
+                type="button"
+                disabled={lossSaving}
+                onClick={() => setLossTarget(null)}
+                className="rounded-lg p-1.5 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-[var(--gs-muted)]">
+              <span className="font-medium text-[var(--gs-text)]">{lossTarget.itemName}</span> · current {lossTarget.uom} /{" "}
+              {lossTarget.pieces} pcs
+            </p>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Qty lost</label>
+                <input
+                  value={lossDraft.qty}
+                  onChange={(e) => setLossDraft((d) => ({ ...d, qty: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Pieces lost</label>
+                <input
+                  value={lossDraft.pieces}
+                  onChange={(e) => setLossDraft((d) => ({ ...d, pieces: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm tabular-nums"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Reason *</label>
+              <select
+                value={lossDraft.reason}
+                onChange={(e) => setLossDraft((d) => ({ ...d, reason: e.target.value as InvLotVarianceReason }))}
+                className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+              >
+                <option value="dust">Dust</option>
+                <option value="lost">Lost / missing</option>
+                <option value="cutting_prep">Cutting prep</option>
+                <option value="data_entry_error">Data entry error</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Memo</label>
+              <textarea
+                value={lossDraft.memo}
+                onChange={(e) => setLossDraft((d) => ({ ...d, memo: e.target.value }))}
+                rows={2}
+                className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={lossSaving}
+                onClick={() => setLossTarget(null)}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-xs font-semibold disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={lossSaving}
+                onClick={() => void submitRecordLoss()}
+                className="rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {lossSaving ? "Saving…" : "Record loss"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Phase 2: rough → cut wizard */}
+      {cutWizardSource ? (
+        <div
+          className="fixed inset-0 z-[122] flex items-center justify-center bg-black/55 p-4"
+          role="presentation"
+          onClick={() => {
+            if (cutSaving) return;
+            setCutWizardSource(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cut-wizard-title"
+            className="max-h-[min(92vh,40rem)] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h3 id="cut-wizard-title" className="text-base font-bold text-[var(--gs-text)]">
+                Cut rough → faceted
+              </h3>
+              <button
+                type="button"
+                disabled={cutSaving}
+                onClick={() => setCutWizardSource(null)}
+                className="rounded-lg p-1.5 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-[var(--gs-muted)]">
+              <span className="font-medium text-[var(--gs-text)]">{cutWizardSource.itemName}</span> · rough weight{" "}
+              <span className="tabular-nums text-[var(--gs-text)]">{cutWizardSource.uom}</span> ·{" "}
+              <span className="tabular-nums">{cutWizardSource.pieces}</span> pcs
+            </p>
+
+            <div className="mt-4">
+              <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Cut inventory type *</label>
+              <select
+                value={cutCutTypeIdHub}
+                onChange={(e) => setCutCutTypeIdHub(e.target.value)}
+                className="mt-1 w-full max-w-md rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+              >
+                <option value="">Select type…</option>
+                {cutWizardTypes
+                  .filter(
+                    (t) =>
+                      (t.code || "").toLowerCase() === "cut" ||
+                      getInventoryTypeUiMode(t.id as ItemKindKey, customInventoryTypes) === "cut",
+                  )
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+              </select>
+              {cutWizardTypes.length > 0 &&
+              !cutWizardTypes.some(
+                (t) =>
+                  (t.code || "").toLowerCase() === "cut" ||
+                  getInventoryTypeUiMode(t.id as ItemKindKey, customInventoryTypes) === "cut",
+              ) ? (
+                <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                  No Cut-style type found in the catalog. Ask an admin to keep the built-in Cut type active.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--gs-border)]">
+              <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
+                <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                  <tr>
+                    <th className="px-3 py-2">Display name *</th>
+                    <th className="px-3 py-2 text-right">Weight *</th>
+                    <th className="px-3 py-2 text-right">Pieces</th>
+                    <th className="px-3 py-2">Public code</th>
+                    <th className="px-3 py-2 w-24" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--gs-border)]">
+                  {cutOutputRows.map((row) => (
+                    <tr key={row.id}>
+                      <td className="px-3 py-2">
+                        <input
+                          value={row.display_name}
+                          onChange={(e) =>
+                            setCutOutputRows((prev) =>
+                              prev.map((x) => (x.id === row.id ? { ...x, display_name: e.target.value } : x)),
+                            )
+                          }
+                          className="w-full min-w-[10rem] rounded-lg border border-[var(--gs-border)] px-2 py-1.5 text-sm"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          value={row.primary_uom_qty}
+                          onChange={(e) =>
+                            setCutOutputRows((prev) =>
+                              prev.map((x) => (x.id === row.id ? { ...x, primary_uom_qty: e.target.value } : x)),
+                            )
+                          }
+                          className="w-full max-w-[8rem] rounded-lg border border-[var(--gs-border)] px-2 py-1.5 text-right text-sm tabular-nums"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          value={row.pieces}
+                          onChange={(e) =>
+                            setCutOutputRows((prev) =>
+                              prev.map((x) => (x.id === row.id ? { ...x, pieces: e.target.value } : x)),
+                            )
+                          }
+                          className="w-full max-w-[5rem] rounded-lg border border-[var(--gs-border)] px-2 py-1.5 text-right text-sm tabular-nums"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          value={row.public_code}
+                          onChange={(e) =>
+                            setCutOutputRows((prev) =>
+                              prev.map((x) => (x.id === row.id ? { ...x, public_code: e.target.value } : x)),
+                            )
+                          }
+                          className="w-full min-w-[8rem] rounded-lg border border-[var(--gs-border)] px-2 py-1.5 font-mono text-xs"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          type="button"
+                          disabled={cutOutputRows.length <= 1}
+                          onClick={() => setCutOutputRows((prev) => prev.filter((x) => x.id !== row.id))}
+                          className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-40"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="border-t border-[var(--gs-border)] px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCutOutputRows((prev) => [
+                      ...prev,
+                      {
+                        id: crypto.randomUUID(),
+                        display_name: "",
+                        primary_uom_qty: "",
+                        pieces: "1",
+                        public_code: "",
+                      },
+                    ])
+                  }
+                  className="text-xs font-semibold text-[var(--gs-accent)] hover:underline"
+                >
+                  + Add output line
+                </button>
+              </div>
+            </div>
+
+            {(() => {
+              const sumQty = cutOutputRows.reduce((a, o) => a + (Number.parseFloat(o.primary_uom_qty) || 0), 0);
+              const sumPc = cutOutputRows.reduce((a, o) => a + (Number.parseInt(o.pieces, 10) || 0), 0);
+              const lossQty = cutWizardSource.uom - sumQty;
+              const lossPc = cutWizardSource.pieces - sumPc;
+              const needsReason = lossQty > 0.0001 || lossPc > 0;
+              return (
+                <div className="mt-3 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-hover)]/50 px-3 py-2 text-xs">
+                  <p className="font-semibold text-[var(--gs-text)]">Yield check</p>
+                  <p className="mt-1 tabular-nums text-[var(--gs-muted)]">
+                    Outputs total weight <span className="text-[var(--gs-text)]">{sumQty.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span> vs rough{" "}
+                    <span className="text-[var(--gs-text)]">{cutWizardSource.uom.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+                    {" · "}
+                    pieces {sumPc} vs {cutWizardSource.pieces}
+                  </p>
+                  {needsReason ? (
+                    <p className="mt-1 text-amber-800 dark:text-amber-200">
+                      Loss detected — pick a reason below (server requires it when weight or pieces do not match).
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-emerald-800 dark:text-emerald-200">No loss vs rough line (within rounding).</p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {(() => {
+              const sumQty = cutOutputRows.reduce((a, o) => a + (Number.parseFloat(o.primary_uom_qty) || 0), 0);
+              const sumPc = cutOutputRows.reduce((a, o) => a + (Number.parseInt(o.pieces, 10) || 0), 0);
+              const needsReason = cutWizardSource.uom - sumQty > 0.0001 || cutWizardSource.pieces - sumPc > 0;
+              if (!needsReason) return null;
+              return (
+                <div className="mt-3">
+                  <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Loss reason *</label>
+                  <select
+                    value={cutLossReason}
+                    onChange={(e) => setCutLossReason((e.target.value || "") as InvLotVarianceReason | "")}
+                    className="mt-1 w-full max-w-md rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  >
+                    <option value="">Select…</option>
+                    <option value="dust">Dust</option>
+                    <option value="lost">Lost / missing</option>
+                    <option value="cutting_prep">Cutting prep</option>
+                    <option value="re_measure">Re-measure</option>
+                    <option value="data_entry_error">Data entry error</option>
+                    <option value="found_extra">Found extra</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              );
+            })()}
+
+            <div className="mt-3">
+              <label className="block text-xs font-bold uppercase text-[var(--gs-muted)]">Memo</label>
+              <textarea
+                value={cutMemo}
+                onChange={(e) => setCutMemo(e.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={cutSaving}
+                onClick={() => setCutWizardSource(null)}
+                className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-xs font-semibold disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={cutSaving || !cutCutTypeIdHub}
+                onClick={() => void submitCutWizard()}
+                className="rounded-full bg-[var(--gs-accent)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
+              >
+                {cutSaving ? "Saving…" : "Run cut"}
               </button>
             </div>
           </div>
@@ -4660,7 +6700,7 @@ export function InventoryHub() {
                 >
                   Cancel
                 </button>
-                {newItemQrDataUrl ? (
+                {newItemQrUnitId ? (
                   <button
                     type="button"
                     onClick={forceCloseItemModal}
@@ -5146,28 +7186,39 @@ export function InventoryHub() {
                             : ""}
                         </div>
                       </div>
-                      {newItemQrDataUrl ? (
+                      {newItemQrUnitId ? (
                         <div className="mt-4 border-t border-[var(--gs-border)] pt-4" aria-live="polite">
-                          <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">QR Code</p>
+                          <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">QR / label</p>
                           <p className="mt-1 text-[11px] text-[var(--gs-muted)]">
-                            Item saved  placeholder image until your API returns a real QR.
+                            Server se asli QR (stock <span className="font-mono text-[var(--gs-text)]">{newItemQrUnitId.slice(0, 8)}…</span>).
                           </p>
-                          <div className="mt-3 inline-flex rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/90 p-2.5 shadow-sm">
-                            <img
-                              src={newItemQrDataUrl}
-                              alt=""
-                              width={112}
-                              height={112}
-                              className="h-28 w-28 object-contain"
-                            />
+                          <div className="mt-3 inline-flex min-h-[7.5rem] min-w-[7.5rem] items-center justify-center rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/90 p-2.5 shadow-sm">
+                            {newItemQrBlobUrl ? (
+                              <img
+                                src={newItemQrBlobUrl}
+                                alt="Stock unit QR code"
+                                width={112}
+                                height={112}
+                                className="h-28 w-28 object-contain"
+                              />
+                            ) : (
+                              <span className="text-xs text-[var(--gs-muted)]">QR load ho rahi hai…</span>
+                            )}
                           </div>
-                          <div className="mt-3">
+                          <div className="mt-3 flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={downloadNewItemQr}
+                              onClick={() => void downloadNewItemQr()}
                               className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
                             >
-                              Download QR Code
+                              Download QR (PNG)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void printNewItemLabelPdf()}
+                              className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-4 py-2 text-xs font-semibold text-[var(--gs-text)] shadow-sm transition hover:bg-[var(--gs-hover)]"
+                            >
+                              Print label (PDF)
                             </button>
                           </div>
                         </div>

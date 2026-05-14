@@ -47,4 +47,12 @@ export type ItemRow = {
   serverParentUnitId?: string | null;
   /** `inv_stock_units.custodian_user_id` when hydrated from the server. */
   serverCustodianUserId?: string | null;
+  /** Owning purchase lot for this stock unit (used for mass-balance + Lineage). */
+  serverPurchaseLotId?: string | null;
+  /** Owning purchase lot line for this stock unit. */
+  serverPurchaseLotLineId?: string | null;
+  /** True once the stock unit is frozen (e.g. sold). Adjust actions are refused. */
+  isLocked?: boolean;
+  /** Human-readable reason the unit was frozen (`Sold on INV-101`). */
+  lockReason?: string | null;
 };

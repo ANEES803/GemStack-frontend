@@ -76,8 +76,66 @@ export type InvStockUnitDto = {
   display_item_no?: string | null;
   pinned_schema_version?: number | null;
   last_attributes_validation_error?: string | null;
+  is_locked?: boolean;
+  lock_reason?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/** Why a parcel weight or lot total no longer balances. */
+export type InvLotVarianceReason =
+  | "re_measure"
+  | "dust"
+  | "data_entry_error"
+  | "lost"
+  | "found_extra"
+  | "cutting_prep"
+  | "other";
+
+/** Live mass-balance for a single purchase lot (lot_total = parcels + recorded_loss). */
+export type InvLotBalanceDto = {
+  lot_id: string;
+  lot_code: string;
+  lot_total_qty: string;
+  lot_total_pieces: number;
+  current_parcels_qty: string;
+  current_parcels_pieces: number;
+  recorded_loss_qty: string;
+  recorded_loss_pieces: number;
+  variance_qty: string;
+  variance_pieces: number;
+  balanced: boolean;
+  balanced_pieces: boolean;
+};
+
+/** Single audit-log entry for a stock unit (used by the History tab). */
+export type InvStockMovementDto = {
+  id: string;
+  stock_unit_id: string;
+  movement_type: string;
+  qty_delta_primary_uom: string;
+  pieces_delta: number;
+  cost_delta: string | null;
+  counterparty_unit_id: string | null;
+  purchase_lot_id: string | null;
+  client_ref: string | null;
+  occurred_at: string;
+  memo: string;
+  extra_metadata?: Record<string, unknown> | null;
+};
+
+/** Phase 2: rough cut response (consumed parent + new cut children). */
+export type InvCutOperationDto = {
+  parent: InvStockUnitDto;
+  children: InvStockUnitDto[];
+};
+
+/** Phase 3: lineage tree for one stock unit. */
+export type InvLineageDto = {
+  unit: InvStockUnitDto;
+  ancestors: InvStockUnitDto[];
+  children: InvStockUnitDto[];
+  descendants: InvStockUnitDto[];
 };
 
 export type InvLocationDto = {
@@ -549,4 +607,325 @@ export async function importStockFromLocalCache(signal?: AbortSignal): Promise<I
   });
   if (!res.ok) throw new Error(await parseError(res));
   return (await res.json()) as InvStockUnitDto[];
+}
+
+// ---- Phase 1: Lot to Sellable Parcels with mass-balance --------------------
+
+/** Mode A: split a purchase lot line into N equal sellable parcels in one click. */
+export async function autoSplitLotLine(
+  lotId: string,
+  lineId: string,
+  body: {
+    item_type_id: string;
+    n_parcels: number;
+    basis?: "equal_weight" | "equal_pieces";
+    primary_uom_code?: string;
+    name_prefix?: string | null;
+    location_id?: string | null;
+    custodian_user_id?: string | null;
+    client_ref?: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<InvStockUnitDto[]> {
+  const res = await apiAuthFetch(
+    `${API_BASE_URL}/inv/purchase-lots/${lotId}/lines/${lineId}/auto-split`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        item_type_id: body.item_type_id,
+        n_parcels: body.n_parcels,
+        basis: body.basis ?? "equal_weight",
+        primary_uom_code: body.primary_uom_code ?? "ct",
+        name_prefix: body.name_prefix ?? null,
+        location_id: body.location_id ?? null,
+        custodian_user_id: body.custodian_user_id ?? null,
+        client_ref: body.client_ref ?? null,
+      }),
+      signal,
+    },
+  );
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockUnitDto[];
+}
+
+/** Mode B: user types each parcel; sums must equal lot line OR provide variance_reason. */
+export async function customSplitLotLine(
+  lotId: string,
+  lineId: string,
+  body: {
+    item_type_id: string;
+    parcels: {
+      display_name: string;
+      public_code?: string;
+      primary_uom_qty: string;
+      pieces?: number;
+      rate?: string | null;
+    }[];
+    primary_uom_code?: string;
+    location_id?: string | null;
+    custodian_user_id?: string | null;
+    variance_reason?: InvLotVarianceReason | null;
+    variance_memo?: string;
+    client_ref?: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<InvStockUnitDto[]> {
+  const res = await apiAuthFetch(
+    `${API_BASE_URL}/inv/purchase-lots/${lotId}/lines/${lineId}/custom-split`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        item_type_id: body.item_type_id,
+        parcels: body.parcels,
+        primary_uom_code: body.primary_uom_code ?? "ct",
+        location_id: body.location_id ?? null,
+        custodian_user_id: body.custodian_user_id ?? null,
+        variance_reason: body.variance_reason ?? null,
+        variance_memo: body.variance_memo ?? "",
+        client_ref: body.client_ref ?? null,
+      }),
+      signal,
+    },
+  );
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockUnitDto[];
+}
+
+/** Re-measure a parcel's weight or pieces with mandatory reason. */
+export async function adjustStockUnitWeight(
+  unitId: string,
+  body: {
+    primary_uom_qty: string;
+    pieces: number;
+    reason: InvLotVarianceReason;
+    memo?: string;
+    expected_row_version?: number | null;
+    client_ref?: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<InvStockUnitDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/${unitId}/adjust-weight`, {
+    method: "POST",
+    body: JSON.stringify({
+      primary_uom_qty: body.primary_uom_qty,
+      pieces: body.pieces,
+      reason: body.reason,
+      memo: body.memo ?? "",
+      expected_row_version: body.expected_row_version ?? null,
+      client_ref: body.client_ref ?? null,
+    }),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockUnitDto;
+}
+
+/** Atomic paired adjustment: move qty/pieces from one sibling to another. */
+export async function rebalanceStockUnits(
+  body: {
+    from_unit_id: string;
+    to_unit_id: string;
+    qty_delta: string;
+    pieces_delta: number;
+    reason?: InvLotVarianceReason;
+    memo?: string;
+    expected_from_row_version?: number | null;
+    expected_to_row_version?: number | null;
+    client_ref?: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<InvStockUnitDto[]> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/rebalance`, {
+    method: "POST",
+    body: JSON.stringify({
+      from_unit_id: body.from_unit_id,
+      to_unit_id: body.to_unit_id,
+      qty_delta: body.qty_delta,
+      pieces_delta: body.pieces_delta,
+      reason: body.reason ?? "re_measure",
+      memo: body.memo ?? "",
+      expected_from_row_version: body.expected_from_row_version ?? null,
+      expected_to_row_version: body.expected_to_row_version ?? null,
+      client_ref: body.client_ref ?? null,
+    }),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockUnitDto[];
+}
+
+/** Record dust / breakage / theft as a one-sided reduction with required reason. */
+export async function recordStockLoss(
+  unitId: string,
+  body: {
+    qty: string;
+    pieces?: number;
+    reason: InvLotVarianceReason;
+    memo?: string;
+    expected_row_version?: number | null;
+    client_ref?: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<InvStockUnitDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/${unitId}/record-loss`, {
+    method: "POST",
+    body: JSON.stringify({
+      qty: body.qty,
+      pieces: body.pieces ?? 0,
+      reason: body.reason,
+      memo: body.memo ?? "",
+      expected_row_version: body.expected_row_version ?? null,
+      client_ref: body.client_ref ?? null,
+    }),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockUnitDto;
+}
+
+/** Lock a stock unit so adjustments are refused (e.g. once sold). */
+export async function freezeStockUnit(
+  unitId: string,
+  body: { lock_reason?: string; expected_row_version?: number | null } = {},
+  signal?: AbortSignal,
+): Promise<InvStockUnitDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/${unitId}/freeze`, {
+    method: "POST",
+    body: JSON.stringify({
+      lock_reason: body.lock_reason ?? "Manually locked",
+      expected_row_version: body.expected_row_version ?? null,
+    }),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockUnitDto;
+}
+
+/** Reverse a freeze. Admin action (e.g. sales invoice voided). */
+export async function unfreezeStockUnit(unitId: string, signal?: AbortSignal): Promise<InvStockUnitDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/${unitId}/unfreeze`, {
+    method: "POST",
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockUnitDto;
+}
+
+/** Live mass-balance for a single purchase lot. */
+export async function fetchLotBalance(lotId: string, signal?: AbortSignal): Promise<InvLotBalanceDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/purchase-lots/${lotId}/balance`, {
+    method: "GET",
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvLotBalanceDto;
+}
+
+/** Audit trail for a single stock unit (used by the History tab in the child-parcels drawer). */
+export async function fetchStockUnitMovements(
+  unitId: string,
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<InvStockMovementDto[]> {
+  const res = await apiAuthFetch(
+    `${API_BASE_URL}/inv/stock-units/${unitId}/movements?limit=${limit}`,
+    { method: "GET", signal },
+  );
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockMovementDto[];
+}
+
+/** Phase 2: consume rough parcel and create cut stock units (cost by weight on outputs). */
+export async function cutStockUnit(
+  roughUnitId: string,
+  body: {
+    cut_item_type_id: string;
+    outputs: {
+      display_name: string;
+      public_code?: string;
+      primary_uom_qty: string;
+      pieces?: number;
+      list_price_per_uom?: string | null;
+      attributes_json?: Record<string, unknown> | null;
+    }[];
+    primary_uom_code?: string | null;
+    loss_reason?: InvLotVarianceReason | null;
+    memo?: string;
+    expected_source_row_version?: number | null;
+    client_ref?: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<InvCutOperationDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/${roughUnitId}/cut`, {
+    method: "POST",
+    body: JSON.stringify({
+      cut_item_type_id: body.cut_item_type_id,
+      outputs: body.outputs,
+      primary_uom_code: body.primary_uom_code ?? null,
+      loss_reason: body.loss_reason ?? null,
+      memo: body.memo ?? "",
+      expected_source_row_version: body.expected_source_row_version ?? null,
+      client_ref: body.client_ref ?? null,
+    }),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvCutOperationDto;
+}
+
+/** Phase 3: ancestors, children, and deeper descendants for lineage UI. */
+export async function fetchStockUnitLineage(unitId: string, signal?: AbortSignal): Promise<InvLineageDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/${unitId}/lineage`, {
+    method: "GET",
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvLineageDto;
+}
+
+/** Fetch PNG QR for a stock unit (use with Blob URL; auth header required). */
+export async function fetchStockUnitQrPng(unitId: string, size = 256, signal?: AbortSignal): Promise<Blob> {
+  const res = await apiAuthFetch(
+    `${API_BASE_URL}/inv/stock-units/${encodeURIComponent(unitId)}/qr.png?size=${encodeURIComponent(String(size))}`,
+    { method: "GET", signal },
+  );
+  if (!res.ok) throw new Error(await parseError(res));
+  return await res.blob();
+}
+
+/** Single-unit printable label PDF. */
+export async function fetchStockUnitLabelPdf(
+  unitId: string,
+  layout: "single" | "2x4" | "3x6" = "single",
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const res = await apiAuthFetch(
+    `${API_BASE_URL}/inv/stock-units/${encodeURIComponent(unitId)}/label.pdf?layout=${encodeURIComponent(layout)}`,
+    { method: "GET", signal },
+  );
+  if (!res.ok) throw new Error(await parseError(res));
+  return await res.blob();
+}
+
+export type InvLabelBatchBody = { stock_unit_ids: string[]; layout: "single" | "2x4" | "3x6" };
+
+/** Multi-unit label sheet PDF. */
+export async function fetchStockUnitLabelsBatchPdf(body: InvLabelBatchBody, signal?: AbortSignal): Promise<Blob> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-unit-labels/batch.pdf`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return await res.blob();
+}
+
+/** Same-origin URL for QR PNG (needs Bearer in fetch; use `fetchStockUnitQrPng` in the browser). */
+export function stockUnitQrUrl(unitId: string, size = 256): string {
+  return `${API_BASE_URL}/inv/stock-units/${encodeURIComponent(unitId)}/qr.png?size=${encodeURIComponent(String(size))}`;
+}
+
+/** Same-origin URL for one-unit label PDF. */
+export function stockUnitLabelPdfUrl(unitId: string, layout: "single" | "2x4" | "3x6" = "single"): string {
+  return `${API_BASE_URL}/inv/stock-units/${encodeURIComponent(unitId)}/label.pdf?layout=${encodeURIComponent(layout)}`;
 }
