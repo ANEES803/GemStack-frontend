@@ -1,5 +1,3 @@
-import { notFound } from "next/navigation";
-
 import { AccountantDashboard } from "@/components/dashboard/roles/AccountantDashboard";
 import { AdminDashboard } from "@/components/dashboard/roles/AdminDashboard";
 import { FepDashboard } from "@/components/dashboard/roles/FepDashboard";
@@ -11,7 +9,9 @@ type Props = { params: Promise<{ role: string }> };
 
 export default async function RoleDashboardPage({ params }: Props) {
   const { role } = await params;
-  if (!isRoleSlug(role)) notFound();
+  if (!isRoleSlug(role)) {
+    return <AdminDashboard />;
+  }
 
   switch (role) {
     case "owner":

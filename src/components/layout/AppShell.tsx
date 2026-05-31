@@ -3,16 +3,29 @@
 import { Bell, ChevronLeft, ChevronRight, LogOut, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { MustChangePasswordModal } from "@/components/auth/MustChangePasswordModal";
 import { DateFormatProvider } from "@/contexts/DateFormatContext";
+import { PermissionProvider } from "@/contexts/PermissionContext";
 import { GlobalSearchBar } from "@/components/layout/GlobalSearchBar";
 import { MainSidebar } from "@/components/layout/MainSidebar";
 import { ThemeToggleTopBar } from "@/components/theme";
 import { initThemeFromStorage } from "@/components/theme";
-import { ACCOUNT_DROPDOWN_LINKS } from "@/lib/accountMenuLinks";
-import { getAccessToken, getMe, getStoredUser, logout } from "@/lib/authClient";
-import { ROLES } from "@/lib/roles";
+import { useOptionalPermissions } from "@/contexts/PermissionContext";
+import { ACCOUNT_DROPDOWN_LINKS, settingsTabHref } from "@/lib/accountMenuLinks";
+import {
+  avatarSrc,
+  displayName,
+  getAccessToken,
+  getMe,
+  getStoredUser,
+  logout,
+  userInitials,
+  type AuthUser,
+} from "@/lib/authClient";
+import { canAccess, resolveDefaultSettingsTab, routePermissionForPath } from "@/lib/permissions";
+import { isRoleSlug, ROLES } from "@/lib/roles";
 
 function cx(...parts: (string | false | undefined)[]) {
   return parts.filter(Boolean).join(" ");
@@ -60,22 +73,16 @@ const ROUTE_HEADINGS: Record<string, { title: string; sub?: string }> = {
   "/reports/purchases": { title: "Purchase report", sub: "Purchase lots" },
   "/reports/inventory-financial": { title: "Inventory (financial)", sub: "Stock valuation snapshot" },
   "/reports/aging": { title: "Aging", sub: "AR / AP buckets (placeholder)" },
-  "/settings": { title: "Settings", sub: "Account · company · security · integrations" },
+  "/settings": { title: "Settings", sub: "Company · tax · users · integrations" },
+  "/profile": { title: "My Profile", sub: "Personal details · security · permissions" },
 };
 
-function isOnSettingsSecurityTab(): boolean {
-  if (typeof window === "undefined") return false;
-  const path = window.location.pathname;
-  if (path === "/settings/security") return true;
-  if (path.startsWith("/settings")) {
-    return new URLSearchParams(window.location.search).get("tab") === "security";
-  }
-  return false;
-}
-
 function shellHeading(pathname: string): { title: string; sub?: string } {
+  if (pathname.startsWith("/profile")) {
+    return ROUTE_HEADINGS["/profile"] ?? { title: "My Profile", sub: "Personal details · security · permissions" };
+  }
   if (pathname.startsWith("/settings")) {
-    return ROUTE_HEADINGS["/settings"] ?? { title: "Settings", sub: "Account · company · security · integrations" };
+    return ROUTE_HEADINGS["/settings"] ?? { title: "Settings", sub: "Company · tax · users · integrations" };
   }
   if (pathname.startsWith("/dashboard/")) {
     const slug = pathname.split("/")[2];
@@ -146,10 +153,39 @@ function CreateMenu() {
   );
 }
 
+function AccountAvatar({ user }: { user: AuthUser | null }) {
+  const src = user ? avatarSrc(user.avatar_url) : null;
+  if (src) {
+    return (
+      <span className="flex h-8 w-8 overflow-hidden rounded-full ring-1 ring-[var(--gs-border)]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt="" className="h-full w-full object-cover" />
+      </span>
+    );
+  }
+  const initials = user ? userInitials(user) : "GS";
+  return (
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--gs-hover)] text-xs font-semibold text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)]">
+      {initials}
+    </span>
+  );
+}
+
 function AccountMenu() {
+  const permCtx = useOptionalPermissions();
   const [open, setOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+
+  const menuLinks = useMemo(() => {
+    const settingsHref =
+      permCtx?.ready && permCtx.user
+        ? settingsTabHref(resolveDefaultSettingsTab(permCtx.permissions))
+        : settingsTabHref("company");
+    return ACCOUNT_DROPDOWN_LINKS.map((link) =>
+      link.label === "Settings" ? { ...link, href: settingsHref } : link,
+    );
+  }, [permCtx?.ready, permCtx?.user, permCtx?.permissions]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -169,10 +205,10 @@ function AccountMenu() {
         aria-haspopup="menu"
         aria-label="Account and settings"
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--gs-hover)] text-xs font-semibold text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)]">
-          GS
+        <AccountAvatar user={permCtx?.user ?? null} />
+        <span className="hidden max-w-[10rem] truncate text-sm font-medium text-[var(--gs-text)] sm:inline">
+          {permCtx?.user ? displayName(permCtx.user) : "Account"}
         </span>
-        <span className="hidden text-sm font-medium text-[var(--gs-text)] sm:inline">Account</span>
         <svg
           className={cx("hidden h-4 w-4 text-[var(--gs-muted)] transition sm:block", open && "rotate-180")}
           fill="none"
@@ -189,7 +225,7 @@ function AccountMenu() {
           role="menu"
           className="absolute right-0 z-50 mt-1.5 w-[min(100vw-1.5rem,13.5rem)] rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-xl ring-1 ring-[var(--gs-border)]"
         >
-          {ACCOUNT_DROPDOWN_LINKS.map((it) => {
+          {menuLinks.map((it) => {
             const Icon = it.icon;
             return (
               <Link
@@ -253,6 +289,9 @@ function TopBarActionIcons() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [sessionUser, setSessionUser] = useState<AuthUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   /** `true` = full width + labels; `false` = narrow rail with icons only */
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [sidebarHovered, setSidebarHovered] = useState(false);
@@ -268,6 +307,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => mq.removeEventListener("change", apply);
   }, []);
 
+  useLayoutEffect(() => {
+    setSessionUser(getStoredUser());
+    setAuthReady(true);
+  }, []);
+
   useEffect(() => {
     initThemeFromStorage();
   }, []);
@@ -281,6 +325,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     async function verifySession() {
+      const cachedUser = getStoredUser();
+      if (cachedUser) {
+        setSessionUser(cachedUser);
+      }
+
       const token = getAccessToken();
       if (!token) {
         router.replace("/login");
@@ -290,29 +339,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       try {
         const user = await getMe();
         if (isCancelled) return;
-        if (user.must_change_password && !isOnSettingsSecurityTab()) {
-          router.replace("/settings?tab=security");
+        setSessionUser(user);
+        if (user.must_change_password) {
+          setAccessDenied(false);
           return;
         }
+        const routePerm = routePermissionForPath(pathname, window.location.search);
+        if (routePerm && !canAccess(user.permissions[routePerm.module], routePerm.level)) {
+          setAccessDenied(true);
+          return;
+        }
+        setAccessDenied(false);
         if (pathname.startsWith("/dashboard/")) {
           const routeRole = pathname.split("/")[2];
-          if (routeRole && routeRole !== user.role) {
+          if (routeRole && isRoleSlug(user.role) && routeRole !== user.role) {
             router.replace(`/dashboard/${user.role}`);
           }
         }
       } catch {
         if (!isCancelled) {
+          setSessionUser(null);
           router.replace("/login");
         }
       }
-    }
-
-    const cachedUser = getStoredUser();
-    if (cachedUser?.must_change_password && !isOnSettingsSecurityTab()) {
-      router.replace("/settings?tab=security");
-      return () => {
-        isCancelled = true;
-      };
     }
 
     verifySession();
@@ -353,6 +402,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const expandedSidebarWidth = "16rem";
 
   return (
+    <PermissionProvider user={sessionUser} ready={authReady} onUserChange={setSessionUser}>
     <DateFormatProvider>
     <div
       className="flex min-h-screen overflow-x-hidden bg-[var(--gs-page-bg)] text-[var(--gs-text)] transition-colors duration-200 ease-out"
@@ -462,11 +512,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {sub ? <p className="mt-1 text-xs font-medium text-[var(--gs-muted)] sm:text-sm md:text-base">{sub}</p> : null}
               </div>
             ) : null}
-            {children}
+            {accessDenied ? (
+              <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-8 text-center shadow-sm">
+                <h2 className="text-lg font-bold text-[var(--gs-text)]">No access</h2>
+                <p className="mt-2 text-sm text-[var(--gs-muted)]">You do not have permission to open this page.</p>
+                <Link href="/dashboard" className="mt-4 inline-flex rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white">
+                  Go to dashboard
+                </Link>
+              </div>
+            ) : (
+              children
+            )}
           </div>
         </main>
       </div>
     </div>
+    {sessionUser?.must_change_password ? (
+      <MustChangePasswordModal user={sessionUser} onComplete={setSessionUser} />
+    ) : null}
     </DateFormatProvider>
+    </PermissionProvider>
   );
 }

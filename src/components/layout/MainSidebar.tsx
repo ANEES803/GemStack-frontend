@@ -6,6 +6,8 @@ import { createPortal } from "react-dom";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { NavIcon } from "@/components/icons";
+import { useOptionalPermissions } from "@/contexts/PermissionContext";
+import { filterMainNavigation } from "@/lib/permissions";
 import { navigation, type NavModule } from "@/lib/navigation";
 
 function cx(...parts: (string | false | undefined)[]) {
@@ -44,24 +46,61 @@ function flyoutHeading(mod: NavModule): string {
   return mod.label.toUpperCase();
 }
 
+function NavLoadingSkeleton({ collapsed }: { collapsed: boolean }) {
+  const placeholders = Array.from({ length: 6 }, (_, index) => index);
+  if (collapsed) {
+    return (
+      <nav className="flex flex-1 flex-col overflow-y-auto px-1.5 py-2" aria-label="Main navigation" aria-busy="true">
+        <div className="flex flex-col gap-2">
+          {placeholders.map((key) => (
+            <div key={key} className="mx-auto h-14 w-12 animate-pulse rounded-xl bg-[var(--gs-hover)]" />
+          ))}
+        </div>
+      </nav>
+    );
+  }
+  return (
+    <nav className="flex-1 overflow-y-auto px-2.5 py-4" aria-label="Main navigation" aria-busy="true">
+      <div className="space-y-2">
+        {placeholders.map((key) => (
+          <div key={key} className="h-9 animate-pulse rounded-lg bg-[var(--gs-hover)]" />
+        ))}
+      </div>
+    </nav>
+  );
+}
+
 export function MainSidebar({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const sp = useMemo(() => new URLSearchParams(searchParams.toString()), [searchParams]);
+  const permCtx = useOptionalPermissions();
+
+  const visibleNavigation = useMemo(() => {
+    if (!permCtx?.ready) {
+      return [];
+    }
+    if (!permCtx.user) {
+      return navigation;
+    }
+    return filterMainNavigation(permCtx.permissions);
+  }, [permCtx]);
+
+  const navLoading = !permCtx?.ready;
 
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
   const ensureOpenForRoute = useCallback(() => {
     setOpen((prev) => {
       const next = { ...prev };
-      for (const mod of navigation) {
+      for (const mod of visibleNavigation) {
         if (moduleActive(mod, pathname, sp)) {
           next[mod.id] = true;
         }
       }
       return next;
     });
-  }, [pathname, sp]);
+  }, [pathname, sp, visibleNavigation]);
 
   useEffect(() => {
     ensureOpenForRoute();
@@ -162,7 +201,7 @@ export function MainSidebar({ collapsed = false }: { collapsed?: boolean }) {
 
   useEffect(() => () => cancelCloseTimer(), [cancelCloseTimer]);
 
-  const flyoutMod = flyoutModuleId ? navigation.find((m) => m.id === flyoutModuleId) : undefined;
+  const flyoutMod = flyoutModuleId ? visibleNavigation.find((m) => m.id === flyoutModuleId) : undefined;
 
   const flyoutPanel =
     mounted &&
@@ -225,6 +264,10 @@ export function MainSidebar({ collapsed = false }: { collapsed?: boolean }) {
         )
       : null;
 
+  if (navLoading) {
+    return <NavLoadingSkeleton collapsed={collapsed} />;
+  }
+
   if (collapsed) {
     return (
       <>
@@ -233,7 +276,7 @@ export function MainSidebar({ collapsed = false }: { collapsed?: boolean }) {
             Pinned
           </p>
           <div className="flex flex-col gap-1">
-            {navigation.map((mod) => {
+            {visibleNavigation.map((mod) => {
               const modActive = moduleActive(mod, pathname, sp);
               const hasChildren = mod.children.length > 0;
 
@@ -305,7 +348,7 @@ export function MainSidebar({ collapsed = false }: { collapsed?: boolean }) {
 
   return (
     <nav className="flex-1 overflow-y-auto px-2.5 py-4">
-      {navigation.map((mod, mi) => {
+      {visibleNavigation.map((mod, mi) => {
         const expanded = open[mod.id] ?? true;
         const modActive = moduleActive(mod, pathname, sp);
 

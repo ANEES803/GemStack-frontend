@@ -8,26 +8,22 @@ import { useSettingsTab } from "@/components/settings/AccountSettingsShell";
 import { SettingsFepPanel } from "@/components/settings/SettingsFepPanel";
 import { SettingsInventoryFlags } from "@/components/settings/SettingsInventoryFlags";
 import { SettingsPartnersPanel } from "@/components/settings/SettingsPartnersPanel";
-import { SettingsProfilePanel } from "@/components/settings/SettingsProfilePanel";
-import { SettingsResetPasswordPanel } from "@/components/settings/SettingsResetPasswordPanel";
-import { SettingsSecurityPanel } from "@/components/settings/SettingsSecurityPanel";
 import { SettingsPanelHeader } from "@/components/settings/settingsUi";
 import { ThemeToggleRow } from "@/components/theme";
 import { UsersRolesWorkspace } from "@/components/users/UsersRolesWorkspace";
 import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
-import { settingsTabHref } from "@/lib/accountMenuLinks";
+import { useOptionalPermissions } from "@/contexts/PermissionContext";
+import { isValidSettingsTab, settingsTabHref } from "@/lib/accountMenuLinks";
+import { canViewSettingsTab, resolveDefaultSettingsTab } from "@/lib/permissions";
 
 export function SettingsWorkspace() {
   const { pushToast } = useAppNotifications();
   const router = useRouter();
   const sp = useSearchParams();
   const tab = useSettingsTab();
-
-  useEffect(() => {
-    if (!sp.get("tab")) {
-      router.replace(settingsTabHref("company"), { scroll: false });
-    }
-  }, [router, sp]);
+  const permCtx = useOptionalPermissions();
+  const permissions = permCtx?.permissions ?? {};
+  const tabAllowed = permCtx?.ready ? canViewSettingsTab(permissions, tab) : false;
 
   const [companyName, setCompanyName] = useState("GemStack Trading Co.");
   const [fiscalStart, setFiscalStart] = useState("2026-01-01");
@@ -35,12 +31,58 @@ export function SettingsWorkspace() {
   const [gstRate, setGstRate] = useState("18");
   const [baseCurrency, setBaseCurrency] = useState("PKR");
 
-  if (tab === "profile") return <SettingsProfilePanel />;
-  if (tab === "security") return <SettingsSecurityPanel />;
+  useEffect(() => {
+    const urlTab = sp.get("tab");
+    if (urlTab === "profile") {
+      router.replace("/profile", { scroll: false });
+      return;
+    }
+    if (urlTab === "security") {
+      router.replace("/profile?tab=security", { scroll: false });
+      return;
+    }
+    if (urlTab === "reset_password") {
+      router.replace("/settings?tab=users", { scroll: false });
+      return;
+    }
+    if (!permCtx?.ready) {
+      return;
+    }
+    if (!urlTab || !isValidSettingsTab(urlTab)) {
+      router.replace(settingsTabHref(resolveDefaultSettingsTab(permissions)), { scroll: false });
+      return;
+    }
+    if (!canViewSettingsTab(permissions, urlTab)) {
+      router.replace(settingsTabHref(resolveDefaultSettingsTab(permissions)), { scroll: false });
+    }
+  }, [permCtx?.ready, permissions, router, sp]);
+
+  if (!permCtx?.ready) {
+    return <div className="py-10 text-center text-sm text-[var(--gs-muted)]">Loading settings…</div>;
+  }
+
+  if (!tabAllowed) {
+    return (
+      <>
+        <SettingsPanelHeader
+          title="No access"
+          description="Your role does not include permission for this settings section."
+        />
+        <div className="px-5 py-5 sm:px-6">
+          <Link
+            href={settingsTabHref(resolveDefaultSettingsTab(permissions))}
+            className="inline-flex rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--gs-accent-hover)]"
+          >
+            Go to allowed settings
+          </Link>
+        </div>
+      </>
+    );
+  }
+
   if (tab === "users") {
     return <UsersRolesWorkspace embedded />;
   }
-  if (tab === "reset_password") return <SettingsResetPasswordPanel />;
   if (tab === "fep") return <SettingsFepPanel />;
   if (tab === "partners") return <SettingsPartnersPanel />;
 
@@ -96,12 +138,14 @@ export function SettingsWorkspace() {
             >
               Save
             </button>
-            <Link
-              href={settingsTabHref("users")}
-              className="inline-flex items-center rounded-full border border-[var(--gs-border)] px-5 py-2.5 text-sm font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-accent-soft)]"
-            >
-              Users & roles →
-            </Link>
+            {canViewSettingsTab(permissions, "users") ? (
+              <Link
+                href={settingsTabHref("users")}
+                className="inline-flex items-center rounded-full border border-[var(--gs-border)] px-5 py-2.5 text-sm font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-accent-soft)]"
+              >
+                Users & roles →
+              </Link>
+            ) : null}
           </div>
         </div>
       </>

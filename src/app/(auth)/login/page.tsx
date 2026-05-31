@@ -6,7 +6,8 @@ import { Suspense, useState } from "react";
 
 import { AuthShell } from "@/components/auth/AuthShell";
 import { login } from "@/lib/authClient";
-import { isRoleSlug, ROLES, roleHref } from "@/lib/roles";
+import { resolvePostLoginPath } from "@/lib/permissions";
+import { isRoleSlug, ROLES } from "@/lib/roles";
 
 function LoginPageContent() {
   const router = useRouter();
@@ -25,12 +26,7 @@ function LoginPageContent() {
     setError(null);
     try {
       const payload = await login(email, password);
-      if (payload.user.must_change_password) {
-        router.push("/settings?tab=security");
-        return;
-      }
-      const destination = role ? roleHref(role.slug) : roleHref(payload.user.role);
-      router.push(destination);
+      router.push(resolvePostLoginPath(payload.user));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in");
     } finally {

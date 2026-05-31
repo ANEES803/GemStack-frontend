@@ -15,6 +15,7 @@ type RowActionsMenuProps = {
   actions?: RowAction[];
   items?: string[];
   align?: "left" | "right";
+  disabled?: boolean;
   /** Extra classes for the ⋮ trigger button (e.g. cursor-pointer). */
   triggerClassName?: string;
 };
@@ -83,7 +84,7 @@ function computeMenuPosition(anchor: DOMRect, align: "left" | "right") {
   return { top, left, width: menuWidth, maxHeight: maxH };
 }
 
-export function RowActionsMenu({ actions, items, align = "right", triggerClassName }: RowActionsMenuProps) {
+export function RowActionsMenu({ actions, items, align = "right", disabled = false, triggerClassName }: RowActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -173,8 +174,9 @@ export function RowActionsMenu({ actions, items, align = "right", triggerClassNa
           type="button"
           aria-expanded={open}
           aria-haspopup="menu"
+          disabled={disabled}
           onClick={() => setOpen((v) => !v)}
-          className={`inline-flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-full border text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)] sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 ${
+          className={`inline-flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-full border text-[var(--gs-muted)] transition hover:bg-[var(--gs-hover)] hover:text-[var(--gs-text)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 ${
             open ? "border-[var(--gs-border)] bg-[var(--gs-hover)] text-[var(--gs-text)]" : "border-transparent hover:border-[var(--gs-border)]"
           } ${triggerClassName ?? ""}`}
           aria-label="Open row actions"

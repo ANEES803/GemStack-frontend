@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function SecuritySettingsRedirectPage() {
-  redirect("/settings?tab=security");
+  redirect("/profile?tab=security");
 }

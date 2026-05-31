@@ -28,6 +28,15 @@ const nodeModulesRoot = path.join(rootDir, "node_modules");
  */
 const nextConfig: NextConfig = {
   outputFileTracingRoot: rootDir,
+  /** Proxy API calls through Next (same origin as :3000) so profile upload always hits the running backend. */
+  async rewrites() {
+    return [
+      {
+        source: "/gemstack-api/:path*",
+        destination: "http://127.0.0.1:8000/:path*",
+      },
+    ];
+  },
   /**
    * ESLint during `next build` re-lints the whole tree and prints almost no progress; with very
    * large components (e.g. multi-thousand-line modules) it can take many minutes and feel stuck.

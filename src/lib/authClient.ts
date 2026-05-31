@@ -1,6 +1,17 @@
-import { isRoleSlug, type RoleSlug } from "@/lib/roles";
+import type { AccessLevel } from "@/lib/permissions";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+/**
+ * Browser: default `/gemstack-api` (Next.js rewrite → 127.0.0.1:8000).
+ * Override with NEXT_PUBLIC_API_BASE_URL in .env if needed.
+ */
+function resolveApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    return process.env.NEXT_PUBLIC_API_BASE_URL ?? "/gemstack-api";
+  }
+  return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 const ACCESS_KEY = "gemstack_access_token";
 const REFRESH_KEY = "gemstack_refresh_token";
 
@@ -75,10 +86,78 @@ export type AuthUser = {
   first_name: string | null;
   last_name: string | null;
   display_name: string | null;
-  role: RoleSlug;
+  avatar_url: string | null;
+  phone: string | null;
+  is_active: boolean;
+  created_at: string | null;
+  last_login_at: string | null;
+  role: string;
+  role_id: string | null;
+  role_name: string | null;
+  is_system_role: boolean;
   business_id: string | null;
   must_change_password: boolean;
+  permissions: Record<string, AccessLevel>;
 };
+
+export type UpdateMePayload = {
+  first_name?: string | null;
+  last_name?: string | null;
+  display_name?: string | null;
+  phone?: string | null;
+};
+
+/** Map stored avatar paths (including legacy Supabase public URLs) to a loadable img src. */
+function resolveAvatarPath(avatarUrl: string): string {
+  const trimmed = avatarUrl.trim();
+  if (trimmed.startsWith("/auth/avatars/") || trimmed.startsWith("/media/avatars/")) {
+    return trimmed;
+  }
+  const publicMarker = "/storage/v1/object/public/avatars/";
+  const publicIdx = trimmed.indexOf(publicMarker);
+  if (publicIdx >= 0) {
+    const objectPath = trimmed.slice(publicIdx + publicMarker.length).split("?")[0] ?? "";
+    if (objectPath) return `/auth/avatars/${objectPath}`;
+  }
+  const privateMarker = "/storage/v1/object/avatars/";
+  const privateIdx = trimmed.indexOf(privateMarker);
+  if (privateIdx >= 0) {
+    const objectPath = trimmed.slice(privateIdx + privateMarker.length).split("?")[0] ?? "";
+    if (objectPath) return `/auth/avatars/${objectPath}`;
+  }
+  return trimmed;
+}
+
+/** Resolve avatar URL for img src (proxied through API when bucket is private). */
+export function avatarSrc(avatarUrl: string | null | undefined): string | null {
+  if (!avatarUrl?.trim()) return null;
+  const trimmed = avatarUrl.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    const resolved = resolveAvatarPath(trimmed);
+    if (resolved !== trimmed) {
+      const base = API_BASE_URL.replace(/\/$/, "");
+      return `${base}${resolved}`;
+    }
+    return trimmed;
+  }
+  const base = API_BASE_URL.replace(/\/$/, "");
+  const path = resolveAvatarPath(trimmed);
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export function displayName(user: Pick<AuthUser, "display_name" | "first_name" | "last_name" | "email">): string {
+  if (user.display_name?.trim()) return user.display_name.trim();
+  const parts = [user.first_name, user.last_name].filter(Boolean);
+  if (parts.length) return parts.join(" ");
+  return user.email.split("@")[0] ?? "User";
+}
+
+export function userInitials(user: Pick<AuthUser, "display_name" | "first_name" | "last_name" | "email">): string {
+  const name = displayName(user);
+  const bits = name.split(/\s+/).filter(Boolean);
+  if (bits.length >= 2) return `${bits[0]![0] ?? ""}${bits[1]![0] ?? ""}`.toUpperCase();
+  return (name.slice(0, 2) || "GS").toUpperCase();
+}
 
 export type LoginResponse = {
   access_token: string;
@@ -133,13 +212,36 @@ function persistTokens(payload: LoginResponse): void {
   window.localStorage.setItem(USER_KEY, JSON.stringify(payload.user));
 }
 
+function normalizeAuthUser(raw: Partial<AuthUser> & { role: string }): AuthUser {
+  return {
+    id: raw.id ?? "",
+    email: raw.email ?? "",
+    first_name: raw.first_name ?? null,
+    last_name: raw.last_name ?? null,
+    display_name: raw.display_name ?? null,
+    avatar_url: raw.avatar_url ?? null,
+    phone: raw.phone ?? null,
+    is_active: raw.is_active ?? true,
+    created_at: raw.created_at ?? null,
+    last_login_at: raw.last_login_at ?? null,
+    role: raw.role,
+    role_id: raw.role_id ?? null,
+    role_name: raw.role_name ?? null,
+    is_system_role: raw.is_system_role ?? false,
+    business_id: raw.business_id ?? null,
+    must_change_password: raw.must_change_password ?? false,
+    permissions: (raw.permissions ?? {}) as Record<string, AccessLevel>,
+  };
+}
+
 export function getStoredUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(USER_KEY);
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as AuthUser;
-    return isRoleSlug(parsed.role) ? parsed : null;
+    const parsed = JSON.parse(raw) as Partial<AuthUser> & { role?: string };
+    if (!parsed.role || !parsed.id) return null;
+    return normalizeAuthUser(parsed as Partial<AuthUser> & { role: string });
   } catch {
     return null;
   }
@@ -156,11 +258,9 @@ export async function login(email: string, password: string): Promise<LoginRespo
     throw new Error(extractApiErrorMessage(body, "Failed to login"));
   }
   const data = (await response.json()) as LoginResponse;
-  if (!isRoleSlug(data.user.role)) {
-    throw new Error("Server returned unsupported role");
-  }
-  persistTokens(data);
-  return data;
+  const user = normalizeAuthUser(data.user);
+  persistTokens({ ...data, user });
+  return { ...data, user };
 }
 
 async function refreshSession(): Promise<string | null> {
@@ -176,11 +276,8 @@ async function refreshSession(): Promise<string | null> {
     return null;
   }
   const data = (await response.json()) as LoginResponse;
-  if (!isRoleSlug(data.user.role)) {
-    clearAuthTokens();
-    return null;
-  }
-  persistTokens(data);
+  const user = normalizeAuthUser(data.user);
+  persistTokens({ ...data, user });
   return data.access_token;
 }
 
@@ -258,17 +355,15 @@ export async function getMe(): Promise<AuthUser> {
     const body = (await response.json().catch(() => ({}))) as ApiErrorShape;
     throw new Error(extractApiErrorMessage(body, "Failed to fetch user profile"));
   }
-  const data = (await response.json()) as AuthUser;
-  if (!isRoleSlug(data.role)) {
-    throw new Error("Server returned unsupported role");
-  }
+  const raw = (await response.json()) as Partial<AuthUser> & { role: string };
+  const data = normalizeAuthUser(raw);
   if (typeof window !== "undefined") {
     window.localStorage.setItem(USER_KEY, JSON.stringify(data));
   }
   return data;
 }
 
-export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+export async function changePassword(currentPassword: string, newPassword: string): Promise<AuthUser> {
   const response = await authorizedFetch(`${API_BASE_URL}/auth/change-password`, {
     method: "POST",
     headers: {
@@ -283,6 +378,48 @@ export async function changePassword(currentPassword: string, newPassword: strin
     const body = (await response.json().catch(() => ({}))) as ApiErrorShape;
     throw new Error(extractApiErrorMessage(body, "Failed to change password"));
   }
+  return getMe();
+}
+
+export async function updateMe(payload: UpdateMePayload): Promise<AuthUser> {
+  const response = await authorizedFetch(`${API_BASE_URL}/auth/me`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as ApiErrorShape;
+    throw new Error(extractApiErrorMessage(body, "Failed to update profile"));
+  }
+  const raw = (await response.json()) as Partial<AuthUser> & { role: string };
+  const data = normalizeAuthUser(raw);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(USER_KEY, JSON.stringify(data));
+  }
+  return data;
+}
+
+export async function uploadAvatar(file: File): Promise<AuthUser> {
+  const url = `${API_BASE_URL}/auth/me/avatar`;
+  if (typeof window !== "undefined") {
+    console.info("[uploadAvatar] POST", url, file.name, file.size);
+  }
+  const form = new FormData();
+  form.append("file", file);
+  const response = await authorizedFetch(url, {
+    method: "POST",
+    body: form,
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as ApiErrorShape;
+    throw new Error(extractApiErrorMessage(body, "Failed to upload avatar"));
+  }
+  const raw = (await response.json()) as Partial<AuthUser> & { role: string };
+  const data = normalizeAuthUser(raw);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(USER_KEY, JSON.stringify(data));
+  }
+  return data;
 }
 
 export async function adminResetPassword(userId: string, temporaryPassword: string): Promise<void> {
