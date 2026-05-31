@@ -138,6 +138,49 @@ export type InvLineageDto = {
   descendants: InvStockUnitDto[];
 };
 
+/** Sellable stock grouped by purchase lot (sales picker). */
+export type InvSellableLotGroupDto = {
+  purchase_lot_id: string | null;
+  lot_code: string;
+  vendor_name: string;
+  receipt_date: string | null;
+  sellable_unit_count: number;
+  sellable_uom_total: string;
+  sellable_pieces_total: number;
+  units: InvStockUnitDto[];
+};
+
+export type InvSellableByLotDto = {
+  lots: InvSellableLotGroupDto[];
+};
+
+export async function fetchSellableByLot(params?: {
+  search?: string;
+  purchase_lot_id?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<InvSellableByLotDto> {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.purchase_lot_id) q.set("purchase_lot_id", params.purchase_lot_id);
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/sellable-by-lot?${q.toString()}`, {
+    method: "GET",
+    signal: params?.signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvSellableByLotDto;
+}
+
+export async function fetchStockUnit(unitId: string, signal?: AbortSignal): Promise<InvStockUnitDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/${encodeURIComponent(unitId)}`, {
+    method: "GET",
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockUnitDto;
+}
+
 export type InvLocationDto = {
   id: string;
   business_id: string;
@@ -200,6 +243,19 @@ export async function fetchLocations(signal?: AbortSignal): Promise<InvLocationD
   return (await res.json()) as InvLocationDto[];
 }
 
+export async function createLocation(
+  body: { name: string; parent_location_id?: string | null },
+  signal?: AbortSignal,
+): Promise<InvLocationDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/locations`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvLocationDto;
+}
+
 export async function resolveInventoryEntities(
   body: { locations?: string[]; custodian_display_names?: string[]; categories?: string[] },
   signal?: AbortSignal,
@@ -228,6 +284,7 @@ export async function resolveInventoryEntities(
 export async function fetchStockUnits(params: {
   status?: string;
   search?: string;
+  purchase_lot_id?: string;
   limit?: number;
   offset?: number;
   signal?: AbortSignal;
@@ -235,6 +292,7 @@ export async function fetchStockUnits(params: {
   const q = new URLSearchParams();
   if (params.status) q.set("status", params.status);
   if (params.search) q.set("search", params.search);
+  if (params.purchase_lot_id) q.set("purchase_lot_id", params.purchase_lot_id);
   if (params.limit != null) q.set("limit", String(params.limit));
   if (params.offset != null) q.set("offset", String(params.offset));
   const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units?${q.toString()}`, {
@@ -523,6 +581,47 @@ export async function closeAuditSession(sessionId: string, signal?: AbortSignal)
   });
   if (!res.ok) throw new Error(await parseError(res));
   return (await res.json()) as InvAuditSessionDto;
+}
+
+export async function fetchAuditSessions(limit = 30, signal?: AbortSignal): Promise<InvAuditSessionDto[]> {
+  const capped = Math.min(Math.max(1, limit), 100);
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/audit-sessions?limit=${capped}`, {
+    method: "GET",
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvAuditSessionDto[];
+}
+
+export async function transferStockUnits(
+  body: {
+    from_unit_id: string;
+    to_unit_id: string;
+    qty: string | number;
+    pieces?: number;
+    memo?: string;
+    client_ref?: string | null;
+    expected_from_row_version?: number | null;
+    expected_to_row_version?: number | null;
+  },
+  signal?: AbortSignal,
+): Promise<InvStockUnitDto[]> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/transfer`, {
+    method: "POST",
+    body: JSON.stringify({
+      from_unit_id: body.from_unit_id,
+      to_unit_id: body.to_unit_id,
+      qty: String(body.qty),
+      pieces: body.pieces ?? 0,
+      memo: body.memo ?? "",
+      client_ref: body.client_ref ?? null,
+      expected_from_row_version: body.expected_from_row_version ?? null,
+      expected_to_row_version: body.expected_to_row_version ?? null,
+    }),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvStockUnitDto[];
 }
 
 export async function importHubCatalog(

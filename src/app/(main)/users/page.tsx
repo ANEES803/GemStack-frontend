@@ -1,7 +1,5 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { UsersRolesWorkspace } from "@/components/users/UsersRolesWorkspace";
-
-export default function UsersPage() {
-  return <UsersRolesWorkspace />;
+export default function UsersRedirectPage() {
+  redirect("/settings?tab=users");
 }

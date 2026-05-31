@@ -26,6 +26,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { DEMO_REVENUE_ACCOUNTS, revenueAccountLabel } from "@/lib/demoRevenueAccounts";
 import { loadItemCatalog, saveItemCatalog, type StoredItemRow } from "@/lib/itemCatalogStorage";
+import { clearInventoryLocalStorageKeys, isInventoryGuestMode } from "@/lib/inventoryLocalPersistence";
 import { getAccessToken } from "@/lib/authClient";
 import {
   fetchRoughLotPickerOptions,
@@ -68,8 +69,10 @@ import {
   isServerUuid,
   patchStockFromItemForm,
   persistCustomInventoryType,
+  resolveLocationAndCustodian,
 } from "@/lib/inventoryHubInventoryApi";
 import type {
+  InvAuditSessionDto,
   InvInventoryFeatureFlags,
   InvItemTypeDto,
   InvLineageDto,
@@ -87,6 +90,8 @@ import {
   createStockUnitsFromPurchaseLot,
   cutStockUnit,
   customSplitLotLine,
+  fetchAuditSessions,
+  fetchLocations,
   fetchInventoryFeatureFlags,
   fetchItemTypes,
   fetchLotBalance,
@@ -99,9 +104,11 @@ import {
   fetchStockUnitLabelPdf,
   fetchStockUnitLabelsBatchPdf,
   freezeStockUnit,
+  patchStockUnit,
   rebalanceStockUnits,
   recordStockLoss,
   splitStockUnits,
+  transferStockUnits,
   unfreezeStockUnit,
   updateItemType,
   updateService,
@@ -138,7 +145,7 @@ type AuditRecord = {
 const AUDIT_RECORDS_KEY = "gemstack-inventory-audit-records-v1";
 
 function loadAuditRecords(): AuditRecord[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
   try {
     const raw = localStorage.getItem(AUDIT_RECORDS_KEY);
     if (!raw) return [];
@@ -151,7 +158,7 @@ function loadAuditRecords(): AuditRecord[] {
 }
 
 function persistAuditRecords(records: AuditRecord[]) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
   try {
     localStorage.setItem(AUDIT_RECORDS_KEY, JSON.stringify(records));
   } catch {
@@ -162,7 +169,7 @@ function persistAuditRecords(records: AuditRecord[]) {
 const AUDIT_CLOSED_IDS_KEY = "gemstack-inventory-audit-closed-ids-v1";
 
 function loadAuditClosedIds(): Set<string> {
-  if (typeof window === "undefined") return new Set();
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return new Set();
   try {
     const raw = localStorage.getItem(AUDIT_CLOSED_IDS_KEY);
     if (!raw) return new Set();
@@ -175,7 +182,7 @@ function loadAuditClosedIds(): Set<string> {
 }
 
 function persistAuditClosedIds(ids: Set<string>) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
   try {
     localStorage.setItem(AUDIT_CLOSED_IDS_KEY, JSON.stringify(Array.from(ids)));
   } catch {
@@ -188,7 +195,7 @@ const ADD_NEW_TYPE_VALUE = "__add_new_type__";
 const CUSTOM_INVENTORY_LOCATIONS_KEY = "gemstack-inventory-custom-locations-v1";
 
 function loadCustomLocations(): string[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
   try {
     const raw = localStorage.getItem(CUSTOM_INVENTORY_LOCATIONS_KEY);
     if (!raw) return [];
@@ -201,7 +208,7 @@ function loadCustomLocations(): string[] {
 }
 
 function persistCustomLocations(locations: string[]) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
   try {
     localStorage.setItem(CUSTOM_INVENTORY_LOCATIONS_KEY, JSON.stringify(locations));
   } catch {
@@ -212,7 +219,7 @@ function persistCustomLocations(locations: string[]) {
 const CUSTOM_INVENTORY_CUSTODIANS_KEY = "gemstack-inventory-custom-custodians-v1";
 
 function loadCustomCustodians(): string[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
   try {
     const raw = localStorage.getItem(CUSTOM_INVENTORY_CUSTODIANS_KEY);
     if (!raw) return [];
@@ -225,7 +232,7 @@ function loadCustomCustodians(): string[] {
 }
 
 function persistCustomCustodians(names: string[]) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
   try {
     localStorage.setItem(CUSTOM_INVENTORY_CUSTODIANS_KEY, JSON.stringify(names));
   } catch {
@@ -236,7 +243,7 @@ function persistCustomCustodians(names: string[]) {
 const CUSTOM_INVENTORY_CATEGORIES_KEY = "gemstack-inventory-custom-categories-v1";
 
 function loadCustomCategories(): string[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
   try {
     const raw = localStorage.getItem(CUSTOM_INVENTORY_CATEGORIES_KEY);
     if (!raw) return [];
@@ -249,7 +256,7 @@ function loadCustomCategories(): string[] {
 }
 
 function persistCustomCategories(categories: string[]) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
   try {
     localStorage.setItem(CUSTOM_INVENTORY_CATEGORIES_KEY, JSON.stringify(categories));
   } catch {
@@ -260,7 +267,7 @@ function persistCustomCategories(categories: string[]) {
 const HIDDEN_LOCATION_PRESETS_KEY = "gemstack-inventory-hidden-location-presets-v1";
 
 function loadHiddenLocationPresets(): string[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
   try {
     const raw = localStorage.getItem(HIDDEN_LOCATION_PRESETS_KEY);
     if (!raw) return [];
@@ -273,7 +280,7 @@ function loadHiddenLocationPresets(): string[] {
 }
 
 function persistHiddenLocationPresets(names: string[]) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
   try {
     localStorage.setItem(HIDDEN_LOCATION_PRESETS_KEY, JSON.stringify(names));
   } catch {
@@ -284,7 +291,7 @@ function persistHiddenLocationPresets(names: string[]) {
 const HIDDEN_CUSTODIAN_PRESETS_KEY = "gemstack-inventory-hidden-custodian-presets-v1";
 
 function loadHiddenCustodianPresets(): string[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
   try {
     const raw = localStorage.getItem(HIDDEN_CUSTODIAN_PRESETS_KEY);
     if (!raw) return [];
@@ -297,7 +304,7 @@ function loadHiddenCustodianPresets(): string[] {
 }
 
 function persistHiddenCustodianPresets(names: string[]) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
   try {
     localStorage.setItem(HIDDEN_CUSTODIAN_PRESETS_KEY, JSON.stringify(names));
   } catch {
@@ -308,7 +315,7 @@ function persistHiddenCustodianPresets(names: string[]) {
 const HIDDEN_CATEGORY_PRESETS_KEY = "gemstack-inventory-hidden-category-presets-v1";
 
 function loadHiddenCategoryPresets(): string[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
   try {
     const raw = localStorage.getItem(HIDDEN_CATEGORY_PRESETS_KEY);
     if (!raw) return [];
@@ -321,7 +328,7 @@ function loadHiddenCategoryPresets(): string[] {
 }
 
 function persistHiddenCategoryPresets(names: string[]) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
   try {
     localStorage.setItem(HIDDEN_CATEGORY_PRESETS_KEY, JSON.stringify(names));
   } catch {
@@ -1621,10 +1628,12 @@ export function InventoryHub() {
 
   const setTab = (t: Tab) => router.push(`/inventory?tab=${t}`, { scroll: false });
 
-  const [rows, setRows] = useState<ItemRow[]>(INITIAL_ITEMS);
+  const [rows, setRows] = useState<ItemRow[]>([]);
+  /** `loading` until first catalog bootstrap finishes (avoids flashing demo rows before server data). */
+  const [catalogBootstrap, setCatalogBootstrap] = useState<"loading" | "ready">("loading");
   /**
-   * `local` = legacy localStorage + demo seed (default).
-   * `server` = catalog hydrated from `/inv/*` when business flag `hub_backend_reads` is true.
+   * `local` = guest-only demo catalog (no auth token); signed-in users use `server` only.
+   * `server` = catalog hydrated from `/inv/*` (signed-in default).
    */
   const [inventoryCatalogSource, setInventoryCatalogSource] = useState<"local" | "server">("local");
   const [invFlags, setInvFlags] = useState<InvInventoryFeatureFlags | null>(null);
@@ -1684,6 +1693,17 @@ export function InventoryHub() {
   const [reportsApiLoading, setReportsApiLoading] = useState(false);
   const [reportsApiError, setReportsApiError] = useState<string | null>(null);
   const [auditSaving, setAuditSaving] = useState(false);
+  const [auditHistoryLoading, setAuditHistoryLoading] = useState(false);
+  const [stockTransferOpen, setStockTransferOpen] = useState(false);
+  const [stockTransferMode, setStockTransferMode] = useState<"location" | "qty">("location");
+  const [transferUnitId, setTransferUnitId] = useState("");
+  const [transferToLocation, setTransferToLocation] = useState("");
+  const [transferFromUnitId, setTransferFromUnitId] = useState("");
+  const [transferToUnitId, setTransferToUnitId] = useState("");
+  const [transferQty, setTransferQty] = useState("");
+  const [transferPieces, setTransferPieces] = useState("");
+  const [transferMemo, setTransferMemo] = useState("");
+  const [transferBusy, setTransferBusy] = useState(false);
   /** Stock line selected to inspect split children (parcels / child units). */
   const [parcelLinesParent, setParcelLinesParent] = useState<ItemRow | null>(null);
   const [fromLotOpen, setFromLotOpen] = useState(false);
@@ -1775,8 +1795,11 @@ export function InventoryHub() {
   });
 
   useEffect(() => {
-    setAuditRecords(loadAuditRecords());
-    setAuditClosedItemIds(loadAuditClosedIds());
+    if (isInventoryGuestMode()) {
+      setAuditClosedItemIds(loadAuditClosedIds());
+    } else {
+      setAuditClosedItemIds(new Set());
+    }
   }, []);
 
   useEffect(() => {
@@ -1871,24 +1894,105 @@ export function InventoryHub() {
     setInventoryCatalogSource("server");
   }, []);
 
+  const mapServerAuditSessions = useCallback(
+    (sessions: InvAuditSessionDto[]): AuditRecord[] =>
+      sessions.map((sess) => ({
+        id: sess.id,
+        createdAt: sess.started_at,
+        note: sess.note?.trim()
+          ? sess.note
+          : sess.status === "closed"
+            ? "Closed on server"
+            : sess.status || "",
+        lines: sess.lines.map((ln) => {
+          const unitId = ln.stock_unit_id;
+          const row = rows.find((r) => r.id === unitId || r.serverUnitId === unitId);
+          const systemUom = Number(ln.system_qty);
+          const physicalUom = ln.physical_qty != null && ln.physical_qty !== "" ? Number(ln.physical_qty) : null;
+          const variance =
+            physicalUom !== null && Number.isFinite(physicalUom) && Number.isFinite(systemUom)
+              ? physicalUom - systemUom
+              : null;
+          return {
+            itemId: unitId,
+            itemNo: row?.itemNo ?? unitId.slice(0, 8),
+            itemName: row?.itemName ?? "Stock line",
+            itemKind: row?.itemKind ?? "",
+            location: row?.location ?? "",
+            custodian: row?.custodian ?? "",
+            systemUom: Number.isFinite(systemUom) ? systemUom : 0,
+            systemPieces: row?.pieces ?? 0,
+            physicalUom,
+            verified: ln.verified,
+            variance,
+          };
+        }),
+      })),
+    [rows],
+  );
+
+  const reloadAuditSessions = useCallback(async () => {
+    if (!getAccessToken()) {
+      setAuditRecords(loadAuditRecords());
+      return;
+    }
+    setAuditHistoryLoading(true);
+    try {
+      const sessions = await fetchAuditSessions(50);
+      setAuditRecords(mapServerAuditSessions(sessions));
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Could not load audit history.", "error");
+      setAuditRecords([]);
+    } finally {
+      setAuditHistoryLoading(false);
+    }
+  }, [mapServerAuditSessions, pushToast]);
+
+  useEffect(() => {
+    if (catalogBootstrap !== "ready") return;
+    void reloadAuditSessions();
+  }, [catalogBootstrap, reloadAuditSessions]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (typeof window === "undefined") return;
+      setCatalogBootstrap("loading");
+
+      const hydrateLocalCatalog = () => {
+        const loaded = loadItemCatalog();
+        if (loaded?.length) {
+          setRows(
+            loaded.map((r) => ({
+              ...r,
+              revenueAccountId: r.revenueAccountId ?? (r.entryType === "service" ? "8" : ""),
+              linkedRoughLotCode: r.linkedRoughLotCode ?? "",
+            })) as ItemRow[],
+          );
+        } else {
+          setRows(INITIAL_ITEMS);
+        }
+        setInventoryCatalogSource("local");
+      };
+
       if (getAccessToken()) {
+        clearInventoryLocalStorageKeys();
         try {
           const flags = await fetchInventoryFeatureFlags();
           if (cancelled) return;
           setInvFlags(flags);
-          if (catalogShouldLoadFromServer(flags)) {
+          const readsBlocked = flags.hub_backend_reads === false;
+          if (!readsBlocked) {
             const snap = await loadInventoryHubServerSnapshot();
             if (!cancelled) {
               setRows(snap.rows);
               setCustomInventoryTypes(snap.customInventoryTypes);
               setInventoryCatalogSource("server");
-              pushToast("Inventory loaded from server.", "success");
+              setCatalogBootstrap("ready");
               return;
             }
+          } else {
+            pushToast("Server inventory reads are off for this business. Using local catalog.", "info");
           }
         } catch (e) {
           if (!cancelled) {
@@ -1896,16 +2000,10 @@ export function InventoryHub() {
           }
         }
       }
+
       if (cancelled) return;
-      const loaded = loadItemCatalog();
-      if (!loaded?.length) return;
-      setRows(
-        loaded.map((r) => ({
-          ...r,
-          revenueAccountId: r.revenueAccountId ?? (r.entryType === "service" ? "8" : ""),
-          linkedRoughLotCode: r.linkedRoughLotCode ?? "",
-        })) as ItemRow[],
-      );
+      hydrateLocalCatalog();
+      setCatalogBootstrap("ready");
     })();
     return () => {
       cancelled = true;
@@ -1915,7 +2013,7 @@ export function InventoryHub() {
   }, []);
 
   useEffect(() => {
-    if (inventoryCatalogSource === "server") return;
+    if (inventoryCatalogSource === "server" || !isInventoryGuestMode()) return;
     saveItemCatalog(rows as StoredItemRow[]);
   }, [rows, inventoryCatalogSource]);
 
@@ -1927,6 +2025,7 @@ export function InventoryHub() {
   const [hiddenCategoryPresets, setHiddenCategoryPresets] = useState<string[]>([]);
 
   useEffect(() => {
+    if (!isInventoryGuestMode()) return;
     setCustomLocations(loadCustomLocations());
     setCustomCustodians(loadCustomCustodians());
     setCustomCategories(loadCustomCategories());
@@ -1934,6 +2033,30 @@ export function InventoryHub() {
     setHiddenCustodianPresets(loadHiddenCustodianPresets());
     setHiddenCategoryPresets(loadHiddenCategoryPresets());
   }, []);
+
+  useEffect(() => {
+    if (!getAccessToken() || catalogBootstrap !== "ready") return;
+    let cancelled = false;
+    void fetchLocations()
+      .then((locs) => {
+        if (cancelled) return;
+        const names = locs
+          .filter((l) => l.is_active)
+          .map((l) => l.name.trim())
+          .filter(Boolean);
+        if (!names.length) return;
+        setCustomLocations((prev) => {
+          const merged = new Set([...prev, ...names]);
+          return Array.from(merged).sort((a, b) => a.localeCompare(b));
+        });
+      })
+      .catch(() => {
+        /* picker still uses row locations + presets */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogBootstrap]);
 
   const locationPickerOptions = useMemo(() => {
     const set = new Set<string>();
@@ -4068,14 +4191,21 @@ export function InventoryHub() {
           setAuditSaving(false);
         }
       } else if (getAccessToken() && apiLines.length === 0) {
-        pushToast("No server UUID stock lines in this list — snapshot saved locally only.", "info");
+        pushToast(
+          "No server stock lines in this list — open Stock items while signed in so lines have server IDs.",
+          "info",
+        );
       }
 
-      setAuditRecords((prev) => {
-        const next = [rec, ...prev];
-        persistAuditRecords(next);
-        return next;
-      });
+      if (serverSavedOk) {
+        await reloadAuditSessions();
+      } else {
+        setAuditRecords((prev) => {
+          const next = [rec, ...prev];
+          persistAuditRecords(next);
+          return next;
+        });
+      }
       if (mode === "close") {
         const idsToClose = auditFilteredStockRows
           .filter((r) => (auditDraft[r.id] ?? { physical: "", verified: false }).verified)
@@ -4103,17 +4233,112 @@ export function InventoryHub() {
         } else if (idsToClose.length > 0) {
           pushToast(`${idsToClose.length} verified line(s) removed from this audit list.`, "info");
         }
-      } else if (!serverSavedOk && (!getAccessToken() || apiLines.length === 0)) {
-        pushToast(
-          getAccessToken()
-            ? "Snapshot saved locally. Add counts for server-backed lines (UUID ids) to post an audit session."
-            : "Audit snapshot saved locally (sign in to post sessions to the server).",
-          "info",
-        );
+      } else if (!serverSavedOk && !getAccessToken()) {
+        pushToast("Audit snapshot saved in this browser (demo). Sign in to save on the server.", "info");
+      } else if (!serverSavedOk && getAccessToken()) {
+        pushToast("Could not save audit on the server. Counts kept on screen only (not in browser storage).", "info");
       }
     },
-    [auditFilteredStockRows, auditDraft, pushToast],
+    [auditFilteredStockRows, auditDraft, pushToast, reloadAuditSessions],
   );
+
+  const serverStockRowsForTransfer = useMemo(
+    () =>
+      rows.filter(
+        (r) => r.entryType === "inventory" && isServerUuid(r.serverUnitId ?? r.id),
+      ),
+    [rows],
+  );
+
+  const submitStockTransfer = useCallback(async () => {
+    if (!getAccessToken() || !invFlags || !inventoryWritesAllowed(invFlags)) {
+      pushToast("Sign in with server inventory writes enabled.", "error");
+      return;
+    }
+    setTransferBusy(true);
+    try {
+      if (stockTransferMode === "location") {
+        if (!transferUnitId.trim()) {
+          pushToast("Select a stock line.", "error");
+          return;
+        }
+        if (!transferToLocation.trim()) {
+          pushToast("Enter a destination location.", "error");
+          return;
+        }
+        const row = rows.find((r) => r.id === transferUnitId || r.serverUnitId === transferUnitId);
+        const unitId = row?.serverUnitId ?? transferUnitId;
+        if (!isServerUuid(unitId)) {
+          pushToast("Selected line is not on the server.", "error");
+          return;
+        }
+        const { location_id } = await resolveLocationAndCustodian(transferToLocation.trim(), "");
+        await patchStockUnit(unitId, {
+          location_id,
+          expected_row_version: row?.rowVersion ?? 1,
+        });
+        await refetchInventoryCatalog();
+        pushToast("Location updated on the server.", "success");
+        setStockTransferOpen(false);
+        return;
+      }
+      if (!transferFromUnitId.trim() || !transferToUnitId.trim()) {
+        pushToast("Select source and destination stock lines.", "error");
+        return;
+      }
+      if (transferFromUnitId === transferToUnitId) {
+        pushToast("Source and destination must be different.", "error");
+        return;
+      }
+      const qtyNum = Number(transferQty);
+      if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+        pushToast("Enter a valid quantity to transfer.", "error");
+        return;
+      }
+      const fromRow = rows.find((r) => r.id === transferFromUnitId || r.serverUnitId === transferFromUnitId);
+      const toRow = rows.find((r) => r.id === transferToUnitId || r.serverUnitId === transferToUnitId);
+      const fromId = fromRow?.serverUnitId ?? transferFromUnitId;
+      const toId = toRow?.serverUnitId ?? transferToUnitId;
+      if (!isServerUuid(fromId) || !isServerUuid(toId)) {
+        pushToast("Both lines must exist on the server.", "error");
+        return;
+      }
+      const piecesNum = transferPieces.trim() === "" ? 0 : Math.floor(Number(transferPieces));
+      if (!Number.isFinite(piecesNum) || piecesNum < 0) {
+        pushToast("Enter a valid pieces count (or leave empty for 0).", "error");
+        return;
+      }
+      await transferStockUnits({
+        from_unit_id: fromId,
+        to_unit_id: toId,
+        qty: qtyNum,
+        pieces: piecesNum,
+        memo: transferMemo.trim(),
+        expected_from_row_version: fromRow?.rowVersion ?? null,
+        expected_to_row_version: toRow?.rowVersion ?? null,
+      });
+      await refetchInventoryCatalog();
+      pushToast("Quantity transferred on the server.", "success");
+      setStockTransferOpen(false);
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Transfer failed", "error");
+    } finally {
+      setTransferBusy(false);
+    }
+  }, [
+    invFlags,
+    pushToast,
+    refetchInventoryCatalog,
+    rows,
+    stockTransferMode,
+    transferFromUnitId,
+    transferMemo,
+    transferPieces,
+    transferQty,
+    transferToLocation,
+    transferToUnitId,
+    transferUnitId,
+  ]);
 
   const reloadServerReports = useCallback(() => {
     if (!getAccessToken()) {
@@ -4165,6 +4390,17 @@ export function InventoryHub() {
       {tab === "items" && (
         <section className="w-full rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
           <div className="border-b border-[var(--gs-border)] p-5">
+            {catalogBootstrap === "loading" ? (
+              <p className="mb-3 rounded-xl bg-[var(--gs-hover)]/80 px-4 py-3 text-sm text-[var(--gs-muted)]">
+                Loading inventory from server…
+              </p>
+            ) : null}
+            {inventoryCatalogSource === "local" && getAccessToken() ? (
+              <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                Showing browser catalog (offline/demo). Sign in and enable server reads in Settings → Inventory (server) for
+                live stock.
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-bold text-[var(--gs-text)]">Items</h2>
@@ -4642,6 +4878,19 @@ export function InventoryHub() {
                                   onSelect: () => openParcelLinesDrawer(r),
                                 },
                               ];
+                              if (
+                                r.entryType === "inventory" &&
+                                isServerUuid(r.serverUnitId ?? r.id) &&
+                                !r.isLocked
+                              ) {
+                                items.push({
+                                  label: "Sell on invoice…",
+                                  onSelect: () => {
+                                    const uid = encodeURIComponent(r.serverUnitId ?? r.id);
+                                    router.push(`/sales/new?stockUnitIds=${uid}`);
+                                  },
+                                });
+                              }
                               if (!r.isLocked) {
                                 items.push(
                                   {
@@ -7357,8 +7606,7 @@ export function InventoryHub() {
           {[
             { title: "Stock in (GRN)", desc: "Receive against PO or opening", href: "/purchases?tab=flow" },
             { title: "Stock out", desc: "Issue to production / sales", href: "/sales?tab=transactions" },
-            { title: "Stock transfer", desc: "Move between locations", href: "/inventory?tab=stock" },
-            { title: "Stock adjustment", desc: "Shrinkage / recount", href: "/inventory?tab=stock" },
+            { title: "Stock adjustment", desc: "Shrinkage / recount", href: "/inventory?tab=audit" },
           ].map((c) => (
             <button
               key={c.title}
@@ -7370,6 +7618,26 @@ export function InventoryHub() {
               <p className="mt-2 text-sm text-[var(--gs-muted)]">{c.desc}</p>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              setStockTransferMode("location");
+              setTransferUnitId(serverStockRowsForTransfer[0]?.id ?? "");
+              setTransferToLocation("");
+              setTransferFromUnitId(serverStockRowsForTransfer[0]?.id ?? "");
+              setTransferToUnitId(serverStockRowsForTransfer[1]?.id ?? "");
+              setTransferQty("");
+              setTransferPieces("");
+              setTransferMemo("");
+              setStockTransferOpen(true);
+            }}
+            className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 text-left shadow-sm transition hover:border-[var(--gs-accent)]"
+          >
+            <p className="font-bold text-[var(--gs-text)]">Stock transfer</p>
+            <p className="mt-2 text-sm text-[var(--gs-muted)]">
+              Move a line to another location or transfer quantity between two server stock lines.
+            </p>
+          </button>
           <div className="sm:col-span-2 lg:col-span-4 rounded-2xl border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 p-5">
             <p className="text-sm font-semibold text-[var(--gs-text)]">Gemstone inventory</p>
             <p className="mt-1 text-sm text-[var(--gs-muted)]">
@@ -8066,9 +8334,23 @@ export function InventoryHub() {
               </tbody>
             </table>
           </div>
-          {auditRecords.length > 0 ? (
-            <div className="border-t border-[var(--gs-border)] p-6">
+          <div className="border-t border-[var(--gs-border)] p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-[var(--gs-text)]">Saved audit records</h3>
+              {getAccessToken() ? (
+                <button
+                  type="button"
+                  onClick={() => void reloadAuditSessions()}
+                  disabled={auditHistoryLoading}
+                  className="rounded-full border border-[var(--gs-border)] bg-[var(--gs-card)] px-3 py-1 text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
+                >
+                  {auditHistoryLoading ? "Loading…" : "Refresh from server"}
+                </button>
+              ) : null}
+            </div>
+            {auditHistoryLoading && auditRecords.length === 0 ? (
+              <p className="mt-3 text-sm text-[var(--gs-muted)]">Loading audit history…</p>
+            ) : auditRecords.length > 0 ? (
               <ul className="mt-3 max-h-60 space-y-2 overflow-y-auto text-sm">
                 {auditRecords.map((rec) => (
                   <li
@@ -8081,14 +8363,208 @@ export function InventoryHub() {
                     <span className="text-xs text-[var(--gs-muted)]">
                       {rec.lines.length} lines
                       {rec.note ? ` · ${rec.note}` : ""}
+                      {isServerUuid(rec.id) ? " · server" : isInventoryGuestMode() ? " · demo" : " · session"}
                     </span>
                   </li>
                 ))}
               </ul>
-            </div>
-          ) : null}
+            ) : (
+              <p className="mt-3 text-sm text-[var(--gs-muted)]">
+                {getAccessToken()
+                  ? "No audit sessions yet. Save a count above to create one on the server."
+                  : "Sign in to load audit history from the server."}
+              </p>
+            )}
+          </div>
         </section>
       )}
+
+      {stockTransferOpen ? (
+        <div
+          className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-12"
+          role="presentation"
+          onClick={() => !transferBusy && setStockTransferOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-labelledby="stock-transfer-title"
+            aria-modal="true"
+            className="my-8 w-full max-w-lg rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 id="stock-transfer-title" className="text-lg font-bold text-[var(--gs-text)]">
+                  Stock transfer
+                </h2>
+                <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                  Requires sign-in and server inventory writes. Uses the inventory API on the server.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStockTransferOpen(false)}
+                disabled={transferBusy}
+                className="rounded-lg p-2 text-[var(--gs-muted)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setStockTransferMode("location")}
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  stockTransferMode === "location"
+                    ? "bg-[var(--gs-accent)] text-white"
+                    : "border border-[var(--gs-border)] text-[var(--gs-text)]"
+                }`}
+              >
+                Move location
+              </button>
+              <button
+                type="button"
+                onClick={() => setStockTransferMode("qty")}
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  stockTransferMode === "qty"
+                    ? "bg-[var(--gs-accent)] text-white"
+                    : "border border-[var(--gs-border)] text-[var(--gs-text)]"
+                }`}
+              >
+                Transfer quantity
+              </button>
+            </div>
+            {serverStockRowsForTransfer.length === 0 ? (
+              <p className="mt-4 text-sm text-amber-800">
+                No server stock lines in this catalog. Add stock under Stock items while signed in.
+              </p>
+            ) : stockTransferMode === "location" ? (
+              <form
+                className="mt-4 space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submitStockTransfer();
+                }}
+              >
+                <label className="block text-xs font-semibold text-[var(--gs-muted)]">
+                  Stock line
+                  <select
+                    value={transferUnitId}
+                    onChange={(e) => setTransferUnitId(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  >
+                    {serverStockRowsForTransfer.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.itemNo} — {r.itemName}
+                        {r.location ? ` (${r.location})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs font-semibold text-[var(--gs-muted)]">
+                  New location
+                  <input
+                    list="transfer-location-options"
+                    value={transferToLocation}
+                    onChange={(e) => setTransferToLocation(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    placeholder="e.g. Vault A"
+                  />
+                  <datalist id="transfer-location-options">
+                    {locationPickerOptions.map((loc) => (
+                      <option key={loc} value={loc} />
+                    ))}
+                  </datalist>
+                </label>
+                <button
+                  type="submit"
+                  disabled={transferBusy}
+                  className="w-full rounded-full bg-[var(--gs-accent)] py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
+                >
+                  {transferBusy ? "Saving…" : "Move to location"}
+                </button>
+              </form>
+            ) : (
+              <form
+                className="mt-4 space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submitStockTransfer();
+                }}
+              >
+                <label className="block text-xs font-semibold text-[var(--gs-muted)]">
+                  From (source)
+                  <select
+                    value={transferFromUnitId}
+                    onChange={(e) => setTransferFromUnitId(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  >
+                    {serverStockRowsForTransfer.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.itemNo} — {r.itemName} (UOM {r.uom})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs font-semibold text-[var(--gs-muted)]">
+                  To (destination)
+                  <select
+                    value={transferToUnitId}
+                    onChange={(e) => setTransferToUnitId(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  >
+                    {serverStockRowsForTransfer.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.itemNo} — {r.itemName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs font-semibold text-[var(--gs-muted)]">
+                    Quantity (UOM)
+                    <input
+                      type="number"
+                      step="any"
+                      min={0}
+                      value={transferQty}
+                      onChange={(e) => setTransferQty(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-[var(--gs-muted)]">
+                    Pieces (optional)
+                    <input
+                      type="number"
+                      step={1}
+                      min={0}
+                      value={transferPieces}
+                      onChange={(e) => setTransferPieces(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                    />
+                  </label>
+                </div>
+                <label className="block text-xs font-semibold text-[var(--gs-muted)]">
+                  Memo
+                  <input
+                    value={transferMemo}
+                    onChange={(e) => setTransferMemo(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={transferBusy}
+                  className="w-full rounded-full bg-[var(--gs-accent)] py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-50"
+                >
+                  {transferBusy ? "Transferring…" : "Transfer quantity"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {viewAllTypesOpen ? (
         <div

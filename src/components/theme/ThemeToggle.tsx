@@ -160,6 +160,40 @@ export function ThemeToggleRow() {
   );
 }
 
+export function ThemeToggleTopBar() {
+  const { mode, updateMode, effectiveDark } = useGemstackTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const cycle = useCallback(() => {
+    const order: ThemeMode[] = ["light", "system", "dark"];
+    const next = order[(order.indexOf(mode) + 1) % order.length]!;
+    updateMode(next);
+  }, [mode, updateMode]);
+
+  if (!mounted) {
+    return <div className="h-11 w-11 shrink-0" aria-hidden />;
+  }
+
+  const label =
+    mode === "light" ? "Light mode" : mode === "dark" ? "Dark mode" : "System theme";
+
+  return (
+    <button
+      type="button"
+      onClick={cycle}
+      title={`${label} — click to cycle`}
+      aria-label={`${label}. Click to cycle theme.`}
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--gs-muted)] transition hover:bg-[var(--gs-topbar-icon-hover)] hover:text-[var(--gs-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--gs-shell-header)]"
+    >
+      {effectiveDark ? <Moon className="h-5 w-5" strokeWidth={2} aria-hidden /> : <Sun className="h-5 w-5" strokeWidth={2} aria-hidden />}
+    </button>
+  );
+}
+
 export function ThemeToggleIconButton() {
   const { mode, updateMode, effectiveDark } = useGemstackTheme();
   const [mounted, setMounted] = useState(false);

@@ -25,12 +25,27 @@ function mergeAbortSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSig
   return controller.signal;
 }
 
+function fetchFailureMessage(url: string, err: unknown, timeoutMs: number): string {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return `Could not reach the API at ${url} within ${Math.round(timeoutMs / 1000)}s. Is the backend running on port 8000? (uvicorn app.main:app --reload)`;
+  }
+  if (err instanceof TypeError) {
+    return `Network error talking to ${url}. Start GemStack-Backend (uvicorn) and check NEXT_PUBLIC_API_BASE_URL in .env.`;
+  }
+  if (err instanceof Error && err.message.toLowerCase().includes("abort")) {
+    return `Request to ${url} was cancelled or timed out. Confirm only one backend is listening on port 8000.`;
+  }
+  return err instanceof Error ? err.message : "Request failed";
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
   const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => timeoutController.abort("timeout"), FETCH_TIMEOUT_MS);
   try {
     const signal = mergeAbortSignals(init.signal ?? undefined, timeoutController.signal);
     return await fetch(url, { ...init, signal });
+  } catch (err) {
+    throw new Error(fetchFailureMessage(url, err, FETCH_TIMEOUT_MS));
   } finally {
     clearTimeout(timeoutId);
   }
@@ -38,10 +53,12 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Re
 
 async function fetchWithTimeoutMs(url: string, init: RequestInit = {}, timeoutMs: number): Promise<Response> {
   const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
+  const timeoutId = setTimeout(() => timeoutController.abort("timeout"), timeoutMs);
   try {
     const signal = mergeAbortSignals(init.signal ?? undefined, timeoutController.signal);
     return await fetch(url, { ...init, signal });
+  } catch (err) {
+    throw new Error(fetchFailureMessage(url, err, timeoutMs));
   } finally {
     clearTimeout(timeoutId);
   }

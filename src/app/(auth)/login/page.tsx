@@ -26,7 +26,7 @@ function LoginPageContent() {
     try {
       const payload = await login(email, password);
       if (payload.user.must_change_password) {
-        router.push("/settings/security");
+        router.push("/settings?tab=security");
         return;
       }
       const destination = role ? roleHref(role.slug) : roleHref(payload.user.role);

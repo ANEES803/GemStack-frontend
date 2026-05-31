@@ -75,7 +75,7 @@ const tdBase = "px-3 py-3.5 align-middle text-sm sm:px-4 sm:py-4";
 export default function LotsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<LotListRow[]>([]);
-  const [listSource, setListSource] = useState<"api" | "local">("local");
+  const [listSource, setListSource] = useState<"api" | "local" | "cache">("local");
   /** False until the first load attempt for the current auth mode finishes (avoids showing wrong data). */
   const [listReady, setListReady] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -119,9 +119,19 @@ export default function LotsPage() {
         setListError(null);
       } catch (e) {
         if (cancelled) return;
-        setRows([]);
-        setListSource("api");
-        setListError(e instanceof Error ? e.message : "Could not load lots from the server.");
+        const cached = loadLots();
+        if (cached.length > 0) {
+          setRows(cached);
+          setListSource("cache");
+          setListError(
+            (e instanceof Error ? e.message : "Could not load lots from the server.") +
+              " Showing cached lots from this browser (may be outdated).",
+          );
+        } else {
+          setRows([]);
+          setListSource("api");
+          setListError(e instanceof Error ? e.message : "Could not load lots from the server.");
+        }
       } finally {
         if (!cancelled) setListReady(true);
       }
@@ -213,7 +223,7 @@ export default function LotsPage() {
 
   async function performDelete(row: LotListRow) {
     setDeleteTarget(null);
-    if (listSource === "api" && row.id) {
+    if ((listSource === "api" || listSource === "cache") && row.id) {
       try {
         await deletePurchaseLot(row.id);
         const list = await listPurchaseLotSummaries();
@@ -258,8 +268,18 @@ export default function LotsPage() {
       setRows(list.map(summaryToLotRow));
       setListSource("api");
     } catch (e) {
-      setRows([]);
-      setListError(e instanceof Error ? e.message : "Could not load lots from the server.");
+      const cached = loadLots();
+      if (cached.length > 0) {
+        setRows(cached);
+        setListSource("cache");
+        setListError(
+          (e instanceof Error ? e.message : "Could not load lots from the server.") +
+            " Showing cached lots from this browser (may be outdated).",
+        );
+      } else {
+        setRows([]);
+        setListError(e instanceof Error ? e.message : "Could not load lots from the server.");
+      }
     } finally {
       setListReady(true);
     }

@@ -6,35 +6,57 @@ import { useAppNotifications } from "@/components/providers/AppNotificationsProv
 import { AppDialog } from "@/components/ui/AppDialog";
 import type { DemoCustomer } from "@/lib/demoCustomers";
 
+export type NewCustomerPayload = Omit<DemoCustomer, "id">;
+
+export type CustomerFormInitial = NewCustomerPayload & { id?: string };
+
 type Props = {
   open: boolean;
   onClose: () => void;
-  onSave: (c: Omit<DemoCustomer, "id">) => void;
+  onSave: (c: NewCustomerPayload) => void | Promise<void>;
+  /** When set, modal opens in edit mode with fields prefilled. */
+  initial?: CustomerFormInitial | null;
+  title?: string;
 };
 
-export function AddCustomerModal({ open, onClose, onSave }: Props) {
+export function AddCustomerModal({ open, onClose, onSave, initial = null, title }: Props) {
   const { pushToast } = useAppNotifications();
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [detail, setDetail] = useState("");
+  const isEdit = Boolean(initial?.id);
 
   useEffect(() => {
     if (open) {
-      setName("");
-      setEmail("");
-      setPhone("");
-      setDetail("");
+      setName(initial?.name ?? "");
+      setEmail(initial?.email ?? "");
+      setPhone(initial?.phone ?? "");
+      setDetail(initial?.detail ?? "");
     }
-  }, [open]);
+  }, [open, initial]);
 
-  function save() {
+  async function save() {
     if (!name.trim()) {
       pushToast("Name is required.", "error");
       return;
     }
-    onSave({ name: name.trim(), email: email.trim(), phone: phone.trim(), detail: detail.trim() });
-    onClose();
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSave({
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        detail: detail.trim(),
+      });
+      onClose();
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Could not save customer", "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -42,7 +64,7 @@ export function AddCustomerModal({ open, onClose, onSave }: Props) {
       open={open}
       onClose={onClose}
       titleId="add-customer-title"
-      title="Add new customer"
+      title={title ?? (isEdit ? "Edit customer" : "Add new customer")}
       size="md"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
@@ -55,10 +77,11 @@ export function AddCustomerModal({ open, onClose, onSave }: Props) {
           </button>
           <button
             type="button"
-            onClick={save}
-            className="w-full rounded-xl bg-[var(--gs-accent)] px-5 py-3 text-sm font-semibold text-white sm:w-auto sm:py-2.5"
+            onClick={() => void save()}
+            disabled={saving}
+            className="w-full rounded-xl bg-[var(--gs-accent)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto sm:py-2.5"
           >
-            Save customer
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Save customer"}
           </button>
         </div>
       }

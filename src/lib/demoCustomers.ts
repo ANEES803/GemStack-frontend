@@ -54,3 +54,22 @@ export function addCustomer(c: Omit<DemoCustomer, "id">): DemoCustomer {
   persistCustomers(next);
   return row;
 }
+
+export function updateCustomer(id: string, patch: Partial<Omit<DemoCustomer, "id">>): DemoCustomer | null {
+  const list = loadCustomers();
+  const idx = list.findIndex((c) => c.id === id);
+  if (idx < 0) return null;
+  const row: DemoCustomer = { ...list[idx]!, ...patch };
+  const next = [...list];
+  next[idx] = row;
+  persistCustomers(next);
+  return row;
+}
+
+export function removeCustomer(id: string): boolean {
+  const list = loadCustomers();
+  const next = list.filter((c) => c.id !== id);
+  if (next.length === list.length) return false;
+  persistCustomers(next);
+  return true;
+}

@@ -531,7 +531,13 @@ export function AccountingWorkspace() {
       try {
         const [s, acc] = await Promise.all([getGlSettings(), listPostableGlAccounts()]);
         if (!cancelled) {
-          setGlPostingSettings(s);
+          setGlPostingSettings({
+            ...s,
+            auto_post_sales_invoices: s.auto_post_sales_invoices ?? true,
+            account_ar_id: s.account_ar_id ?? null,
+            account_sales_revenue_id: s.account_sales_revenue_id ?? null,
+            account_cogs_id: s.account_cogs_id ?? null,
+          });
           setGlPostingAccounts(acc);
         }
       } catch (e) {
@@ -1117,8 +1123,12 @@ export function AccountingWorkspace() {
         account_purchases_id: glPostingSettings.account_purchases_id,
         account_ap_id: glPostingSettings.account_ap_id,
         account_default_bank_id: glPostingSettings.account_default_bank_id,
+        account_ar_id: glPostingSettings.account_ar_id,
+        account_sales_revenue_id: glPostingSettings.account_sales_revenue_id,
+        account_cogs_id: glPostingSettings.account_cogs_id,
         purchase_receipt_mode: glPostingSettings.purchase_receipt_mode,
         auto_post_purchase_lots: glPostingSettings.auto_post_purchase_lots,
+        auto_post_sales_invoices: glPostingSettings.auto_post_sales_invoices,
       });
       setGlPostingSettings(updated);
       setFunctionalCurrency(updated.functional_currency || "USD");
@@ -1537,6 +1547,78 @@ export function AccountingWorkspace() {
                     }
                   />
                   Auto-post purchase receipts and vendor payments to the general ledger
+                </label>
+                <label className="flex items-center gap-2 text-sm text-[var(--gs-text)] sm:col-span-3">
+                  <input
+                    type="checkbox"
+                    checked={glPostingSettings.auto_post_sales_invoices}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) => (p ? { ...p, auto_post_sales_invoices: e.target.checked } : p))
+                    }
+                  />
+                  Auto-post sales invoices and customer payments to the general ledger
+                </label>
+                <p className="text-xs text-[var(--gs-muted)] sm:col-span-3">
+                  Sales posting requires Accounts receivable, Sales revenue, COGS, and Inventory below (for Save &amp; post on invoices).
+                </p>
+                <label className="block text-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Accounts receivable (asset)</span>
+                  <select
+                    value={glPostingSettings.account_ar_id ?? ""}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) => (p ? { ...p, account_ar_id: e.target.value || null } : p))
+                    }
+                    className="gs-field"
+                  >
+                    <option value="">— None —</option>
+                    {glPostingAccounts
+                      .filter((a) => a.account_type.toLowerCase() === "asset")
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label className="block text-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Sales revenue</span>
+                  <select
+                    value={glPostingSettings.account_sales_revenue_id ?? ""}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) =>
+                        p ? { ...p, account_sales_revenue_id: e.target.value || null } : p,
+                      )
+                    }
+                    className="gs-field"
+                  >
+                    <option value="">— None —</option>
+                    {glPostingAccounts
+                      .filter((a) => a.account_type.toLowerCase() === "revenue")
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label className="block text-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Cost of goods sold (expense)</span>
+                  <select
+                    value={glPostingSettings.account_cogs_id ?? ""}
+                    onChange={(e) =>
+                      setGlPostingSettings((p) => (p ? { ...p, account_cogs_id: e.target.value || null } : p))
+                    }
+                    className="gs-field"
+                  >
+                    <option value="">— None —</option>
+                    {glPostingAccounts
+                      .filter((a) => a.account_type.toLowerCase() === "expense")
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} {a.name}
+                        </option>
+                      ))}
+                  </select>
                 </label>
                 <label className="block text-sm">
                   <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Inventory (asset)</span>

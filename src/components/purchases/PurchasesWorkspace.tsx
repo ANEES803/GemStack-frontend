@@ -8,7 +8,17 @@ import { useAppNotifications } from "@/components/providers/AppNotificationsProv
 import { AppDialog } from "@/components/ui/AppDialog";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { formatMoney } from "@/lib/format";
-import { archiveVendor, createVendor, fetchVendorOpenBalances, fetchVendors, updateVendor, type VendorDto } from "@/lib/purchaseLotsApi";
+import {
+  archiveVendor,
+  createVendor,
+  fetchApAging,
+  fetchVendorOpenBalances,
+  fetchVendors,
+  updateVendor,
+  type ApAgingLineDto,
+  type VendorDto,
+} from "@/lib/purchaseLotsApi";
+import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
 type Tab = "flow" | "payments" | "vendors";
 
@@ -83,6 +93,11 @@ export function PurchasesWorkspace() {
   const router = useRouter();
   const sp = useSearchParams();
   const tab = (sp.get("tab") as Tab | null) ?? "flow";
+  const todayIso = useHydratedTodayIso();
+  const [apAgingAsOf, setApAgingAsOf] = useState("");
+  const [apAgingRows, setApAgingRows] = useState<ApAgingLineDto[]>([]);
+  const [apAgingLoading, setApAgingLoading] = useState(false);
+  const [apAgingError, setApAgingError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sp.get("tab")) router.replace("/purchases?tab=flow", { scroll: false });
@@ -155,8 +170,31 @@ export function PurchasesWorkspace() {
   }, [showInactive]);
 
   useEffect(() => {
+    if (todayIso) setApAgingAsOf((d) => d || todayIso);
+  }, [todayIso]);
+
+  const loadApAging = useCallback(async (asOf: string) => {
+    if (!asOf.trim()) return;
+    setApAgingLoading(true);
+    setApAgingError(null);
+    try {
+      const rows = await fetchApAging(asOf.trim());
+      setApAgingRows(rows);
+    } catch (e) {
+      setApAgingRows([]);
+      setApAgingError(e instanceof Error ? e.message : "Could not load AP aging");
+    } finally {
+      setApAgingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
     if (tab === "vendors" || tab === "payments") void refreshVendorBalances();
   }, [tab, refreshVendorBalances]);
+
+  useEffect(() => {
+    if (tab === "payments" && apAgingAsOf) void loadApAging(apAgingAsOf);
+  }, [tab, apAgingAsOf, loadApAging]);
 
   const vendors = useMemo(() => {
     const q = vendorSearch.trim().toLowerCase();
@@ -259,7 +297,11 @@ export function PurchasesWorkspace() {
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
       <p className="text-sm leading-relaxed text-[var(--gs-muted)]">
-        Front-end shells for the purchase cycle (requisition → RFQ → PO → GRN → bill → return) and vendor payments. Connect API when ready.
+        <span className="font-semibold text-[var(--gs-text)]">Purchase lots</span> are your live purchase transactions (create lot, pay vendor, post to GL). Use{" "}
+        <Link href="/lots" className="font-semibold text-[var(--gs-accent)] hover:underline">
+          Inventory → Lots
+        </Link>{" "}
+        to receive stock into inventory. The full PO / GRN workflow below is planned for a later phase.
       </p>
 
       <div className="flex flex-col gap-2 rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-3">
@@ -291,27 +333,28 @@ export function PurchasesWorkspace() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-[var(--gs-text)]">Purchase transactions</h2>
-              <p className="mt-1 text-sm text-[var(--gs-muted)]">Follow the standard procurement path  each step opens a drawer in a full implementation.</p>
+              <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                Coming in a later phase. Today, record purchases as lots and pay vendors from the Lots screen.
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={() => pushToast("Demo: start new purchase requisition", "info")}
-              className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--gs-accent-hover)]"
+            <Link
+              href="/lots/new"
+              className="inline-flex rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--gs-accent-hover)]"
             >
-              + New requisition
-            </button>
+              + New purchase lot
+            </Link>
           </div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {FLOW_STEPS.map((s) => (
               <button
                 key={s.id}
                 type="button"
-                onClick={() => pushToast(`Demo: open ${s.label}`, "info")}
-                className="flex flex-col rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 p-4 text-left transition hover:border-[var(--gs-accent)] hover:bg-[var(--gs-card)]"
+                onClick={() => pushToast(`${s.label} — planned for a later phase. Use Lots for purchases today.`, "info")}
+                className="flex flex-col rounded-2xl border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/40 p-4 text-left opacity-90"
               >
                 <span className="font-bold text-[var(--gs-text)]">{s.label}</span>
                 <span className="mt-1 text-sm text-[var(--gs-muted)]">{s.desc}</span>
-                <span className="mt-3 text-xs font-semibold text-[var(--gs-accent)]">Open →</span>
+                <span className="mt-3 text-xs font-semibold text-[var(--gs-muted)]">Phase 2</span>
               </button>
             ))}
           </div>
@@ -365,6 +408,75 @@ export function PurchasesWorkspace() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-10 border-t border-[var(--gs-border)] pt-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-base font-bold text-[var(--gs-text)]">AP aging (open purchase lots)</h3>
+                <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                  How much you still owe vendors and how overdue each open lot is, as of a date.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">As of</label>
+                  <input
+                    type="date"
+                    value={apAgingAsOf}
+                    onChange={(e) => setApAgingAsOf(e.target.value)}
+                    className="mt-1 rounded-xl border border-[var(--gs-border)] px-3 py-2 text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={!apAgingAsOf || apAgingLoading}
+                  onClick={() => void loadApAging(apAgingAsOf)}
+                  className="rounded-full border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)] disabled:opacity-50"
+                >
+                  {apAgingLoading ? "Loading…" : "Refresh"}
+                </button>
+              </div>
+            </div>
+            {apAgingError ? <p className="mt-2 text-sm text-red-700">{apAgingError}</p> : null}
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+                  <tr>
+                    <th className="px-4 py-3">Vendor</th>
+                    <th className="px-4 py-3">Lot</th>
+                    <th className="px-4 py-3 text-right">Open</th>
+                    <th className="px-4 py-3">Due</th>
+                    <th className="px-4 py-3">Bucket</th>
+                  </tr>
+                </thead>
+                <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
+                  {apAgingRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-6 text-center text-[var(--gs-muted)]">
+                        {apAgingLoading ? "Loading…" : "No open payable lots for this date."}
+                      </td>
+                    </tr>
+                  ) : (
+                    apAgingRows.map((row) => (
+                      <tr key={`${row.vendor_id}-${row.lot_id}`} className="hover:bg-[var(--gs-hover)]/80">
+                        <td className="px-4 py-3 font-medium text-[var(--gs-text)]">{row.vendor_name}</td>
+                        <td className="px-4 py-3 text-[var(--gs-muted)]">{row.lot_code}</td>
+                        <td className="px-4 py-3 text-right font-mono text-[var(--gs-text)]">
+                          {formatMoney(Number.parseFloat(row.open_amount) || 0, "USD")}
+                        </td>
+                        <td className="px-4 py-3 text-[var(--gs-muted)]">{row.due_date}</td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex rounded-full bg-[var(--gs-hover)] px-2.5 py-1 text-xs font-semibold text-[var(--gs-text)]">
+                            {row.aging_bucket}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
       )}

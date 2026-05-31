@@ -1,8 +1,10 @@
 /**
  * Persists the demo item catalog so Sales / Accounting screens can read service lines.
  * Shape mirrors `ItemRow` in InventoryHub (keep fields in sync when extending).
+ * Signed-in users: no localStorage (inventory loads from `/inv/*`).
  */
 import type { ItemKindKey } from "@/components/inventory/inventoryItemTypes";
+import { isInventoryGuestMode } from "@/lib/inventoryLocalPersistence";
 
 export type StoredItemRow = {
   id: string;
@@ -43,7 +45,7 @@ export type StoredItemRow = {
 const STORAGE_KEY = "gemstack-items-catalog-v1";
 
 export function loadItemCatalog(): StoredItemRow[] | null {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -56,7 +58,7 @@ export function loadItemCatalog(): StoredItemRow[] | null {
 }
 
 export function saveItemCatalog(rows: StoredItemRow[]): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
   } catch {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight, LogOut, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -8,9 +8,9 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { DateFormatProvider } from "@/contexts/DateFormatContext";
 import { GlobalSearchBar } from "@/components/layout/GlobalSearchBar";
 import { MainSidebar } from "@/components/layout/MainSidebar";
-import { ThemeToggleIconButton } from "@/components/theme";
+import { ThemeToggleTopBar } from "@/components/theme";
 import { initThemeFromStorage } from "@/components/theme";
-import { ACCOUNT_SETTINGS_LINKS } from "@/lib/accountMenuLinks";
+import { ACCOUNT_DROPDOWN_LINKS } from "@/lib/accountMenuLinks";
 import { getAccessToken, getMe, getStoredUser, logout } from "@/lib/authClient";
 import { ROLES } from "@/lib/roles";
 
@@ -60,13 +60,23 @@ const ROUTE_HEADINGS: Record<string, { title: string; sub?: string }> = {
   "/reports/purchases": { title: "Purchase report", sub: "Purchase lots" },
   "/reports/inventory-financial": { title: "Inventory (financial)", sub: "Stock valuation snapshot" },
   "/reports/aging": { title: "Aging", sub: "AR / AP buckets (placeholder)" },
-  "/settings": { title: "Settings", sub: "Company · fiscal year · tax · integrations" },
-  "/fep": { title: "FEP & commission", sub: "Earned vs paid (4% COGS)" },
-  "/partners": { title: "Partners", sub: "Capital, drawings & profit split" },
-  "/users": { title: "Users & roles", sub: "Create users, roles & permissions (SRS)" },
+  "/settings": { title: "Settings", sub: "Account · company · security · integrations" },
 };
 
+function isOnSettingsSecurityTab(): boolean {
+  if (typeof window === "undefined") return false;
+  const path = window.location.pathname;
+  if (path === "/settings/security") return true;
+  if (path.startsWith("/settings")) {
+    return new URLSearchParams(window.location.search).get("tab") === "security";
+  }
+  return false;
+}
+
 function shellHeading(pathname: string): { title: string; sub?: string } {
+  if (pathname.startsWith("/settings")) {
+    return ROUTE_HEADINGS["/settings"] ?? { title: "Settings", sub: "Account · company · security · integrations" };
+  }
   if (pathname.startsWith("/dashboard/")) {
     const slug = pathname.split("/")[2];
     const role = ROLES.find((r) => r.slug === slug);
@@ -93,7 +103,7 @@ function CreateMenu() {
 
   const items = [
     { label: "New invoice", href: "/sales/new" },
-    { label: "New customer", href: "/sales?tab=customers" },
+    { label: "New customer", href: "/sales?tab=customers&add=1" },
     { label: "New item", href: "/inventory?tab=items" },
     { label: "New payment", href: "/sales?tab=receipts" },
     { label: "New journal entry", href: "/accounting?tab=journal_list&new=1" },
@@ -177,28 +187,29 @@ function AccountMenu() {
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-1.5 max-h-[min(70vh,28rem)] w-[min(100vw-1.5rem,16rem)] overflow-y-auto rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-xl ring-1 ring-[var(--gs-border)]"
+          className="absolute right-0 z-50 mt-1.5 w-[min(100vw-1.5rem,13.5rem)] rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] py-1 shadow-xl ring-1 ring-[var(--gs-border)]"
         >
-          <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Settings</p>
-          {ACCOUNT_SETTINGS_LINKS.map((it) => (
-            <Link
-              key={it.href + it.label}
-              href={it.href}
-              role="menuitem"
-              className="block px-3 py-2 text-xs font-semibold text-[var(--gs-text)] transition-colors hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
-              onClick={() => setOpen(false)}
-            >
-              {it.label}
-            </Link>
-          ))}
-          <div className="my-1 border-t border-[var(--gs-border)]" role="separator" />
-          <ThemeToggleIconButton />
+          {ACCOUNT_DROPDOWN_LINKS.map((it) => {
+            const Icon = it.icon;
+            return (
+              <Link
+                key={it.href + it.label}
+                href={it.href}
+                role="menuitem"
+                className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-[var(--gs-text)] transition-colors hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-accent)]"
+                onClick={() => setOpen(false)}
+              >
+                <Icon className="h-[1.125rem] w-[1.125rem] shrink-0" strokeWidth={2} aria-hidden />
+                {it.label}
+              </Link>
+            );
+          })}
           <div className="my-1 border-t border-[var(--gs-border)]" role="separator" />
           <button
             type="button"
             role="menuitem"
             disabled={isSigningOut}
-            className="block w-full px-3 py-2 text-left text-xs font-semibold text-[var(--gs-muted)] transition-colors hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-text)] disabled:opacity-60"
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-[var(--gs-muted)] transition-colors hover:bg-[var(--gs-accent-soft)] hover:text-[var(--gs-text)] disabled:opacity-60"
             onClick={async () => {
               setOpen(false);
               setIsSigningOut(true);
@@ -209,6 +220,7 @@ function AccountMenu() {
               }
             }}
           >
+            <LogOut className="h-[1.125rem] w-[1.125rem] shrink-0" strokeWidth={2} aria-hidden />
             {isSigningOut ? "Signing out..." : "Sign out"}
           </button>
         </div>
@@ -217,40 +229,24 @@ function AccountMenu() {
   );
 }
 
+const TOPBAR_ICON_BTN =
+  "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--gs-muted)] transition hover:bg-[var(--gs-topbar-icon-hover)] hover:text-[var(--gs-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--gs-shell-header)]";
+
 function TopBarActionIcons() {
   return (
-    <>
-      <button
-        type="button"
-        className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--gs-muted)] transition hover:bg-[var(--gs-topbar-icon-hover)] hover:text-[var(--gs-text)]"
-        aria-label="Messages"
-      >
-        <svg className="h-[1.125rem] w-[1.125rem]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-          />
-        </svg>
+    <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+      <button type="button" className={TOPBAR_ICON_BTN} aria-label="Messages">
+        <MessageCircle className="h-5 w-5" strokeWidth={2} aria-hidden />
       </button>
-      <button
-        type="button"
-        className="relative flex h-10 w-10 items-center justify-center rounded-full text-[var(--gs-muted)] transition hover:bg-[var(--gs-topbar-icon-hover)] hover:text-[var(--gs-text)]"
-        aria-label="Notifications"
-      >
-        <svg className="h-[1.125rem] w-[1.125rem]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"
-          />
-        </svg>
-        <span className="absolute right-1 top-1 flex h-3 min-w-3 items-center justify-center rounded-full bg-red-500 px-px text-[8px] font-semibold leading-none text-white">
+      <button type="button" className={cx(TOPBAR_ICON_BTN, "relative")} aria-label="Notifications">
+        <Bell className="h-5 w-5" strokeWidth={2} aria-hidden />
+        <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold leading-none text-white">
           3
         </span>
       </button>
+      <ThemeToggleTopBar />
       <AccountMenu />
-    </>
+    </div>
   );
 }
 
@@ -294,8 +290,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       try {
         const user = await getMe();
         if (isCancelled) return;
-        if (user.must_change_password && !pathname.startsWith("/settings/security")) {
-          router.replace("/settings/security");
+        if (user.must_change_password && !isOnSettingsSecurityTab()) {
+          router.replace("/settings?tab=security");
           return;
         }
         if (pathname.startsWith("/dashboard/")) {
@@ -312,8 +308,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     const cachedUser = getStoredUser();
-    if (cachedUser?.must_change_password && !pathname.startsWith("/settings/security")) {
-      router.replace("/settings/security");
+    if (cachedUser?.must_change_password && !isOnSettingsSecurityTab()) {
+      router.replace("/settings?tab=security");
       return () => {
         isCancelled = true;
       };

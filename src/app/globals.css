@@ -59,6 +59,8 @@
   --gs-warning-fg: #92400e;
   --gs-warning-bg: #fef3c7;
   --gs-warning-border: #fbbf24;
+
+  --gs-settings-bg: #f4f7fa;
 }
 
 html {
@@ -76,6 +78,7 @@ html.dark {
   --gs-sidebar: #26262c;
   --gs-sidebar-edge: #26262c;
   --gs-shell-header: rgba(38, 38, 44, 0.92);
+  --gs-settings-bg: #2b2b32;
 
   /* Typography — strong primary, muted still readable on surfaces */
   --gs-text: #f4f4f5;
@@ -279,5 +282,25 @@ tbody.gs-striped-rows > tr:hover:not(.coa-chart-group) {
 .gs-hover-success:hover {
   background-color: var(--gs-success-hover-bg) !important;
   color: var(--gs-success-fg) !important;
+}
+
+.gs-settings-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid var(--gs-border);
+  background: transparent;
+  padding: 0.375rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--gs-text);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.gs-settings-edit-btn:hover {
+  background: var(--gs-accent-soft);
+  border-color: var(--gs-border-strong);
+  color: var(--gs-text);
 }
 

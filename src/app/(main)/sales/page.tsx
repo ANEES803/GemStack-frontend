@@ -4,7 +4,20 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
+import { AddCustomerModal } from "@/components/sales/AddCustomerModal";
 import { ReceivePaymentModal, type ReceivePaymentInitial } from "@/components/sales/ReceivePaymentModal";
+import { AppDialog } from "@/components/ui/AppDialog";
+import { getAccessToken } from "@/lib/authClient";
+import {
+  createCustomer,
+  customerDtoToDisplay,
+  deleteCustomer,
+  fetchCustomer,
+  fetchCustomers,
+  updateCustomer,
+  type CustomerDisplayRow,
+  type CustomerDto,
+} from "@/lib/customersApi";
 import { CreateModuleLink } from "@/components/ui/CreateModuleLink";
 import { ListPageLayout } from "@/components/ui/ListPageLayout";
 import {
@@ -16,8 +29,15 @@ import {
   type SortOption,
 } from "@/components/ui/ListToolbarInteractive";
 import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
-import { loadCustomers, type DemoCustomer } from "@/lib/demoCustomers";
+import { loadCustomers } from "@/lib/demoCustomers";
 import { type DemoInvoiceRow, loadAddedInvoices } from "@/lib/demoInvoices";
+import {
+  addSalesInvoicePayment,
+  fetchSalesInvoices,
+  postSalesInvoice,
+  summaryToListRow,
+  voidSalesInvoice,
+} from "@/lib/salesInvoicesApi";
 
 const DEFAULT_ROWS: DemoInvoiceRow[] = [
   { id: "INV-1042", customer: "Facebook  batch A", fep: "A. Khan", amount: "$2,840.00", method: "PayPal", status: "Paid" },
@@ -34,7 +54,13 @@ const INVOICE_DATE_ISO: Record<string, string> = {
   "INV-1039": "2026-03-10",
 };
 
-type InvoiceView = DemoInvoiceRow & { dateIso: string; amountNum: number };
+type InvoiceView = DemoInvoiceRow & {
+  dateIso: string;
+  amountNum: number;
+  apiId?: string;
+  rawStatus?: string;
+  balanceDue?: number;
+};
 
 function augmentRow(row: DemoInvoiceRow, index: number): InvoiceView {
   const amountNum = parseFloat(row.amount.replace(/[$,]/g, "")) || 0;
@@ -90,11 +116,15 @@ function customerTitleLines(label: string) {
   return { primary: parts[0]!.trim(), secondary: secondary || undefined };
 }
 
-function rowToPaymentInitial(row: DemoInvoiceRow): ReceivePaymentInitial {
+function rowToPaymentInitial(row: InvoiceView): ReceivePaymentInitial {
+  const due =
+    row.balanceDue != null && row.balanceDue > 0
+      ? String(row.balanceDue)
+      : row.amount.replace(/[$,]/g, "").trim();
   return {
-    invoiceId: row.id,
+    invoiceId: row.apiId ?? row.id,
     customerName: row.customer,
-    amount: row.amount.replace(/[$,]/g, "").trim(),
+    amount: due,
   };
 }
 
@@ -115,9 +145,20 @@ function SalesPageContent() {
   const tab = searchParams.get("tab") ?? "transactions";
 
   const [rows, setRows] = useState<DemoInvoiceRow[]>(DEFAULT_ROWS);
+  const [invoicesSource, setInvoicesSource] = useState<"api" | "demo">("demo");
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentInitial, setPaymentInitial] = useState<ReceivePaymentInitial | undefined>(undefined);
-  const [customers, setCustomers] = useState<DemoCustomer[]>([]);
+  const [paymentRow, setPaymentRow] = useState<InvoiceView | null>(null);
+  const [customers, setCustomers] = useState<CustomerDisplayRow[]>([]);
+  const [customersSource, setCustomersSource] = useState<"api" | "local">("local");
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [customersError, setCustomersError] = useState<string | null>(null);
+  const [addCustomerOpen, setAddCustomerOpen] = useState(false);
+  const [editCustomer, setEditCustomer] = useState<CustomerDisplayRow | null>(null);
+  const [deleteCustomerTarget, setDeleteCustomerTarget] = useState<CustomerDisplayRow | null>(null);
+  const [viewCustomer, setViewCustomer] = useState<CustomerDto | CustomerDisplayRow | null>(null);
+  const [viewCustomerLoading, setViewCustomerLoading] = useState(false);
 
   const [search, setSearch] = useState("");
   const [sortId, setSortId] = useState("recommended");
@@ -129,14 +170,89 @@ function SalesPageContent() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  const refreshInvoices = useCallback(async () => {
+    if (!getAccessToken()) {
+      const added = loadAddedInvoices();
+      setRows(added.length > 0 ? [...added, ...DEFAULT_ROWS] : DEFAULT_ROWS);
+      setInvoicesSource("demo");
+      return;
+    }
+    setInvoicesLoading(true);
+    try {
+      const list = await fetchSalesInvoices();
+      setRows(
+        list.map((d) => {
+          const r = summaryToListRow(d);
+          return {
+            id: r.id,
+            customer: r.customer,
+            fep: r.fep,
+            amount: r.amount,
+            method: r.method,
+            status: r.status,
+            dateIso: r.dateIso,
+            apiId: r.apiId,
+            rawStatus: r.rawStatus,
+            balanceDue: r.balanceDue,
+          };
+        }),
+      );
+      setInvoicesSource("api");
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Could not load invoices", "error");
+      const added = loadAddedInvoices();
+      setRows(added.length > 0 ? [...added, ...DEFAULT_ROWS] : DEFAULT_ROWS);
+      setInvoicesSource("demo");
+    } finally {
+      setInvoicesLoading(false);
+    }
+  }, [pushToast]);
+
   useEffect(() => {
-    const added = loadAddedInvoices();
-    if (added.length > 0) setRows([...added, ...DEFAULT_ROWS]);
+    if (tab === "transactions") void refreshInvoices();
+  }, [tab, refreshInvoices]);
+
+  const refreshCustomers = useCallback(async () => {
+    if (!getAccessToken()) {
+      setCustomers(loadCustomers());
+      setCustomersSource("local");
+      setCustomersError(null);
+      return;
+    }
+    setCustomersLoading(true);
+    setCustomersError(null);
+    try {
+      const rows = await fetchCustomers();
+      setCustomers(rows.map(customerDtoToDisplay));
+      setCustomersSource("api");
+    } catch (e) {
+      setCustomers(
+        loadCustomers().map((c) => ({
+          id: c.id,
+          customer_code: "",
+          name: c.name,
+          email: c.email,
+          phone: c.phone,
+          detail: c.detail,
+        })),
+      );
+      setCustomersSource("local");
+      setCustomersError(e instanceof Error ? e.message : "Could not load customers from server");
+    } finally {
+      setCustomersLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    setCustomers(loadCustomers());
-  }, []);
+    if (tab === "customers") void refreshCustomers();
+  }, [tab, refreshCustomers]);
+
+  useEffect(() => {
+    if (tab === "customers" && searchParams.get("add") === "1") {
+      setAddCustomerOpen(true);
+      router.replace("/sales?tab=customers", { scroll: false });
+    }
+  }, [tab, router, searchParams]);
 
   useEffect(() => {
     if (!searchParams.get("tab")) {
@@ -144,7 +260,50 @@ function SalesPageContent() {
     }
   }, [router, searchParams]);
 
-  const viewRows = useMemo(() => rows.map((r, i) => augmentRow(r, i)), [rows]);
+  const viewRows = useMemo(
+    () =>
+      rows.map((r, i) => {
+        const base = augmentRow(r, i);
+        const ext = r as DemoInvoiceRow & { apiId?: string; rawStatus?: string; balanceDue?: number; dateIso?: string };
+        return {
+          ...base,
+          dateIso: ext.dateIso ?? base.dateIso,
+          apiId: ext.apiId,
+          rawStatus: ext.rawStatus,
+          balanceDue: ext.balanceDue,
+        };
+      }),
+    [rows],
+  );
+
+  async function handleRecordPayment(
+    row: InvoiceView,
+    payload: { amount: number; method: string; depositTo: string; date: string },
+  ) {
+    if (!row.apiId) {
+      pushToast("Sign in and use server invoices to record payments.", "info");
+      return;
+    }
+    const methodMap: Record<string, string> = {
+      Cash: "cash",
+      "Bank Transfer": "bank",
+      "Direct to Bank Account": "bank",
+      Cheque: "cheque",
+      Online: "bank",
+    };
+    try {
+      await addSalesInvoicePayment(row.apiId, {
+        amount: payload.amount,
+        payment_method: methodMap[payload.method] ?? "bank",
+        pay_date: payload.date,
+        reference_no: payload.depositTo,
+      });
+      pushToast("Payment recorded.", "success");
+      await refreshInvoices();
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Payment failed", "error");
+    }
+  }
 
   const hasActiveFilters = useMemo(() => {
     const anyMethod = METHODS.some((m) => methodFilters[m]);
@@ -228,10 +387,228 @@ function SalesPageContent() {
     URL.revokeObjectURL(url);
   }, [filteredSorted]);
 
-  function openReceivePayment(initial?: ReceivePaymentInitial) {
+  function openReceivePayment(initial?: ReceivePaymentInitial, row?: InvoiceView) {
     setPaymentInitial(initial);
+    setPaymentRow(row ?? null);
     setPaymentOpen(true);
   }
+
+  const addCustomerButton = (
+    <button
+      type="button"
+      onClick={() => setAddCustomerOpen(true)}
+      className="group relative inline-flex min-h-[44px] w-full items-center justify-center gap-2 overflow-hidden rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(241,90,36,0.4)] transition hover:brightness-105 active:scale-[0.98] sm:w-auto"
+    >
+      <span
+        className="absolute inset-0 bg-gradient-to-r from-[var(--gs-accent)] via-orange-500 to-rose-500"
+        aria-hidden
+      />
+      <span className="relative flex items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/15 ring-1 ring-white/25">
+          <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2.25} stroke="currentColor" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </span>
+        <span>Add customer</span>
+      </span>
+    </button>
+  );
+
+  async function openViewCustomer(row: CustomerDisplayRow) {
+    setViewCustomer(row);
+    if (!getAccessToken() || customersSource !== "api") return;
+    setViewCustomerLoading(true);
+    try {
+      const dto = await fetchCustomer(row.id);
+      setViewCustomer(dto);
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Could not load customer details", "error");
+    } finally {
+      setViewCustomerLoading(false);
+    }
+  }
+
+  async function performDeleteCustomer(row: CustomerDisplayRow) {
+    try {
+      if (getAccessToken() && customersSource === "api") {
+        await deleteCustomer(row.id);
+        pushToast("Customer deleted.", "success");
+      } else {
+        const { removeCustomer } = await import("@/lib/demoCustomers");
+        if (!removeCustomer(row.id)) throw new Error("Customer not found");
+        pushToast("Customer removed from local list.", "info");
+      }
+      setDeleteCustomerTarget(null);
+      await refreshCustomers();
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : "Could not delete customer", "error");
+    }
+  }
+
+  const customerModal = (
+    <>
+      <AddCustomerModal
+        open={addCustomerOpen}
+        onClose={() => setAddCustomerOpen(false)}
+        onSave={async (payload) => {
+          if (getAccessToken()) {
+            await createCustomer({
+              name: payload.name,
+              email: payload.email || null,
+              phone: payload.phone || null,
+              notes: payload.detail || null,
+            });
+            pushToast("Customer saved on the server.", "success");
+            await refreshCustomers();
+          } else {
+            const { addCustomer } = await import("@/lib/demoCustomers");
+            addCustomer(payload);
+            setCustomers(
+              loadCustomers().map((c) => ({
+                id: c.id,
+                customer_code: "",
+                name: c.name,
+                email: c.email,
+                phone: c.phone,
+                detail: c.detail,
+              })),
+            );
+            pushToast("Customer saved locally (sign in for server).", "info");
+          }
+        }}
+      />
+      <AddCustomerModal
+        open={editCustomer !== null}
+        onClose={() => setEditCustomer(null)}
+        initial={
+          editCustomer
+            ? {
+                id: editCustomer.id,
+                name: editCustomer.name,
+                email: editCustomer.email,
+                phone: editCustomer.phone,
+                detail: editCustomer.detail,
+              }
+            : null
+        }
+        onSave={async (payload) => {
+          if (!editCustomer) return;
+          if (getAccessToken() && customersSource === "api") {
+            await updateCustomer(editCustomer.id, {
+              name: payload.name,
+              email: payload.email || null,
+              phone: payload.phone || null,
+              notes: payload.detail || null,
+            });
+            pushToast("Customer updated.", "success");
+          } else {
+            const { updateCustomer: updateLocal } = await import("@/lib/demoCustomers");
+            updateLocal(editCustomer.id, payload);
+            pushToast("Customer updated locally.", "info");
+          }
+          setEditCustomer(null);
+          await refreshCustomers();
+        }}
+      />
+      <AppDialog
+        open={deleteCustomerTarget !== null}
+        onClose={() => setDeleteCustomerTarget(null)}
+        titleId="delete-customer-title"
+        title="Delete this customer?"
+        description={
+          deleteCustomerTarget
+            ? `“${deleteCustomerTarget.name}” will be removed permanently. This cannot be undone.`
+            : undefined
+        }
+        size="md"
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setDeleteCustomerTarget(null)}
+              className="rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (deleteCustomerTarget) void performDeleteCustomer(deleteCustomerTarget);
+              }}
+              className="rounded-xl border border-red-600 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+            >
+              Delete customer
+            </button>
+          </div>
+        }
+      >
+        {null}
+      </AppDialog>
+      <AppDialog
+        open={viewCustomer !== null}
+        onClose={() => setViewCustomer(null)}
+        titleId="view-customer-title"
+        title="Customer details"
+        size="md"
+        footer={
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setViewCustomer(null)}
+              className="rounded-xl border border-[var(--gs-border)] px-4 py-2.5 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
+            >
+              Close
+            </button>
+          </div>
+        }
+      >
+        {viewCustomerLoading ? (
+          <p className="text-sm text-[var(--gs-muted)]">Loading…</p>
+        ) : viewCustomer ? (
+          <dl className="space-y-3 text-sm">
+            {"customer_code" in viewCustomer && viewCustomer.customer_code ? (
+              <div>
+                <dt className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Code</dt>
+                <dd className="mt-1 font-mono text-[var(--gs-text)]">{viewCustomer.customer_code}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Name</dt>
+              <dd className="mt-1 font-medium text-[var(--gs-text)]">{viewCustomer.name}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Email</dt>
+              <dd className="mt-1 text-[var(--gs-text)]">
+                {(viewCustomer.email ?? "") || "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Phone</dt>
+              <dd className="mt-1 text-[var(--gs-text)]">{viewCustomer.phone || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Notes</dt>
+              <dd className="mt-1 whitespace-pre-wrap text-[var(--gs-text)]">
+                {("notes" in viewCustomer ? viewCustomer.notes : viewCustomer.detail) || "—"}
+              </dd>
+            </div>
+            {"payment_terms" in viewCustomer && viewCustomer.payment_terms ? (
+              <div>
+                <dt className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Payment terms</dt>
+                <dd className="mt-1 text-[var(--gs-text)]">{viewCustomer.payment_terms}</dd>
+              </div>
+            ) : null}
+            {"status" in viewCustomer ? (
+              <div>
+                <dt className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Status</dt>
+                <dd className="mt-1 capitalize text-[var(--gs-text)]">{viewCustomer.status}</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : null}
+      </AppDialog>
+    </>
+  );
 
   return (
     <>
@@ -257,34 +634,95 @@ function SalesPageContent() {
       </div>
 
       {tab === "customers" && (
-        <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
-          <div className="border-b border-[var(--gs-border)] p-5">
-            <h2 className="text-lg font-bold text-[var(--gs-text)]">Customers</h2>
-            <p className="mt-1 text-sm text-[var(--gs-muted)]">Customer list and profiles  demo data from browser storage.</p>
-          </div>
+        <>
+        <ListPageLayout
+          title="Customers"
+          subtitle={
+            customersSource === "api"
+              ? "Buyer master data from the server — used on new invoices."
+              : "Sign in to load customers from the server (otherwise demo list in browser)."
+          }
+          actions={addCustomerButton}
+        >
+          {customersError ? (
+            <p className="border-b border-[var(--gs-border)] bg-red-50 px-5 py-3 text-sm text-red-800">{customersError}</p>
+          ) : null}
           <div className="gs-table-scroll overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                 <tr>
+                  <th className="px-5 py-3">Code</th>
                   <th className="px-5 py-3">Name</th>
                   <th className="px-5 py-3">Email</th>
                   <th className="px-5 py-3">Phone</th>
                   <th className="px-5 py-3">Notes</th>
+                  <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
-                {customers.map((c) => (
-                  <tr key={c.id} className="hover:bg-[var(--gs-hover)]/80">
-                    <td className="px-5 py-3 font-medium text-[var(--gs-text)]">{c.name}</td>
-                    <td className="px-5 py-3 text-[var(--gs-muted)]">{c.email}</td>
-                    <td className="px-5 py-3 text-[var(--gs-muted)]">{c.phone}</td>
-                    <td className="px-5 py-3 text-[var(--gs-muted)]">{c.detail}</td>
+                {customersLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-[var(--gs-muted)]">
+                      Loading customers…
+                    </td>
                   </tr>
-                ))}
+                ) : customers.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-[var(--gs-muted)]">
+                      No customers yet.{" "}
+                      <button
+                        type="button"
+                        onClick={() => setAddCustomerOpen(true)}
+                        className="font-semibold text-[var(--gs-accent)] hover:underline"
+                      >
+                        Add your first customer
+                      </button>
+                    </td>
+                  </tr>
+                ) : (
+                  customers.map((c) => (
+                    <tr key={c.id} className="hover:bg-[var(--gs-hover)]/80">
+                      <td className="px-5 py-3 font-mono text-xs text-[var(--gs-muted)]">{c.customer_code || "—"}</td>
+                      <td className="px-5 py-3 font-medium text-[var(--gs-text)]">{c.name}</td>
+                      <td className="px-5 py-3 text-[var(--gs-muted)]">{c.email || "—"}</td>
+                      <td className="px-5 py-3 text-[var(--gs-muted)]">{c.phone || "—"}</td>
+                      <td className="px-5 py-3 text-[var(--gs-muted)]">{c.detail || "—"}</td>
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex items-center justify-end">
+                          <RowActionsMenu
+                            align="right"
+                            actions={[
+                              { label: "View details", tone: "default", onSelect: () => void openViewCustomer(c) },
+                              { label: "Edit", tone: "accent", onSelect: () => setEditCustomer(c) },
+                              {
+                                label: "New invoice",
+                                tone: "accent",
+                                onSelect: () =>
+                                  router.push(`/sales/new?customerId=${encodeURIComponent(c.id)}`, { scroll: false }),
+                              },
+                              {
+                                label: "Receive payment",
+                                tone: "success",
+                                onSelect: () =>
+                                  openReceivePayment({
+                                    customerName: c.name,
+                                    amount: "",
+                                  }),
+                              },
+                              { label: "Delete", tone: "danger", onSelect: () => setDeleteCustomerTarget(c) },
+                            ]}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-        </section>
+        </ListPageLayout>
+        {customerModal}
+        </>
       )}
 
       {tab === "receipts" && (
@@ -449,12 +887,54 @@ function SalesPageContent() {
                           {
                             label: "Receive payment",
                             tone: "success",
-                            onSelect: () => openReceivePayment(rowToPaymentInitial(row)),
+                            onSelect: () => openReceivePayment(rowToPaymentInitial(row), row),
                           },
-                          { label: "View invoice", tone: "default", onSelect: () => pushToast(`Demo: open ${row.id}`, "info") },
-                          { label: "Edit invoice", tone: "accent", onSelect: () => pushToast("Demo: edit invoice", "info") },
-                          { label: "Download PDF", tone: "info", onSelect: () => pushToast("Demo: PDF export", "info") },
-                          { label: "Delete", tone: "danger", onSelect: () => pushToast("Demo: delete invoice", "info") },
+                          {
+                            label: "View invoice",
+                            tone: "default",
+                            onSelect: () => {
+                              if (row.apiId) router.push(`/sales/${row.apiId}`);
+                              else pushToast(`Demo invoice ${row.id}`, "info");
+                            },
+                          },
+                          ...(row.apiId && row.rawStatus === "draft"
+                            ? [
+                                {
+                                  label: "Post invoice",
+                                  tone: "accent" as const,
+                                  onSelect: () => {
+                                    void (async () => {
+                                      try {
+                                        await postSalesInvoice(row.apiId!);
+                                        pushToast("Invoice posted.", "success");
+                                        await refreshInvoices();
+                                      } catch (e) {
+                                        pushToast(e instanceof Error ? e.message : "Post failed", "error");
+                                      }
+                                    })();
+                                  },
+                                },
+                              ]
+                            : []),
+                          ...(row.apiId && row.rawStatus && !["draft", "void", "paid"].includes(row.rawStatus)
+                            ? [
+                                {
+                                  label: "Void invoice",
+                                  tone: "danger" as const,
+                                  onSelect: () => {
+                                    void (async () => {
+                                      try {
+                                        await voidSalesInvoice(row.apiId!);
+                                        pushToast("Invoice voided.", "success");
+                                        await refreshInvoices();
+                                      } catch (e) {
+                                        pushToast(e instanceof Error ? e.message : "Void failed", "error");
+                                      }
+                                    })();
+                                  },
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </div>
@@ -470,7 +950,19 @@ function SalesPageContent() {
     </>
       )}
 
-      <ReceivePaymentModal open={paymentOpen} onClose={() => setPaymentOpen(false)} initial={paymentInitial} />
+      <ReceivePaymentModal
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        initial={paymentInitial}
+        amountDue={
+          paymentInitial?.invoiceId
+            ? viewRows.find((r) => (r.apiId ?? r.id) === paymentInitial.invoiceId)?.balanceDue
+            : undefined
+        }
+        onSubmitPayment={(payload) => {
+          if (paymentRow) void handleRecordPayment(paymentRow, payload);
+        }}
+      />
     </>
   );
 }

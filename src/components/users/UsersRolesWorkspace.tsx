@@ -147,7 +147,7 @@ function CellIcon({ kind }: { kind: "full" | "view" | "own" | "none" }) {
   return <span className="text-[var(--gs-muted)]"></span>;
 }
 
-export function UsersRolesWorkspace() {
+export function UsersRolesWorkspace({ embedded = false }: { embedded?: boolean }) {
   const { pushToast, confirm } = useAppNotifications();
   const [users, setUsers] = useState<UserRow[]>(INITIAL_USERS);
   const [modal, setModal] = useState<"add" | { edit: UserRow } | null>(null);
@@ -224,7 +224,7 @@ export function UsersRolesWorkspace() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
+    <div className={embedded ? "space-y-6" : "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8"}>
       <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-sm sm:p-6">
         <h2 className="text-lg font-bold text-[var(--gs-text)]">User &amp; access control (SRS)</h2>
         <p className="mt-2 text-sm leading-relaxed text-[var(--gs-muted)]">

@@ -40,8 +40,12 @@ export type GlSettingsDto = {
   account_purchases_id: string | null;
   account_ap_id: string | null;
   account_default_bank_id: string | null;
+  account_ar_id: string | null;
+  account_sales_revenue_id: string | null;
+  account_cogs_id: string | null;
   purchase_receipt_mode: string;
   auto_post_purchase_lots: boolean;
+  auto_post_sales_invoices: boolean;
   updated_at: string;
 };
 
@@ -307,8 +311,12 @@ export async function patchGlSettings(body: {
   account_purchases_id?: string | null;
   account_ap_id?: string | null;
   account_default_bank_id?: string | null;
+  account_ar_id?: string | null;
+  account_sales_revenue_id?: string | null;
+  account_cogs_id?: string | null;
   purchase_receipt_mode?: string | null;
   auto_post_purchase_lots?: boolean | null;
+  auto_post_sales_invoices?: boolean | null;
 }): Promise<GlSettingsDto> {
   const response = await apiAuthFetch(`${API_BASE_URL}/gl/settings`, {
     method: "PATCH",

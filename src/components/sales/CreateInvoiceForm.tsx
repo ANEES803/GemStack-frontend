@@ -1,23 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AddCustomerModal } from "@/components/sales/AddCustomerModal";
 import { ReceivePaymentModal } from "@/components/sales/ReceivePaymentModal";
 import { AppDialog } from "@/components/ui/AppDialog";
-import { addCustomer, loadCustomers, type DemoCustomer } from "@/lib/demoCustomers";
+import { getAccessToken } from "@/lib/authClient";
+import {
+  createCustomer,
+  customerDtoToDisplay,
+  fetchCustomers,
+  type CustomerDisplayRow,
+} from "@/lib/customersApi";
+import { addCustomer, loadCustomers } from "@/lib/demoCustomers";
 import { appendDemoInvoice, rowFromInvoicePayload } from "@/lib/demoInvoices";
+import { SalesInvoiceLineCart } from "@/components/sales/SalesInvoiceLineCart";
+import { SalesStockPicker } from "@/components/sales/SalesStockPicker";
+import { fetchStockUnit, type InvStockUnitDto } from "@/lib/invApi";
+import {
+  createSalesInvoice,
+  fetchNextInvoiceCode,
+  postSalesInvoice,
+} from "@/lib/salesInvoicesApi";
+import { lineSaleTotal, stockUnitToCartLine, type InvoiceCartLine } from "@/lib/salesStockUtils";
 import { useHydratedTodayIso } from "@/lib/useHydratedTodayIso";
 
-type InvoiceLine = {
-  id: string;
-  item: string;
-  description: string;
-  qty: string;
-  rate: string;
-};
+type InvoiceLine = InvoiceCartLine;
 
 type InvoiceCustomize = {
   showDescription: boolean;
@@ -57,9 +67,15 @@ function money(v: number): string {
 
 export function CreateInvoiceForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const todayIso = useHydratedTodayIso();
+  const prefillCustomerId = searchParams.get("customerId");
+  const prefillStockUnitIds = searchParams.get("stockUnitIds");
+  const prefillPurchaseLotId = searchParams.get("purchaseLotId");
+  const prefillApplied = useRef(false);
+  const stockPrefillApplied = useRef(false);
 
-  const [customers, setCustomers] = useState<DemoCustomer[]>([]);
+  const [customers, setCustomers] = useState<CustomerDisplayRow[]>([]);
   const [customerPick, setCustomerPick] = useState("");
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
@@ -80,11 +96,99 @@ export function CreateInvoiceForm() {
   const [success, setSuccess] = useState<string | null>(null);
   const [customize, setCustomize] = useState<InvoiceCustomize>(DEFAULT_CUSTOMIZE);
 
-  const [lines, setLines] = useState<InvoiceLine[]>([
-    { id: crypto.randomUUID(), item: "", description: "", qty: "1", rate: "0" },
-  ]);
+  const [lines, setLines] = useState<InvoiceLine[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => setCustomers(loadCustomers()), []);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!getAccessToken()) return;
+      try {
+        const code = await fetchNextInvoiceCode();
+        if (!cancelled) setInvoiceNo(code);
+      } catch {
+        /* keep default */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!getAccessToken()) {
+        if (!cancelled) {
+          setCustomers(
+            loadCustomers().map((c) => ({
+              id: c.id,
+              customer_code: "",
+              name: c.name,
+              email: c.email,
+              phone: c.phone,
+              detail: c.detail,
+            })),
+          );
+        }
+        return;
+      }
+      try {
+        const rows = await fetchCustomers();
+        if (!cancelled) setCustomers(rows.map(customerDtoToDisplay));
+      } catch {
+        if (!cancelled) {
+          setCustomers(
+            loadCustomers().map((c) => ({
+              id: c.id,
+              customer_code: "",
+              name: c.name,
+              email: c.email,
+              phone: c.phone,
+              detail: c.detail,
+            })),
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!getAccessToken() || !prefillStockUnitIds || stockPrefillApplied.current) return;
+    stockPrefillApplied.current = true;
+    const ids = prefillStockUnitIds.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!ids.length) return;
+    let cancelled = false;
+    void (async () => {
+      const added: InvoiceLine[] = [];
+      for (const id of ids) {
+        try {
+          const u = await fetchStockUnit(id);
+          if (!cancelled) added.push(stockUnitToCartLine(u));
+        } catch {
+          /* skip bad id */
+        }
+      }
+      if (!cancelled && added.length) setLines((prev) => [...prev, ...added]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [prefillStockUnitIds]);
+
+  useEffect(() => {
+    if (!prefillCustomerId || prefillApplied.current || customers.length === 0) return;
+    const match = customers.find((c) => c.id === prefillCustomerId);
+    if (!match) return;
+    prefillApplied.current = true;
+    setCustomerPick(match.id);
+    applyCustomer(match);
+  }, [customers, prefillCustomerId]);
+
   useEffect(() => {
     if (todayIso) setDateIso((d) => d || todayIso);
   }, [todayIso]);
@@ -103,7 +207,7 @@ export function CreateInvoiceForm() {
     window.localStorage.setItem(CUSTOMIZE_KEY, JSON.stringify(customize));
   }, [customize]);
 
-  const subtotal = useMemo(() => lines.reduce((sum, l) => sum + num(l.qty) * num(l.rate), 0), [lines]);
+  const subtotal = useMemo(() => lines.reduce((sum, l) => sum + lineSaleTotal(l), 0), [lines]);
 
   const receiveInitial = useMemo(
     () => ({
@@ -116,7 +220,7 @@ export function CreateInvoiceForm() {
     [invoiceNo, customer, customerEmail, subtotal, notes],
   );
 
-  function applyCustomer(c: DemoCustomer) {
+  function applyCustomer(c: CustomerDisplayRow) {
     setCustomer(c.name);
     setCustomerEmail(c.email);
   }
@@ -132,34 +236,64 @@ export function CreateInvoiceForm() {
     if (c) applyCustomer(c);
   }
 
-  function onNewCustomerSaved(payload: Omit<DemoCustomer, "id">) {
+  async function onNewCustomerSaved(payload: { name: string; email: string; phone: string; detail: string }) {
+    if (getAccessToken()) {
+      const created = await createCustomer({
+        name: payload.name,
+        email: payload.email || null,
+        phone: payload.phone || null,
+        notes: payload.detail || null,
+      });
+      const row = customerDtoToDisplay(created);
+      setCustomers((prev) => [row, ...prev]);
+      setCustomerPick(row.id);
+      applyCustomer(row);
+      return;
+    }
     const created = addCustomer(payload);
-    setCustomers(loadCustomers());
-    setCustomerPick(created.id);
-    applyCustomer(created);
+    const row: CustomerDisplayRow = {
+      id: created.id,
+      customer_code: "",
+      name: created.name,
+      email: created.email,
+      phone: created.phone,
+      detail: created.detail,
+    };
+    setCustomers((prev) => [row, ...prev]);
+    setCustomerPick(row.id);
+    applyCustomer(row);
   }
 
   function updateLine(id: string, key: keyof InvoiceLine, value: string) {
     setLines((prev) => prev.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
   }
 
-  function addLine() {
-    setLines((prev) => [...prev, { id: crypto.randomUUID(), item: "", description: "", qty: "1", rate: "0" }]);
+  function addUnitsFromPicker(units: InvStockUnitDto[]) {
+    const existing = new Set(lines.map((l) => l.stockUnitId).filter(Boolean));
+    const fresh = units.filter((u) => !existing.has(u.id)).map(stockUnitToCartLine);
+    if (fresh.length) setLines((prev) => [...prev, ...fresh]);
   }
 
   function removeLine(id: string) {
-    setLines((prev) => (prev.length === 1 ? prev : prev.filter((r) => r.id !== id)));
+    setLines((prev) => prev.filter((r) => r.id !== id));
   }
 
   function validate(): string | null {
     if (!invoiceNo.trim()) return "Invoice number is required.";
-    if (!customer.trim()) return "Customer is required.";
+    if (!customerPick || customerPick === ADD_NEW_VALUE) return "Customer is required.";
     if (!dateIso) return "Date is required.";
     if (subtotal <= 0) return "Invoice total must be greater than 0.";
+    if (getAccessToken()) {
+      if (lines.length === 0) return "Add at least one inventory parcel.";
+      const missing = lines.some((l) => !l.stockUnitId);
+      if (missing) return "Each line must be linked to an inventory stock unit.";
+    } else if (lines.length === 0) {
+      return "Add at least one line.";
+    }
     return null;
   }
 
-  function save(goBack: boolean) {
+  async function save(goBack: boolean, alsoPost: boolean) {
     const msg = validate();
     if (msg) {
       setError(msg);
@@ -167,22 +301,51 @@ export function CreateInvoiceForm() {
       return;
     }
     setError(null);
+    setSaving(true);
 
-    appendDemoInvoice(
-      rowFromInvoicePayload({
-        invoiceNo: invoiceNo.trim(),
-        parcelNo: referenceNo.trim() || "-",
-        dateIso,
-        customer: customer.trim(),
-        holder: "-",
-        paymentMethod: paymentTerms,
-        amount: subtotal,
-        status: status === "Paid" ? "Paid" : "Pending",
-      }),
-    );
+    try {
+      if (getAccessToken()) {
+        const created = await createSalesInvoice({
+          customer_id: customerPick,
+          invoice_code: invoiceNo.trim(),
+          invoice_date: dateIso,
+          payment_terms: paymentTerms,
+          reference_no: referenceNo.trim(),
+          memo: notes.trim(),
+          lines: lines.map((l, i) => ({
+            stock_unit_id: l.stockUnitId,
+            description: l.description || l.item,
+            unit_price: num(l.rate),
+            sort_order: i,
+          })),
+        });
+        if (alsoPost || status !== "Draft") {
+          await postSalesInvoice(created.id);
+        }
+        setSuccess(alsoPost ? "Invoice saved and posted." : "Invoice saved as draft.");
+        if (goBack) router.push("/sales");
+        return;
+      }
 
-    setSuccess("Invoice saved successfully.");
-    if (goBack) router.push("/sales");
+      appendDemoInvoice(
+        rowFromInvoicePayload({
+          invoiceNo: invoiceNo.trim(),
+          parcelNo: referenceNo.trim() || "-",
+          dateIso,
+          customer: customer.trim(),
+          holder: "-",
+          paymentMethod: paymentTerms,
+          amount: subtotal,
+          status: status === "Paid" ? "Paid" : "Pending",
+        }),
+      );
+      setSuccess("Invoice saved (demo mode). Sign in to save to the server.");
+      if (goBack) router.push("/sales");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save invoice");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function openPrint() {
@@ -280,6 +443,9 @@ export function CreateInvoiceForm() {
         <aside className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Amount summary</p>
           <p className="mt-2 text-4xl font-bold text-[var(--gs-text)]">{money(subtotal)}</p>
+          <p className="mt-2 text-xs leading-relaxed text-[var(--gs-muted)]">
+            {lines.length} line{lines.length === 1 ? "" : "s"} — sum of each parcel&apos;s sale total (weight × $/ct).
+          </p>
           <button
             type="button"
             onClick={() => setStatus((s) => (s === "Paid" ? "Pending" : "Paid"))}
@@ -297,58 +463,29 @@ export function CreateInvoiceForm() {
         </aside>
       </section>
 
-      <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-sm">
-            <thead>
-              <tr className="border-b border-[var(--gs-border)]">
-                <th className="px-3 py-3 text-left font-semibold text-[var(--gs-muted)]">{customize.labelItem}</th>
-                {customize.showDescription ? <th className="px-3 py-3 text-left font-semibold text-[var(--gs-muted)]">{customize.labelDescription}</th> : null}
-                {customize.showQty ? <th className="px-3 py-3 text-right font-semibold text-[var(--gs-muted)]">{customize.labelQty}</th> : null}
-                {customize.showRate ? <th className="px-3 py-3 text-right font-semibold text-[var(--gs-muted)]">{customize.labelRate}</th> : null}
-                <th className="px-3 py-3 text-right font-semibold text-[var(--gs-muted)]">{customize.labelAmount}</th>
-                <th className="px-3 py-3 text-right font-semibold text-[var(--gs-muted)]"> </th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((l) => {
-                const lineTotal = num(l.qty) * num(l.rate);
-                return (
-                  <tr key={l.id} className="border-b border-[var(--gs-border)]">
-                    <td className="px-3 py-2">
-                      <input value={l.item} onChange={(e) => updateLine(l.id, "item", e.target.value)} className="gs-field !mt-0" />
-                    </td>
-                    {customize.showDescription ? (
-                      <td className="px-3 py-2">
-                        <input value={l.description} onChange={(e) => updateLine(l.id, "description", e.target.value)} className="gs-field !mt-0" />
-                      </td>
-                    ) : null}
-                    {customize.showQty ? (
-                      <td className="px-3 py-2">
-                        <input value={l.qty} onChange={(e) => updateLine(l.id, "qty", e.target.value)} className="gs-field !mt-0 text-right" />
-                      </td>
-                    ) : null}
-                    {customize.showRate ? (
-                      <td className="px-3 py-2">
-                        <input value={l.rate} onChange={(e) => updateLine(l.id, "rate", e.target.value)} className="gs-field !mt-0 text-right" />
-                      </td>
-                    ) : null}
-                    <td className="px-3 py-2 text-right font-semibold text-[var(--gs-text)]">{money(lineTotal)}</td>
-                    <td className="px-3 py-2 text-right">
-                      <button type="button" onClick={() => removeLine(l.id)} className="text-sm font-semibold text-[var(--gs-muted)] hover:text-[var(--gs-text)]">
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <button type="button" onClick={addLine} className="mt-4 rounded-lg border border-[var(--gs-border)] px-3 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
-          + Add row
-        </button>
-      </section>
+      <SalesInvoiceLineCart
+        lines={lines}
+        onUpdateLine={(id, patch) => setLines((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))}
+        onRemoveLine={removeLine}
+        onAddFromInventory={() => setPickerOpen(true)}
+        customize={customize}
+        demoMode={!getAccessToken()}
+        onDemoLineChange={(id, key, value) => updateLine(id, key, value)}
+        onAddDemoRow={() =>
+          setLines((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), stockUnitId: "", item: "", description: "", qty: "1", rate: "0" },
+          ])
+        }
+      />
+
+      <SalesStockPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onConfirm={addUnitsFromPicker}
+        excludeUnitIds={lines.map((l) => l.stockUnitId).filter(Boolean)}
+        initialLotId={prefillPurchaseLotId}
+      />
 
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-[var(--gs-border)] bg-[var(--gs-card)]/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-3">
@@ -356,11 +493,7 @@ export function CreateInvoiceForm() {
             <button type="button" onClick={() => router.push("/sales")} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={() => setLines([{ id: crypto.randomUUID(), item: "", description: "", qty: "1", rate: "0" }])}
-              className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
-            >
+            <button type="button" onClick={() => setLines([])} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
               Clear
             </button>
           </div>
@@ -378,19 +511,29 @@ export function CreateInvoiceForm() {
           </div>
 
           <div className="relative flex gap-2">
-            <button type="button" onClick={() => save(false)} className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
-              Save
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void save(false, false)}
+              className="rounded-lg border border-[var(--gs-border)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)] disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save draft"}
             </button>
-            <button type="button" onClick={() => setShowSaveMenu((v) => !v)} className="rounded-lg bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]">
-              Save and Close
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void save(true, true)}
+              className="rounded-lg bg-[var(--gs-accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)] disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save & post"}
             </button>
             {showSaveMenu ? (
               <div className="absolute bottom-12 right-0 w-48 rounded-lg border border-[var(--gs-border)] bg-[var(--gs-card)] p-1 shadow-lg">
-                <button type="button" onClick={() => { setShowSaveMenu(false); save(true); }} className="block w-full rounded-md px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
-                  Save and close
+                <button type="button" onClick={() => { setShowSaveMenu(false); void save(true, false); }} className="block w-full rounded-md px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+                  Save draft & close
                 </button>
-                <button type="button" onClick={() => { setShowSaveMenu(false); save(false); }} className="block w-full rounded-md px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
-                  Save and new
+                <button type="button" onClick={() => { setShowSaveMenu(false); void save(false, false); }} className="block w-full rounded-md px-3 py-2 text-left text-sm text-[var(--gs-text)] hover:bg-[var(--gs-hover)]">
+                  Save draft & stay
                 </button>
               </div>
             ) : null}

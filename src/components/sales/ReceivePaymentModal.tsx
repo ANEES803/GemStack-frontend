@@ -108,10 +108,12 @@ export function ReceivePaymentModal({
       depositTo,
       date,
     });
-    pushToast(
-      `Demo: Record payment — Method: ${method}; Invoice: ${invoiceId || "—"}; Customer: ${customerName || "—"}; Amount: ${amount || "—"}. Connect API to post.`,
-      "info",
-    );
+    if (!onSubmitPayment) {
+      pushToast(
+        `Demo: Record payment — Method: ${method}; Invoice: ${invoiceId || "—"}; Customer: ${customerName || "—"}; Amount: ${amount || "—"}. Sign in to post to the server.`,
+        "info",
+      );
+    }
     onClose();
   }
 

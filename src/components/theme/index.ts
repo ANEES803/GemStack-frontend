@@ -1,6 +1,7 @@
 export {
   ThemeToggleIconButton,
   ThemeToggleRow,
+  ThemeToggleTopBar,
   initThemeFromStorage,
   setThemeMode,
   type ThemeMode,
