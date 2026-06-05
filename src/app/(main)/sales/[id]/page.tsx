@@ -10,6 +10,7 @@ import {
   addSalesInvoicePayment,
   fetchSalesInvoice,
   postSalesInvoice,
+  receivePaymentToCreateBody,
   voidSalesInvoice,
   type SalesInvoiceDetailDto,
 } from "@/lib/salesInvoicesApi";
@@ -125,6 +126,67 @@ export default function SalesInvoiceDetailPage() {
       </section>
 
       <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5">
+        <h2 className="text-sm font-bold uppercase text-[var(--gs-muted)]">Activity &amp; audit</h2>
+        <dl className="mt-3 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Salesperson</dt>
+            <dd className="mt-1 font-medium text-[var(--gs-text)]">{inv.salesperson_name || "Unassigned"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Created by</dt>
+            <dd className="mt-1 font-medium text-[var(--gs-text)]">{inv.created_by_name || "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Created</dt>
+            <dd className="mt-1 text-[var(--gs-text)]">{new Date(inv.created_at).toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Posted</dt>
+            <dd className="mt-1 text-[var(--gs-text)]">
+              {inv.posted_at ? new Date(inv.posted_at).toLocaleString() : "Not posted"}
+            </dd>
+          </div>
+          {inv.voided_at ? (
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--gs-muted)]">Voided</dt>
+              <dd className="mt-1 text-[var(--gs-text)]">{new Date(inv.voided_at).toLocaleString()}</dd>
+            </div>
+          ) : null}
+        </dl>
+        {inv.payments.length > 0 ? (
+          <div className="mt-5">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Payments</h3>
+            <ul className="mt-2 divide-y divide-[var(--gs-border)] text-sm">
+              {inv.payments.map((p) => (
+                <li key={p.id} className="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-[var(--gs-muted)]">
+                    {p.pay_date} · {p.payment_method}
+                    {p.reference_no ? ` · ${p.reference_no}` : ""}
+                    {p.gl_bank_account_name ? ` · ${p.gl_bank_account_name}` : ""}
+                    {p.posted_to_gl ? (
+                      p.journal_entry_id ? (
+                        <>
+                          {" · "}
+                          <Link href={`/accounting?tab=journals&journalId=${encodeURIComponent(p.journal_entry_id)}`} className="font-semibold text-[var(--gs-accent)] hover:underline">
+                            GL posted
+                          </Link>
+                        </>
+                      ) : (
+                        " · GL posted"
+                      )
+                    ) : (
+                      " · Not posted to GL"
+                    )}
+                  </span>
+                  <span className="font-semibold text-[var(--gs-text)]">${Number(p.amount).toFixed(2)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5">
         <h2 className="text-sm font-bold uppercase text-[var(--gs-muted)]">Lines (inventory)</h2>
         <ul className="mt-3 divide-y divide-[var(--gs-border)] text-sm">
           {inv.lines.map((ln) => (
@@ -147,22 +209,24 @@ export default function SalesInvoiceDetailPage() {
           customerName: inv.customer_name,
           amount: String(balance),
         }}
+        openInvoices={[
+          {
+            apiId: inv.id,
+            invoiceCode: inv.invoice_code,
+            customerName: inv.customer_name,
+            balanceDue: balance,
+          },
+        ]}
+        requireInvoiceSelection
         amountDue={balance}
-        onSubmitPayment={(payload) => {
-          void (async () => {
-            try {
-              const updated = await addSalesInvoicePayment(inv.id, {
-                amount: payload.amount,
-                payment_method: payload.method === "Cash" ? "cash" : "bank",
-                pay_date: payload.date,
-                reference_no: payload.depositTo,
-              });
-              setInv(updated);
-              pushToast("Payment recorded.", "success");
-            } catch (e) {
-              pushToast(e instanceof Error ? e.message : "Payment failed", "error");
-            }
-          })();
+        onSubmitPayment={async (payload) => {
+          try {
+            const updated = await addSalesInvoicePayment(inv.id, receivePaymentToCreateBody(payload));
+            setInv(updated);
+            pushToast("Payment recorded.", "success");
+          } catch (e) {
+            pushToast(e instanceof Error ? e.message : "Payment failed", "error");
+          }
         }}
       />
     </div>

@@ -4,7 +4,6 @@
  */
 
 export const BUILTIN_STANDARD_FIELD_IDS = [
-  "category",
   "lineType",
   "uomQty",
   "pieces",
@@ -27,12 +26,6 @@ export type StandardFieldCatalogEntry = {
 };
 
 export const INVENTORY_STANDARD_FIELD_CATALOG: readonly StandardFieldCatalogEntry[] = [
-  {
-    id: "category",
-    label: "Category",
-    description: "e.g. Faceted, Rough, Services",
-    defaultRule: { enabled: true, required: false },
-  },
   {
     id: "lineType",
     label: "Line type",

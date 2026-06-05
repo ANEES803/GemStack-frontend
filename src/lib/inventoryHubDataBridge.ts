@@ -8,6 +8,7 @@ import { KIND_CUT, KIND_ROUGH, type UomTab } from "@/components/inventory/invent
 import type { ItemRow } from "@/components/inventory/inventoryHubTypes";
 import type { InvItemTypeDto, InvServiceDto, InvStockUnitDto } from "@/lib/invApi";
 import { fetchItemTypes, fetchLocations, fetchServices, fetchStockUnits } from "@/lib/invApi";
+import { imageUrlFromAttributes } from "@/lib/salesStockUtils";
 
 function numFromDecimalString(s: string | undefined | null): number {
   if (s == null || s === "") return 0;
@@ -37,7 +38,8 @@ export function mapServerItemTypesToCustom(types: InvItemTypeDto[]): CustomInven
       id: t.id,
       label: t.label,
       uomTab: uomPolicyToUomTab(t.uom_policy),
-      fieldPreset: KIND_ROUGH,
+      // Custom types are field-driven (builderFields); fieldPreset is legacy and unused here.
+      fieldPreset: undefined,
       standardFields,
       builderFields: jsonSchemaToBuilderFields(t.json_schema),
     });
@@ -53,22 +55,42 @@ function uomPolicyToUomTab(policy: string | undefined): UomTab {
 
 function jsonSchemaToBuilderFields(schema: Record<string, unknown> | null | undefined): CustomInventoryType["builderFields"] {
   if (!schema || typeof schema !== "object") return undefined;
-  const props = schema.properties;
-  if (!props || typeof props !== "object" || Array.isArray(props)) return undefined;
-  const requiredRaw = schema.required;
-  const required = Array.isArray(requiredRaw) ? new Set(requiredRaw.filter((x): x is string => typeof x === "string")) : new Set<string>();
-  const keys = Object.keys(props as Record<string, unknown>);
+  const topProps = schema.properties;
+  if (!topProps || typeof topProps !== "object" || Array.isArray(topProps)) return undefined;
+
+  // Field definitions nest under properties.custom (current shape); fall back to the
+  // legacy flat top-level shape for older saved schemas.
+  let props = topProps as Record<string, unknown>;
+  let requiredRaw: unknown = schema.required;
+  const customDef = (topProps as Record<string, unknown>).custom;
+  if (customDef && typeof customDef === "object" && !Array.isArray(customDef)) {
+    const cd = customDef as { properties?: unknown; required?: unknown };
+    if (cd.properties && typeof cd.properties === "object" && !Array.isArray(cd.properties)) {
+      props = cd.properties as Record<string, unknown>;
+      requiredRaw = cd.required;
+    }
+  }
+
+  const required = Array.isArray(requiredRaw)
+    ? new Set(requiredRaw.filter((x): x is string => typeof x === "string"))
+    : new Set<string>();
+  const keys = Object.keys(props);
   if (!keys.length) return undefined;
   const fields: NonNullable<CustomInventoryType["builderFields"]> = [];
   for (const key of keys) {
-    const def = (props as Record<string, unknown>)[key];
+    const def = props[key];
     if (!def || typeof def !== "object" || Array.isArray(def)) continue;
-    const t = (def as { type?: unknown }).type;
-    const kind = t === "number" || t === "integer" ? "number" : "text";
+    const d = def as { type?: unknown; title?: unknown; enum?: unknown };
+    const enumVals = Array.isArray(d.enum)
+      ? d.enum.filter((x): x is string => typeof x === "string")
+      : undefined;
+    const kind =
+      enumVals && enumVals.length ? "dropdown" : d.type === "number" || d.type === "integer" ? "number" : "text";
     fields.push({
       id: key,
-      label: key,
+      label: typeof d.title === "string" && d.title.trim() ? d.title : key,
       kind,
+      options: kind === "dropdown" ? enumVals : undefined,
       required: required.has(key),
       visible: true,
     });
@@ -87,7 +109,10 @@ function resolveItemKindForStock(unit: InvStockUnitDto, types: InvItemTypeDto[])
 
 function attributesToCustomJson(attrs: Record<string, unknown> | null | undefined): string {
   if (!attrs || typeof attrs !== "object") return "{}";
-  return JSON.stringify(attrs);
+  // Builder field values live under `custom`; that is what the item form reads back.
+  const custom = (attrs as { custom?: unknown }).custom;
+  if (custom && typeof custom === "object" && !Array.isArray(custom)) return JSON.stringify(custom);
+  return "{}";
 }
 
 /** Map one `inv_stock_units` row into a Hub inventory line. */
@@ -114,9 +139,11 @@ export function mapStockUnitToItemRow(
 
   const loc = unit.location_id ? locationNameById.get(unit.location_id) ?? "" : "";
   const custodianLabel =
-    unit.custodian_user_id != null && unit.custodian_user_id !== ""
-      ? `User ${unit.custodian_user_id.slice(0, 8)}…`
-      : "";
+    unit.custodian_party_name && unit.custodian_party_name.trim()
+      ? unit.custodian_party_name.trim()
+      : unit.custodian_user_id != null && unit.custodian_user_id !== ""
+        ? `User ${unit.custodian_user_id.slice(0, 8)}…`
+        : "";
 
   return {
     id: unit.id,
@@ -130,12 +157,11 @@ export function mapStockUnitToItemRow(
     isLocked: Boolean(unit.is_locked),
     lockReason: unit.lock_reason ?? null,
     entryType: "inventory",
-    imageDataUrl: null,
+    imageDataUrl: imageUrlFromAttributes(attrs ?? null),
     itemNo: (unit.display_item_no || unit.public_code || "").trim() || unit.id.slice(0, 8),
     date: (unit.created_at || unit.updated_at || "").slice(0, 10),
     itemName: unit.display_name,
     itemKind,
-    category: "Faceted",
     type: "Product",
     grade,
     dimLength,
@@ -165,7 +191,6 @@ export function mapServiceToItemRow(s: InvServiceDto): ItemRow {
     date: (s.created_at || s.updated_at || "").slice(0, 10),
     itemName: s.name,
     itemKind: KIND_ROUGH,
-    category: "Services",
     type: "Service",
     grade: "",
     dimLength: "",

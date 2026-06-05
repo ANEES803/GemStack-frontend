@@ -1,17 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { AppDialog } from "@/components/ui/AppDialog";
+import { listPostableGlAccounts, type GlAccountDto } from "@/lib/glApi";
+import { getAccessToken } from "@/lib/authClient";
+import type { ReceivePaymentSubmitPayload } from "@/lib/salesInvoicesApi";
 
 export const PAYMENT_OPTIONS = ["Cash", "Bank Transfer", "Direct to Bank Account", "Cheque", "Online"] as const;
-
-const COMPANY_BANK_ACCOUNTS = [
-  { id: "hbl-main", bankName: "HBL", accountTitle: "GemStack Trading Co.", accountNumber: "PK12-HABB-0011223344" },
-  { id: "ubl-op", bankName: "UBL", accountTitle: "GemStack Operating", accountNumber: "PK34-UNIL-5566778899" },
-  { id: "mcb-tax", bankName: "MCB", accountTitle: "GemStack Tax", accountNumber: "PK78-MCBA-1100220033" },
-];
 
 export type ReceivePaymentInitial = {
   invoiceId?: string;
@@ -22,18 +19,22 @@ export type ReceivePaymentInitial = {
   amount?: string;
 };
 
+export type OpenInvoicePickerOption = {
+  apiId: string;
+  invoiceCode: string;
+  customerName: string;
+  balanceDue: number;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
   initial?: ReceivePaymentInitial;
   title?: string;
   amountDue?: number;
-  onSubmitPayment?: (payload: {
-    amount: number;
-    method: string;
-    depositTo: string;
-    date: string;
-  }) => void;
+  openInvoices?: OpenInvoicePickerOption[];
+  requireInvoiceSelection?: boolean;
+  onSubmitPayment?: (payload: ReceivePaymentSubmitPayload) => void | Promise<void>;
 };
 
 export function ReceivePaymentModal({
@@ -42,39 +43,83 @@ export function ReceivePaymentModal({
   initial,
   title = "Receive payment",
   amountDue,
+  openInvoices = [],
+  requireInvoiceSelection = false,
   onSubmitPayment,
 }: Props) {
   const { pushToast } = useAppNotifications();
-  const [invoiceId, setInvoiceId] = useState("");
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [detail, setDetail] = useState("");
+  const [notes, setNotes] = useState("");
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState<(typeof PAYMENT_OPTIONS)[number]>("Bank Transfer");
-  const [depositTo, setDepositTo] = useState("Operating bank");
+  const [method, setMethod] = useState<(typeof PAYMENT_OPTIONS)[number]>("Cash");
   const [date, setDate] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
+  const [bankAccounts, setBankAccounts] = useState<GlAccountDto[]>([]);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
 
+  const selectedInvoice = useMemo(
+    () => openInvoices.find((inv) => inv.apiId === selectedInvoiceId),
+    [openInvoices, selectedInvoiceId],
+  );
+
+  const effectiveAmountDue = useMemo(() => {
+    if (selectedInvoice && selectedInvoice.balanceDue > 0) return selectedInvoice.balanceDue;
+    if (typeof amountDue === "number" && amountDue > 0) return amountDue;
+    return undefined;
+  }, [selectedInvoice, amountDue]);
+
   useEffect(() => {
     if (!open) return;
-    setInvoiceId(initial?.invoiceId ?? "");
-    setCustomerName(initial?.customerName ?? "");
+    const presetId = initial?.invoiceId ?? "";
+    const match = openInvoices.find((inv) => inv.apiId === presetId || inv.invoiceCode === presetId);
+    setSelectedInvoiceId(match?.apiId ?? presetId);
+    setCustomerName(initial?.customerName ?? match?.customerName ?? "");
     setEmail(initial?.email ?? "");
     setPhone(initial?.phone ?? "");
-    setDetail(initial?.detail ?? "");
-    setAmount(initial?.amount ?? String(amountDue ?? ""));
+    setNotes(initial?.detail ?? "");
+    setAmount(initial?.amount ?? (match ? String(match.balanceDue) : String(amountDue ?? "")));
     setMethod("Cash");
-    setDepositTo("Operating bank");
     setDate(new Date().toISOString().slice(0, 10));
     setBankAccountId("");
     setReferenceNo("");
     setReceiptFile(null);
     setReceiptPreviewUrl(null);
-  }, [open, initial, amountDue]);
+  }, [open, initial, amountDue, openInvoices]);
+
+  useEffect(() => {
+    if (!open || !getAccessToken()) {
+      setBankAccounts([]);
+      return;
+    }
+    let cancelled = false;
+    void listPostableGlAccounts()
+      .then((accounts) => {
+        if (!cancelled) {
+          setBankAccounts(accounts.filter((a) => a.account_type === "asset" && a.is_active));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBankAccounts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (selectedInvoice) {
+      setCustomerName(selectedInvoice.customerName);
+      if (!initial?.amount) {
+        setAmount(String(selectedInvoice.balanceDue));
+      }
+    }
+  }, [open, selectedInvoice, initial?.amount]);
 
   useEffect(() => {
     return () => {
@@ -82,19 +127,24 @@ export function ReceivePaymentModal({
     };
   }, [receiptPreviewUrl]);
 
-  const requiresBank = method === "Bank Transfer" || method === "Direct to Bank Account";
+  const requiresBank = method === "Bank Transfer" || method === "Direct to Bank Account" || method === "Online";
   const amountNum = Number(amount || 0);
 
-  function submit() {
+  async function submit() {
+    const invoiceApiId = selectedInvoice?.apiId ?? initial?.invoiceId ?? "";
+    if ((requireInvoiceSelection || getAccessToken()) && !invoiceApiId) {
+      pushToast("Please select an invoice to apply this payment.", "error");
+      return;
+    }
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       pushToast("Amount must be greater than 0.", "error");
       return;
     }
-    if (typeof amountDue === "number" && amountNum > amountDue) {
-      pushToast(`Amount cannot exceed total due (${amountDue.toFixed(2)}).`, "error");
+    if (typeof effectiveAmountDue === "number" && amountNum > effectiveAmountDue + 0.0001) {
+      pushToast(`Amount cannot exceed total due (${effectiveAmountDue.toFixed(2)}).`, "error");
       return;
     }
-    if (requiresBank && !bankAccountId) {
+    if (requiresBank && bankAccounts.length > 0 && !bankAccountId) {
       pushToast("Please select a company bank account.", "error");
       return;
     }
@@ -102,15 +152,20 @@ export function ReceivePaymentModal({
       pushToast("Date is required.", "error");
       return;
     }
-    onSubmitPayment?.({
+    const payload: ReceivePaymentSubmitPayload = {
+      invoiceApiId,
       amount: amountNum,
       method,
-      depositTo,
       date,
-    });
-    if (!onSubmitPayment) {
+      referenceNo,
+      notes,
+      glBankAccountId: requiresBank && bankAccountId ? bankAccountId : null,
+    };
+    if (onSubmitPayment) {
+      await onSubmitPayment(payload);
+    } else {
       pushToast(
-        `Demo: Record payment — Method: ${method}; Invoice: ${invoiceId || "—"}; Customer: ${customerName || "—"}; Amount: ${amount || "—"}. Sign in to post to the server.`,
+        `Demo: Record payment — Method: ${method}; Invoice: ${invoiceApiId || "—"}; Customer: ${customerName || "—"}; Amount: ${amount || "—"}. Sign in to post to the server.`,
         "info",
       );
     }
@@ -140,7 +195,7 @@ export function ReceivePaymentModal({
           </button>
           <button
             type="button"
-            onClick={submit}
+            onClick={() => void submit()}
             className="w-full rounded-lg bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)] sm:w-auto"
           >
             Record payment
@@ -195,12 +250,32 @@ export function ReceivePaymentModal({
           <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Invoice &amp; payer</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label className={fieldLabel}>Invoice #</label>
-              <input value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} placeholder="INV-1041" className={inputClass} />
+              <label className={fieldLabel}>Invoice *</label>
+              {openInvoices.length > 0 ? (
+                <select
+                  value={selectedInvoiceId}
+                  onChange={(e) => setSelectedInvoiceId(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Select open invoice...</option>
+                  {openInvoices.map((inv) => (
+                    <option key={inv.apiId} value={inv.apiId}>
+                      {inv.invoiceCode} · {inv.customerName} · due {inv.balanceDue.toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={selectedInvoiceId}
+                  onChange={(e) => setSelectedInvoiceId(e.target.value)}
+                  placeholder="Invoice UUID (from server invoice)"
+                  className={inputClass}
+                />
+              )}
             </div>
             <div className="sm:col-span-2">
-              <label className={fieldLabel}>Customer name *</label>
-              <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className={inputClass} />
+              <label className={fieldLabel}>Customer name</label>
+              <input value={customerName} readOnly className={`${inputClass} bg-[var(--gs-hover)]/60`} />
             </div>
             <div>
               <label className={fieldLabel}>Email</label>
@@ -211,35 +286,36 @@ export function ReceivePaymentModal({
               <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
             </div>
             <div className="sm:col-span-2">
-              <label className={fieldLabel}>Amount received</label>
+              <label className={fieldLabel}>Amount received *</label>
               <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className={inputClass} />
+              {typeof effectiveAmountDue === "number" ? (
+                <p className="mt-1 text-xs text-[var(--gs-muted)]">Balance due: {effectiveAmountDue.toFixed(2)}</p>
+              ) : null}
             </div>
             {requiresBank ? (
               <div className="sm:col-span-2">
-                <label className={fieldLabel}>Company bank account *</label>
-                <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className={inputClass}>
-                  <option value="">Select bank account...</option>
-                  {COMPANY_BANK_ACCOUNTS.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.bankName} - {acc.accountTitle} ({acc.accountNumber})
-                    </option>
-                  ))}
-                </select>
+                <label className={fieldLabel}>Company bank account {bankAccounts.length > 0 ? "*" : ""}</label>
+                {bankAccounts.length > 0 ? (
+                  <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} className={inputClass}>
+                    <option value="">Select bank account...</option>
+                    {bankAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.code} — {acc.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                    No GL bank accounts configured. Payment will use the default bank from accounting settings.
+                  </p>
+                )}
               </div>
             ) : null}
             <div>
-              <label className={fieldLabel}>Deposit to</label>
-              <select value={depositTo} onChange={(e) => setDepositTo(e.target.value)} className={inputClass}>
-                <option>Operating bank</option>
-                <option>Cash on hand</option>
-                <option>PayPal clearing</option>
-              </select>
-            </div>
-            <div>
-              <label className={fieldLabel}>Date</label>
+              <label className={fieldLabel}>Date *</label>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} />
             </div>
-            <div className="sm:col-span-2">
+            <div>
               <label className={fieldLabel}>Reference no</label>
               <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="TXN-12345 / CHQ-00991" className={inputClass} />
             </div>
@@ -285,11 +361,11 @@ export function ReceivePaymentModal({
               ) : null}
             </div>
             <div className="sm:col-span-2">
-              <label className={fieldLabel}>Notes / detail</label>
+              <label className={fieldLabel}>Notes</label>
               <textarea
                 rows={2}
-                value={detail}
-                onChange={(e) => setDetail(e.target.value)}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
                 className={`${inputClass} min-h-[72px] resize-y py-2`}
               />
             </div>

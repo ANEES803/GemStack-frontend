@@ -326,6 +326,16 @@ export async function patchGlSettings(body: {
   return (await response.json()) as GlSettingsDto;
 }
 
+/** Create any missing standard chart accounts and auto-map them to unset GL settings. */
+export async function bootstrapStandardChart(signal?: AbortSignal): Promise<GlSettingsDto> {
+  const response = await apiAuthFetch(`${API_BASE_URL}/gl/chart/bootstrap-standard`, {
+    method: "POST",
+    signal,
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+  return (await response.json()) as GlSettingsDto;
+}
+
 export async function fetchTrialBalance(
   asOfIso: string,
   opts?: { compareAsOf?: string; signal?: AbortSignal },

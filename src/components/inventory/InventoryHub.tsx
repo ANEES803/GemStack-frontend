@@ -62,8 +62,13 @@ import {
 import type { ItemLineEntryType, ItemRow } from "@/components/inventory/inventoryHubTypes";
 import { loadInventoryHubServerSnapshot } from "@/lib/inventoryHubDataBridge";
 import {
+  buildBreakIntoPiecesSplitChildren,
+  createStockWithOptionalSellablePieces,
+  isRootStockCatalogRow,
+  sellableChildrenForParent,
+} from "@/lib/inventoryHubSellable";
+import {
   catalogShouldLoadFromServer,
-  createStockFromItemForm,
   inventorySplitAllowed,
   inventoryWritesAllowed,
   isServerUuid,
@@ -73,9 +78,11 @@ import {
 } from "@/lib/inventoryHubInventoryApi";
 import type {
   InvAuditSessionDto,
+  InvCustodianDto,
   InvInventoryFeatureFlags,
   InvItemTypeDto,
   InvLineageDto,
+  InvLocationDto,
   InvLotBalanceDto,
   InvLotVarianceReason,
   InvStockMovementDto,
@@ -86,13 +93,18 @@ import {
   autoSplitLotLine,
   closeAuditSession,
   createAuditSession,
+  createCustodian,
+  createLocation,
   createService,
   createStockUnitsFromPurchaseLot,
   cutStockUnit,
   customSplitLotLine,
   fetchAuditSessions,
+  fetchCustodians,
   fetchLocations,
   fetchInventoryFeatureFlags,
+  updateCustodian,
+  updateLocation,
   fetchItemTypes,
   fetchLotBalance,
   fetchReportByCustodian,
@@ -142,202 +154,46 @@ type AuditRecord = {
   lines: AuditLineSnap[];
 };
 
-const AUDIT_RECORDS_KEY = "gemstack-inventory-audit-records-v1";
-
+// Inventory is backend-only; guest/localStorage mode is permanently off (see
+// inventoryLocalPersistence.ts). These remain as no-op stubs so legacy call sites
+// keep working without ever touching localStorage.
 function loadAuditRecords(): AuditRecord[] {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
-  try {
-    const raw = localStorage.getItem(AUDIT_RECORDS_KEY);
-    if (!raw) return [];
-    const p = JSON.parse(raw) as unknown;
-    if (!Array.isArray(p)) return [];
-    return p as AuditRecord[];
-  } catch {
-    return [];
-  }
+  return [];
 }
 
-function persistAuditRecords(records: AuditRecord[]) {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
-  try {
-    localStorage.setItem(AUDIT_RECORDS_KEY, JSON.stringify(records));
-  } catch {
-    /* ignore */
-  }
-}
-
-const AUDIT_CLOSED_IDS_KEY = "gemstack-inventory-audit-closed-ids-v1";
+function persistAuditRecords(_records: AuditRecord[]) {}
 
 function loadAuditClosedIds(): Set<string> {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return new Set();
-  try {
-    const raw = localStorage.getItem(AUDIT_CLOSED_IDS_KEY);
-    if (!raw) return new Set();
-    const p = JSON.parse(raw) as unknown;
-    if (!Array.isArray(p)) return new Set();
-    return new Set(p.filter((x): x is string => typeof x === "string"));
-  } catch {
-    return new Set();
-  }
+  return new Set();
 }
 
-function persistAuditClosedIds(ids: Set<string>) {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
-  try {
-    localStorage.setItem(AUDIT_CLOSED_IDS_KEY, JSON.stringify(Array.from(ids)));
-  } catch {
-    /* ignore */
-  }
-}
+function persistAuditClosedIds(_ids: Set<string>) {}
 
 const ADD_NEW_TYPE_VALUE = "__add_new_type__";
 
-const CUSTOM_INVENTORY_LOCATIONS_KEY = "gemstack-inventory-custom-locations-v1";
-
 function loadCustomLocations(): string[] {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
-  try {
-    const raw = localStorage.getItem(CUSTOM_INVENTORY_LOCATIONS_KEY);
-    if (!raw) return [];
-    const p = JSON.parse(raw) as unknown;
-    if (!Array.isArray(p)) return [];
-    return p.filter((x): x is string => typeof x === "string");
-  } catch {
-    return [];
-  }
+  return [];
 }
 
-function persistCustomLocations(locations: string[]) {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
-  try {
-    localStorage.setItem(CUSTOM_INVENTORY_LOCATIONS_KEY, JSON.stringify(locations));
-  } catch {
-    /* ignore */
-  }
-}
-
-const CUSTOM_INVENTORY_CUSTODIANS_KEY = "gemstack-inventory-custom-custodians-v1";
+function persistCustomLocations(_locations: string[]) {}
 
 function loadCustomCustodians(): string[] {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
-  try {
-    const raw = localStorage.getItem(CUSTOM_INVENTORY_CUSTODIANS_KEY);
-    if (!raw) return [];
-    const p = JSON.parse(raw) as unknown;
-    if (!Array.isArray(p)) return [];
-    return p.filter((x): x is string => typeof x === "string");
-  } catch {
-    return [];
-  }
+  return [];
 }
 
-function persistCustomCustodians(names: string[]) {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
-  try {
-    localStorage.setItem(CUSTOM_INVENTORY_CUSTODIANS_KEY, JSON.stringify(names));
-  } catch {
-    /* ignore */
-  }
-}
-
-const CUSTOM_INVENTORY_CATEGORIES_KEY = "gemstack-inventory-custom-categories-v1";
-
-function loadCustomCategories(): string[] {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
-  try {
-    const raw = localStorage.getItem(CUSTOM_INVENTORY_CATEGORIES_KEY);
-    if (!raw) return [];
-    const p = JSON.parse(raw) as unknown;
-    if (!Array.isArray(p)) return [];
-    return p.filter((x): x is string => typeof x === "string");
-  } catch {
-    return [];
-  }
-}
-
-function persistCustomCategories(categories: string[]) {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
-  try {
-    localStorage.setItem(CUSTOM_INVENTORY_CATEGORIES_KEY, JSON.stringify(categories));
-  } catch {
-    /* ignore */
-  }
-}
-
-const HIDDEN_LOCATION_PRESETS_KEY = "gemstack-inventory-hidden-location-presets-v1";
+function persistCustomCustodians(_names: string[]) {}
 
 function loadHiddenLocationPresets(): string[] {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
-  try {
-    const raw = localStorage.getItem(HIDDEN_LOCATION_PRESETS_KEY);
-    if (!raw) return [];
-    const p = JSON.parse(raw) as unknown;
-    if (!Array.isArray(p)) return [];
-    return p.filter((x): x is string => typeof x === "string");
-  } catch {
-    return [];
-  }
+  return [];
 }
 
-function persistHiddenLocationPresets(names: string[]) {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
-  try {
-    localStorage.setItem(HIDDEN_LOCATION_PRESETS_KEY, JSON.stringify(names));
-  } catch {
-    /* ignore */
-  }
-}
-
-const HIDDEN_CUSTODIAN_PRESETS_KEY = "gemstack-inventory-hidden-custodian-presets-v1";
+function persistHiddenLocationPresets(_names: string[]) {}
 
 function loadHiddenCustodianPresets(): string[] {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
-  try {
-    const raw = localStorage.getItem(HIDDEN_CUSTODIAN_PRESETS_KEY);
-    if (!raw) return [];
-    const p = JSON.parse(raw) as unknown;
-    if (!Array.isArray(p)) return [];
-    return p.filter((x): x is string => typeof x === "string");
-  } catch {
-    return [];
-  }
+  return [];
 }
 
-function persistHiddenCustodianPresets(names: string[]) {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
-  try {
-    localStorage.setItem(HIDDEN_CUSTODIAN_PRESETS_KEY, JSON.stringify(names));
-  } catch {
-    /* ignore */
-  }
-}
-
-const HIDDEN_CATEGORY_PRESETS_KEY = "gemstack-inventory-hidden-category-presets-v1";
-
-function loadHiddenCategoryPresets(): string[] {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return [];
-  try {
-    const raw = localStorage.getItem(HIDDEN_CATEGORY_PRESETS_KEY);
-    if (!raw) return [];
-    const p = JSON.parse(raw) as unknown;
-    if (!Array.isArray(p)) return [];
-    return p.filter((x): x is string => typeof x === "string");
-  } catch {
-    return [];
-  }
-}
-
-function persistHiddenCategoryPresets(names: string[]) {
-  if (typeof window === "undefined" || !isInventoryGuestMode()) return;
-  try {
-    localStorage.setItem(HIDDEN_CATEGORY_PRESETS_KEY, JSON.stringify(names));
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Default category labels merged with custom and row-derived values */
-const DEFAULT_CATEGORY_OPTIONS = ["Faceted", "Services", "Rough"] as const;
+function persistHiddenCustodianPresets(_names: string[]) {}
 
 const LINEAGE_TREE_STEP_PX = 14;
 
@@ -368,6 +224,72 @@ const GRADE_OPTIONS = ["AAA", "AA", "A", "B", "C", "Commercial", ""] as const;
 
 type AddTypeSpecMode = "rough" | "cut" | "builder";
 
+/** Default grade options pre-filled when a custom type starts from the Rough template. */
+const ROUGH_TEMPLATE_GRADES = ["AAA", "AA", "A", "B", "C", "Commercial"];
+
+/**
+ * Starting attribute fields for a chosen style. Every custom type is field-driven:
+ * Rough seeds a Grade dropdown, Cut seeds Length/Width/Height, Custom starts blank.
+ * The user can freely edit, add, or remove any field afterwards.
+ */
+function builderTemplateForStyle(style: AddTypeSpecMode): CustomFieldDef[] {
+  if (style === "rough") {
+    return [
+      { id: newFieldId(), label: "Grade", kind: "dropdown", options: [...ROUGH_TEMPLATE_GRADES], required: true, visible: true },
+    ];
+  }
+  if (style === "cut") {
+    return [
+      { id: newFieldId(), label: "Length", kind: "number", required: true, visible: true },
+      { id: newFieldId(), label: "Width", kind: "number", required: true, visible: true },
+      { id: newFieldId(), label: "Height", kind: "number", required: true, visible: true },
+    ];
+  }
+  return [{ id: newFieldId(), label: "Field 1", kind: "text", required: true, visible: true }];
+}
+
+/** Turn a human label into a stable, readable attribute key (e.g. "Carat Weight" -> "carat_weight"). */
+function slugifyFieldKey(label: string): string {
+  const base = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+  return base || "field";
+}
+
+/** Assign readable, unique slug ids to builder fields so persisted keys match the JSON schema. */
+function assignBuilderFieldSlugs(fields: CustomFieldDef[]): CustomFieldDef[] {
+  const used = new Set<string>();
+  return fields.map((f) => {
+    const root = slugifyFieldKey(f.label);
+    let key = root;
+    let n = 2;
+    while (used.has(key)) {
+      key = `${root}_${n}`;
+      n += 1;
+    }
+    used.add(key);
+    return { ...f, id: key };
+  });
+}
+
+/** Best-effort detection of which style a saved custom type started from (for re-highlighting on edit). */
+function detectSpecStyleFromFields(fields: CustomFieldDef[] | undefined): AddTypeSpecMode {
+  if (!fields || fields.length === 0) return "builder";
+  if (fields.length === 1 && fields[0].kind === "dropdown" && slugifyFieldKey(fields[0].label) === "grade") {
+    return "rough";
+  }
+  const keys = fields.map((f) => slugifyFieldKey(f.label));
+  const isCut =
+    fields.length === 3 &&
+    fields.every((f) => f.kind === "number") &&
+    ["length", "width", "height"].every((k) => keys.includes(k));
+  if (isCut) return "cut";
+  return "builder";
+}
+
 type SplitDraftRow = {
   id: string;
   itemName: string;
@@ -385,7 +307,6 @@ const INITIAL_ITEMS: ItemRow[] = [
     date: "2025-11-01",
     itemName: "Emerald parcel",
     itemKind: KIND_ROUGH,
-    category: "Faceted",
     type: "Product",
     grade: "AA",
     dimLength: "",
@@ -410,7 +331,6 @@ const INITIAL_ITEMS: ItemRow[] = [
     date: "2025-10-15",
     itemName: "Appraisal service",
     itemKind: KIND_ROUGH,
-    category: "Services",
     type: "Service",
     grade: "",
     dimLength: "",
@@ -435,7 +355,6 @@ const INITIAL_ITEMS: ItemRow[] = [
     date: "2025-12-02",
     itemName: "Rough sapphire lot",
     itemKind: KIND_ROUGH,
-    category: "Rough",
     type: "Raw",
     grade: "B",
     dimLength: "",
@@ -460,7 +379,6 @@ const INITIAL_ITEMS: ItemRow[] = [
     date: "2026-01-10",
     itemName: "Cut stone parcel",
     itemKind: KIND_CUT,
-    category: "Faceted",
     type: "Product",
     grade: "",
     dimLength: "4.2",
@@ -590,7 +508,6 @@ function rowsToCsv(data: ItemRow[], customTypes: readonly CustomInventoryType[])
     "Date",
     "Item Name",
     "Item kind",
-    "Category",
     "Type",
     "Grade",
     "Dimensions (L×W×H)",
@@ -618,7 +535,6 @@ function rowsToCsv(data: ItemRow[], customTypes: readonly CustomInventoryType[])
         esc(r.date),
         esc(r.itemName),
         esc(r.itemKind),
-        esc(r.category),
         r.type,
         esc(r.grade),
         esc(formatDims(r)),
@@ -1442,20 +1358,20 @@ function customInventoryTypeToAddDraft(t: CustomInventoryType): {
   builderFields: CustomFieldDef[];
 } {
   const hasBuilder = Boolean(t.builderFields && t.builderFields.length > 0);
-  const specMode: AddTypeSpecMode = hasBuilder ? "builder" : t.fieldPreset === KIND_CUT ? "cut" : "rough";
+  const builderFields = hasBuilder
+    ? t.builderFields!.map((f) => ({
+        ...f,
+        visible: f.visible !== false,
+        required: f.required !== false,
+      }))
+    : builderTemplateForStyle(t.fieldPreset === KIND_CUT ? "cut" : "rough");
   return {
     label: t.label,
     uomTab: t.uomTab,
     customUom: t.customUomLabel ?? "",
-    specMode,
+    specMode: detectSpecStyleFromFields(builderFields),
     standardFields: mergeStandardFields(t.standardFields),
-    builderFields: hasBuilder
-      ? t.builderFields!.map((f) => ({
-          ...f,
-          visible: f.visible !== false,
-          required: f.required !== false,
-        }))
-      : [{ id: newFieldId(), label: "Field 1", kind: "text", required: true, visible: true }],
+    builderFields,
   };
 }
 
@@ -1555,7 +1471,6 @@ const emptyItemForm = () => ({
   itemTypeKey: KIND_ROUGH as ItemKindKey,
   itemNo: "",
   itemName: "",
-  category: "Faceted",
   type: "Product" as ItemRow["type"],
   grade: "AA" as string,
   dimLength: "",
@@ -1588,7 +1503,6 @@ function normalizeItemForm(f: ItemFormState) {
     itemTypeKey: f.itemTypeKey,
     itemNo: f.itemNo.trim(),
     itemName: f.itemName.trim(),
-    category: f.category,
     type: f.type,
     grade: f.grade.trim(),
     dimLength: f.dimLength.trim(),
@@ -1650,6 +1564,8 @@ export function InventoryHub() {
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [itemForm, setItemForm] = useState(emptyItemForm);
+  /** When set on a new item, create one sellable child unit (unique #/QR) per piece. */
+  const [trackEachPieceSeparately, setTrackEachPieceSeparately] = useState(false);
   /** Serialized `normalizeItemForm` when the modal opened  for dirty detection */
   const [itemFormBaselineKey, setItemFormBaselineKey] = useState<string | null>(null);
   /** Shown after a new inventory item is saved (not edit or service). */
@@ -2019,40 +1935,70 @@ export function InventoryHub() {
 
   const [customLocations, setCustomLocations] = useState<string[]>([]);
   const [customCustodians, setCustomCustodians] = useState<string[]>([]);
-  const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [hiddenLocationPresets, setHiddenLocationPresets] = useState<string[]>([]);
   const [hiddenCustodianPresets, setHiddenCustodianPresets] = useState<string[]>([]);
-  const [hiddenCategoryPresets, setHiddenCategoryPresets] = useState<string[]>([]);
+  /** Server-backed location/custodian records (with ids) for create/rename/deactivate. */
+  const [serverLocations, setServerLocations] = useState<InvLocationDto[]>([]);
+  const [serverCustodians, setServerCustodians] = useState<InvCustodianDto[]>([]);
+  /** Inventory is sign-in only; default true to avoid a flash for authenticated users. */
+  const [hasAuthToken, setHasAuthToken] = useState(true);
+
+  useEffect(() => {
+    setHasAuthToken(Boolean(getAccessToken()));
+  }, []);
+
+  const inventoryApiWrite = useCallback(
+    () => Boolean(getAccessToken() && invFlags && inventoryWritesAllowed(invFlags)),
+    [invFlags],
+  );
+
+  const refreshServerLocations = useCallback(async () => {
+    const locs = await fetchLocations();
+    setServerLocations(locs);
+    const names = locs.filter((l) => l.is_active).map((l) => l.name.trim()).filter(Boolean);
+    setCustomLocations(() => Array.from(new Set(names)).sort((a, b) => a.localeCompare(b)));
+  }, []);
+
+  const refreshServerCustodians = useCallback(async () => {
+    const cs = await fetchCustodians();
+    setServerCustodians(cs);
+    const names = cs.filter((c) => c.is_active).map((c) => c.display_name.trim()).filter(Boolean);
+    setCustomCustodians(() => Array.from(new Set(names)).sort((a, b) => a.localeCompare(b)));
+  }, []);
 
   useEffect(() => {
     if (!isInventoryGuestMode()) return;
     setCustomLocations(loadCustomLocations());
     setCustomCustodians(loadCustomCustodians());
-    setCustomCategories(loadCustomCategories());
     setHiddenLocationPresets(loadHiddenLocationPresets());
     setHiddenCustodianPresets(loadHiddenCustodianPresets());
-    setHiddenCategoryPresets(loadHiddenCategoryPresets());
   }, []);
 
   useEffect(() => {
     if (!getAccessToken() || catalogBootstrap !== "ready") return;
     let cancelled = false;
-    void fetchLocations()
-      .then((locs) => {
+    void (async () => {
+      try {
+        const [locs, custodians] = await Promise.all([fetchLocations(), fetchCustodians()]);
         if (cancelled) return;
-        const names = locs
-          .filter((l) => l.is_active)
-          .map((l) => l.name.trim())
-          .filter(Boolean);
-        if (!names.length) return;
-        setCustomLocations((prev) => {
-          const merged = new Set([...prev, ...names]);
-          return Array.from(merged).sort((a, b) => a.localeCompare(b));
-        });
-      })
-      .catch(() => {
-        /* picker still uses row locations + presets */
-      });
+        setServerLocations(locs);
+        setServerCustodians(custodians);
+        const locNames = locs.filter((l) => l.is_active).map((l) => l.name.trim()).filter(Boolean);
+        const custNames = custodians.filter((c) => c.is_active).map((c) => c.display_name.trim()).filter(Boolean);
+        if (locNames.length) {
+          setCustomLocations((prev) =>
+            Array.from(new Set([...prev, ...locNames])).sort((a, b) => a.localeCompare(b)),
+          );
+        }
+        if (custNames.length) {
+          setCustomCustodians((prev) =>
+            Array.from(new Set([...prev, ...custNames])).sort((a, b) => a.localeCompare(b)),
+          );
+        }
+      } catch {
+        /* picker still uses row values + presets */
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -2091,20 +2037,12 @@ export function InventoryHub() {
   }, [customCustodians]);
 
   useEffect(() => {
-    persistCustomCategories(customCategories);
-  }, [customCategories]);
-
-  useEffect(() => {
     persistHiddenLocationPresets(hiddenLocationPresets);
   }, [hiddenLocationPresets]);
 
   useEffect(() => {
     persistHiddenCustodianPresets(hiddenCustodianPresets);
   }, [hiddenCustodianPresets]);
-
-  useEffect(() => {
-    persistHiddenCategoryPresets(hiddenCategoryPresets);
-  }, [hiddenCategoryPresets]);
 
   const locationOptionsMerged = useMemo(() => {
     const set = new Set<string>(locationPickerOptions);
@@ -2128,29 +2066,6 @@ export function InventoryHub() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [custodianPickerOptions, customCustodians, itemForm.custodian]);
 
-  const categoryPickerOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of DEFAULT_CATEGORY_OPTIONS) {
-      if (!hiddenCategoryPresets.includes(c)) set.add(c);
-    }
-    rows.forEach((r) => {
-      if (r.entryType !== "inventory") return;
-      if (r.category && r.category !== "") set.add(r.category);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [rows, hiddenCategoryPresets]);
-
-  const categoryOptionsMerged = useMemo(() => {
-    const set = new Set<string>(categoryPickerOptions);
-    customCategories.forEach((c) => {
-      const t = c.trim();
-      if (t) set.add(t);
-    });
-    const cur = itemForm.category.trim();
-    if (cur) set.add(cur);
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [categoryPickerOptions, customCategories, itemForm.category]);
-
   const addCustomLocation = useCallback(async () => {
     const name = await prompt({
       title: "New location",
@@ -2161,9 +2076,20 @@ export function InventoryHub() {
     if (name == null) return;
     const trimmed = name.trim();
     if (!trimmed) return;
+    if (inventoryApiWrite()) {
+      try {
+        await createLocation({ name: trimmed });
+        await refreshServerLocations();
+        setItemForm((s) => ({ ...s, location: trimmed }));
+        pushToast("Location added.", "success");
+      } catch (e) {
+        pushToast(e instanceof Error ? e.message : "Could not add location.", "error");
+      }
+      return;
+    }
     setCustomLocations((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
     setItemForm((s) => ({ ...s, location: trimmed }));
-  }, [prompt]);
+  }, [prompt, inventoryApiWrite, refreshServerLocations, pushToast]);
 
   const addCustomCustodian = useCallback(async () => {
     const name = await prompt({
@@ -2175,128 +2101,171 @@ export function InventoryHub() {
     if (name == null) return;
     const trimmed = name.trim();
     if (!trimmed) return;
+    if (inventoryApiWrite()) {
+      try {
+        await createCustodian({ display_name: trimmed });
+        await refreshServerCustodians();
+        setItemForm((s) => ({ ...s, custodian: trimmed }));
+        pushToast("Custodian added.", "success");
+      } catch (e) {
+        pushToast(e instanceof Error ? e.message : "Could not add custodian.", "error");
+      }
+      return;
+    }
     setCustomCustodians((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
     setItemForm((s) => ({ ...s, custodian: trimmed }));
-  }, [prompt]);
+  }, [prompt, inventoryApiWrite, refreshServerCustodians, pushToast]);
 
-  const addCustomCategory = useCallback(async () => {
-    const name = await prompt({
-      title: "New category",
-      message: "Enter a name for the new category.",
-      label: "Category name",
-      submitLabel: "Add",
-    });
-    if (name == null) return;
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setCustomCategories((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
-    setItemForm((s) => ({ ...s, category: trimmed }));
-  }, [prompt]);
-
-  const renameLocationOption = useCallback((from: string, to: string) => {
-    setRows((prev) =>
-      prev.map((r) => (r.entryType === "inventory" && r.location === from ? { ...r, location: to } : r)),
-    );
-    setCustomLocations((prev) => {
-      const i = prev.indexOf(from);
-      if (i >= 0) {
-        const next = [...prev];
-        next[i] = to;
-        return [...new Set(next.filter(Boolean))];
+  const renameLocationOption = useCallback(
+    async (from: string, to: string) => {
+      if (inventoryApiWrite()) {
+        const loc = serverLocations.find((l) => l.name === from && l.is_active);
+        if (loc) {
+          try {
+            await updateLocation(loc.id, { name: to });
+            await refreshServerLocations();
+            setRows((prev) =>
+              prev.map((r) => (r.entryType === "inventory" && r.location === from ? { ...r, location: to } : r)),
+            );
+            setItemForm((s) => (s.location === from ? { ...s, location: to } : s));
+            setLocationFilter((f) => (f === from ? to : f));
+            pushToast("Location renamed.", "success");
+          } catch (e) {
+            pushToast(e instanceof Error ? e.message : "Could not rename location.", "error");
+          }
+          return;
+        }
       }
-      if ((ALL_LOCATIONS as readonly string[]).includes(from)) {
-        return prev.includes(to) ? prev : [...prev, to];
-      }
-      return prev;
-    });
-    setHiddenLocationPresets((prev) => (from && (ALL_LOCATIONS as readonly string[]).includes(from) && !prev.includes(from) ? [...prev, from] : prev));
-    setItemForm((s) => (s.location === from ? { ...s, location: to } : s));
-    setLocationFilter((f) => (f === from ? to : f));
-  }, []);
+      setRows((prev) =>
+        prev.map((r) => (r.entryType === "inventory" && r.location === from ? { ...r, location: to } : r)),
+      );
+      setCustomLocations((prev) => {
+        const i = prev.indexOf(from);
+        if (i >= 0) {
+          const next = [...prev];
+          next[i] = to;
+          return [...new Set(next.filter(Boolean))];
+        }
+        if ((ALL_LOCATIONS as readonly string[]).includes(from)) {
+          return prev.includes(to) ? prev : [...prev, to];
+        }
+        return prev;
+      });
+      setHiddenLocationPresets((prev) => (from && (ALL_LOCATIONS as readonly string[]).includes(from) && !prev.includes(from) ? [...prev, from] : prev));
+      setItemForm((s) => (s.location === from ? { ...s, location: to } : s));
+      setLocationFilter((f) => (f === from ? to : f));
+    },
+    [inventoryApiWrite, serverLocations, refreshServerLocations, pushToast],
+  );
 
-  const deleteLocationOption = useCallback((name: string) => {
-    setRows((prev) =>
-      prev.map((r) => (r.entryType === "inventory" && r.location === name ? { ...r, location: "" } : r)),
-    );
-    setCustomLocations((prev) => prev.filter((x) => x !== name));
-    if ((ALL_LOCATIONS as readonly string[]).includes(name)) {
-      setHiddenLocationPresets((prev) => (prev.includes(name) ? prev : [...prev, name]));
-    }
-    setItemForm((s) => (s.location === name ? { ...s, location: "" } : s));
-    setLocationFilter((f) => (f === name ? "All" : f));
-  }, []);
-
-  const renameCustodianOption = useCallback((from: string, to: string) => {
-    setRows((prev) =>
-      prev.map((r) => (r.entryType === "inventory" && r.custodian === from ? { ...r, custodian: to } : r)),
-    );
-    setCustomCustodians((prev) => {
-      const i = prev.indexOf(from);
-      if (i >= 0) {
-        const next = [...prev];
-        next[i] = to;
-        return [...new Set(next.filter(Boolean))];
+  const deleteLocationOption = useCallback(
+    async (name: string) => {
+      if (inventoryApiWrite()) {
+        const loc = serverLocations.find((l) => l.name === name && l.is_active);
+        if (loc) {
+          try {
+            await updateLocation(loc.id, { is_active: false });
+            await refreshServerLocations();
+            setRows((prev) =>
+              prev.map((r) => (r.entryType === "inventory" && r.location === name ? { ...r, location: "" } : r)),
+            );
+            setItemForm((s) => (s.location === name ? { ...s, location: "" } : s));
+            setLocationFilter((f) => (f === name ? "All" : f));
+            pushToast("Location removed.", "success");
+          } catch (e) {
+            pushToast(e instanceof Error ? e.message : "Could not remove location.", "error");
+          }
+          return;
+        }
       }
-      if ((ALL_CUSTODIANS as readonly string[]).includes(from)) {
-        return prev.includes(to) ? prev : [...prev, to];
+      setRows((prev) =>
+        prev.map((r) => (r.entryType === "inventory" && r.location === name ? { ...r, location: "" } : r)),
+      );
+      setCustomLocations((prev) => prev.filter((x) => x !== name));
+      if ((ALL_LOCATIONS as readonly string[]).includes(name)) {
+        setHiddenLocationPresets((prev) => (prev.includes(name) ? prev : [...prev, name]));
       }
-      return prev;
-    });
-    setHiddenCustodianPresets((prev) =>
-      from && (ALL_CUSTODIANS as readonly string[]).includes(from) && !prev.includes(from) ? [...prev, from] : prev,
-    );
-    setItemForm((s) => (s.custodian === from ? { ...s, custodian: to } : s));
-  }, []);
+      setItemForm((s) => (s.location === name ? { ...s, location: "" } : s));
+      setLocationFilter((f) => (f === name ? "All" : f));
+    },
+    [inventoryApiWrite, serverLocations, refreshServerLocations, pushToast],
+  );
 
-  const deleteCustodianOption = useCallback((name: string) => {
-    setRows((prev) =>
-      prev.map((r) => (r.entryType === "inventory" && r.custodian === name ? { ...r, custodian: "" } : r)),
-    );
-    setCustomCustodians((prev) => prev.filter((x) => x !== name));
-    if ((ALL_CUSTODIANS as readonly string[]).includes(name)) {
-      setHiddenCustodianPresets((prev) => (prev.includes(name) ? prev : [...prev, name]));
-    }
-    setItemForm((s) => (s.custodian === name ? { ...s, custodian: "" } : s));
-  }, []);
-
-  const renameCategoryOption = useCallback((from: string, to: string) => {
-    setRows((prev) =>
-      prev.map((r) => (r.entryType === "inventory" && r.category === from ? { ...r, category: to } : r)),
-    );
-    setCustomCategories((prev) => {
-      const i = prev.indexOf(from);
-      if (i >= 0) {
-        const next = [...prev];
-        next[i] = to;
-        return [...new Set(next.filter(Boolean))];
+  const renameCustodianOption = useCallback(
+    async (from: string, to: string) => {
+      if (inventoryApiWrite()) {
+        const cust = serverCustodians.find((c) => c.display_name === from && c.is_active);
+        if (cust) {
+          try {
+            await updateCustodian(cust.id, { display_name: to });
+            await refreshServerCustodians();
+            setRows((prev) =>
+              prev.map((r) => (r.entryType === "inventory" && r.custodian === from ? { ...r, custodian: to } : r)),
+            );
+            setItemForm((s) => (s.custodian === from ? { ...s, custodian: to } : s));
+            pushToast("Custodian renamed.", "success");
+          } catch (e) {
+            pushToast(e instanceof Error ? e.message : "Could not rename custodian.", "error");
+          }
+          return;
+        }
       }
-      if ((DEFAULT_CATEGORY_OPTIONS as readonly string[]).includes(from as (typeof DEFAULT_CATEGORY_OPTIONS)[number])) {
-        return prev.includes(to) ? prev : [...prev, to];
-      }
-      return prev;
-    });
-    setHiddenCategoryPresets((prev) =>
-      from && (DEFAULT_CATEGORY_OPTIONS as readonly string[]).includes(from as (typeof DEFAULT_CATEGORY_OPTIONS)[number]) && !prev.includes(from)
-        ? [...prev, from]
-        : prev,
-    );
-    setItemForm((s) => (s.category === from ? { ...s, category: to } : s));
-  }, []);
+      setRows((prev) =>
+        prev.map((r) => (r.entryType === "inventory" && r.custodian === from ? { ...r, custodian: to } : r)),
+      );
+      setCustomCustodians((prev) => {
+        const i = prev.indexOf(from);
+        if (i >= 0) {
+          const next = [...prev];
+          next[i] = to;
+          return [...new Set(next.filter(Boolean))];
+        }
+        if ((ALL_CUSTODIANS as readonly string[]).includes(from)) {
+          return prev.includes(to) ? prev : [...prev, to];
+        }
+        return prev;
+      });
+      setHiddenCustodianPresets((prev) =>
+        from && (ALL_CUSTODIANS as readonly string[]).includes(from) && !prev.includes(from) ? [...prev, from] : prev,
+      );
+      setItemForm((s) => (s.custodian === from ? { ...s, custodian: to } : s));
+    },
+    [inventoryApiWrite, serverCustodians, refreshServerCustodians, pushToast],
+  );
 
-  const deleteCategoryOption = useCallback((name: string) => {
-    setRows((prev) =>
-      prev.map((r) => (r.entryType === "inventory" && r.category === name ? { ...r, category: "" } : r)),
-    );
-    setCustomCategories((prev) => prev.filter((x) => x !== name));
-    if ((DEFAULT_CATEGORY_OPTIONS as readonly string[]).includes(name as (typeof DEFAULT_CATEGORY_OPTIONS)[number])) {
-      setHiddenCategoryPresets((prev) => (prev.includes(name) ? prev : [...prev, name]));
-    }
-    setItemForm((s) => (s.category === name ? { ...s, category: "" } : s));
-  }, []);
+  const deleteCustodianOption = useCallback(
+    async (name: string) => {
+      if (inventoryApiWrite()) {
+        const cust = serverCustodians.find((c) => c.display_name === name && c.is_active);
+        if (cust) {
+          try {
+            await updateCustodian(cust.id, { is_active: false });
+            await refreshServerCustodians();
+            setRows((prev) =>
+              prev.map((r) => (r.entryType === "inventory" && r.custodian === name ? { ...r, custodian: "" } : r)),
+            );
+            setItemForm((s) => (s.custodian === name ? { ...s, custodian: "" } : s));
+            pushToast("Custodian removed.", "success");
+          } catch (e) {
+            pushToast(e instanceof Error ? e.message : "Could not remove custodian.", "error");
+          }
+          return;
+        }
+      }
+      setRows((prev) =>
+        prev.map((r) => (r.entryType === "inventory" && r.custodian === name ? { ...r, custodian: "" } : r)),
+      );
+      setCustomCustodians((prev) => prev.filter((x) => x !== name));
+      if ((ALL_CUSTODIANS as readonly string[]).includes(name)) {
+        setHiddenCustodianPresets((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      }
+      setItemForm((s) => (s.custodian === name ? { ...s, custodian: "" } : s));
+    },
+    [inventoryApiWrite, serverCustodians, refreshServerCustodians, pushToast],
+  );
 
   const canManageLocationOption = useCallback((opt: string) => Boolean(opt.trim()), []);
   const canManageCustodianOption = useCallback((opt: string) => Boolean(opt.trim()), []);
-  const canManageCategoryOption = useCallback((opt: string) => Boolean(opt.trim()), []);
 
   const typeFilterTabs = useMemo(
     () => [
@@ -2315,9 +2284,18 @@ export function InventoryHub() {
 
   const parcelChildRows = useMemo(() => {
     if (!parcelLinesParent) return [];
-    const uid = parcelLinesParent.serverUnitId ?? parcelLinesParent.id;
-    return inventoryStockRows.filter((c) => (c.serverParentUnitId ?? null) === uid);
+    return sellableChildrenForParent(parcelLinesParent, inventoryStockRows);
   }, [parcelLinesParent, inventoryStockRows]);
+
+  /** Count of sellable child units per root stock unit id (for the catalog summary badge). */
+  const sellableCountByParent = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of inventoryStockRows) {
+      const pid = r.serverParentUnitId ?? null;
+      if (pid) m.set(pid, (m.get(pid) ?? 0) + 1);
+    }
+    return m;
+  }, [inventoryStockRows]);
 
   const splitParcelPickerOptions = useMemo(
     () =>
@@ -2500,20 +2478,34 @@ export function InventoryHub() {
   }, []);
 
   const items = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    // Ids of stock units currently active in the catalog. A sellable child is hidden from the
+    // main table only when its parent is still an active stock unit (so it nests under it).
+    // If the parent was consumed/sold (no longer active), the child is promoted to top-level so
+    // it is never lost from view.
+    const activeStockUnitIds = new Set(
+      rows
+        .filter((r) => r.entryType === "inventory")
+        .map((r) => r.serverUnitId ?? r.id),
+    );
     const filtered = rows.filter((r) => {
       if (itemCatalogScope === "stock" && r.entryType !== "inventory") return false;
       if (itemCatalogScope === "services" && r.entryType !== "service") return false;
+      // Only stock units in the main table; sellable children nest under an active parent.
+      // When searching, allow children through so users can still find a specific sellable code.
+      if (itemCatalogScope === "stock" && !q && !isRootStockCatalogRow(r)) {
+        const parentId = r.serverParentUnitId ?? null;
+        if (parentId && activeStockUnitIds.has(parentId)) return false;
+      }
       if (itemCatalogScope === "stock" && itemKindFilterKeys.size > 0 && !itemKindFilterKeys.has(r.itemKind)) return false;
       if (itemCatalogScope === "stock" && locationFilter !== "All" && r.location !== locationFilter) return false;
       if (periodFrom && r.date < periodFrom) return false;
       if (periodTo && r.date > periodTo) return false;
-      const q = itemSearch.trim().toLowerCase();
       if (!q) return true;
       const hay = [
         r.itemNo,
         r.itemName,
         kindLabel(r.itemKind, customInventoryTypes),
-        r.category,
         r.grade,
         r.dimLength,
         r.dimWidth,
@@ -2638,6 +2630,7 @@ export function InventoryHub() {
     setItemModalOpen(false);
     setEditingItemId(null);
     setItemForm(emptyItemForm());
+    setTrackEachPieceSeparately(false);
     setItemFormBaselineKey(null);
     setNewItemQrBlobUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -2667,6 +2660,7 @@ export function InventoryHub() {
       return null;
     });
     setNewItemQrUnitId(null);
+    setTrackEachPieceSeparately(false);
     setItemForm(initial);
     setItemFormBaselineKey(itemFormSnapshot(initial));
     setItemModalOpen(true);
@@ -2728,11 +2722,8 @@ export function InventoryHub() {
 
   function openSplitParcelFromRow(r: ItemRow) {
     if (r.entryType !== "inventory") return;
-    setSplitMode("parcels");
-    setSplitPiecesCount("");
-    setSplitPerPieceUom("");
-    setSplitPerPieceRate("");
     setSplitSourceId(r.id);
+    setSplitError(null);
     setSplitRows([
       {
         id: crypto.randomUUID(),
@@ -2742,7 +2733,20 @@ export function InventoryHub() {
         rate: "",
       },
     ]);
-    setSplitError(null);
+    // When the stock unit has more than one piece, default to the common case:
+    // break it into that many individual sellable pieces (one click, prefilled count).
+    if (r.pieces > 1) {
+      const perPiece = r.pieces > 0 ? r.uom / r.pieces : r.uom;
+      setSplitMode("pieces");
+      setSplitPiecesCount(String(r.pieces));
+      setSplitPerPieceUom(String(perPiece));
+      setSplitPerPieceRate(String(r.rate));
+    } else {
+      setSplitMode("parcels");
+      setSplitPiecesCount("");
+      setSplitPerPieceUom("");
+      setSplitPerPieceRate("");
+    }
     setSplitParcelOpen(true);
   }
 
@@ -2759,7 +2763,7 @@ export function InventoryHub() {
   function navigateLineageToStockUnit(unit: InvStockUnitDto) {
     const row = inventoryStockRows.find((x) => (x.serverUnitId ?? x.id) === unit.id);
     if (!row) {
-      pushToast("Yeh stock line abhi table mein nahi mili — filters ya refresh check karein.", "info");
+      pushToast("This stock line isn't in the table yet — check your filters or refresh.", "info");
       return;
     }
     setDrawerHistoryRows([]);
@@ -3182,7 +3186,7 @@ export function InventoryHub() {
   async function openRowStockLabelPdf(r: ItemRow) {
     const uid = r.serverUnitId ?? r.id;
     if (!isServerUuid(uid)) {
-      pushToast("Sirf server par save hui lines ke liye label / QR.", "info");
+      pushToast("Labels / QR are only available for lines saved on the server.", "info");
       return;
     }
     try {
@@ -3191,7 +3195,7 @@ export function InventoryHub() {
       window.open(url, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
     } catch (e) {
-      pushToast(e instanceof Error ? e.message : "Label PDF nahi khuli.", "error");
+      pushToast(e instanceof Error ? e.message : "Could not open the label PDF.", "error");
     }
   }
 
@@ -3368,7 +3372,7 @@ export function InventoryHub() {
         });
       })
       .catch(() => {
-        if (!cancelled) pushToast("QR image server se load nahi hui.", "error");
+        if (!cancelled) pushToast("Could not load the QR image from the server.", "error");
       });
     return () => {
       cancelled = true;
@@ -3482,17 +3486,13 @@ export function InventoryHub() {
         const rateRaw = splitPerPieceRate.trim() === "" ? splitSourceRow.rate : Number(splitPerPieceRate);
         const parsedRate = Number.isFinite(rateRaw) && rateRaw >= 0 ? rateRaw : splitSourceRow.rate;
         const parent = splitSourceRow;
-        const children = Array.from({ length: n }, (_, i) => {
-          const display_name = `${parent.itemName} #${i + 1}`.slice(0, 512);
-          const slug = parent.itemName.trim().replace(/[^\w.-]+/g, "_").slice(0, 40) || "piece";
-          return {
-            display_name,
-            public_code: `${slug}-pc${i + 1}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`.slice(0, 80),
-            primary_uom_qty: String(perU),
-            pieces: 1,
-            cost_basis_total: String(Math.max(0, parsedRate * perU)),
-          };
-        });
+        const children = buildBreakIntoPiecesSplitChildren(
+          parent.itemName,
+          parent.itemNo || parent.itemName,
+          n,
+          perU,
+          parsedRate,
+        );
         const created = await splitStockUnits({
           source_unit_id: parent.id,
           children,
@@ -3512,7 +3512,7 @@ export function InventoryHub() {
           window.open(url, "_blank", "noopener,noreferrer");
           window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
         } catch {
-          pushToast("Label PDF nahi khuli — split save ho chuka hai.", "info");
+          pushToast("Could not open the label PDF — the split was still saved.", "info");
         }
       } catch (err) {
         setSplitError(err instanceof Error ? err.message : "Split failed");
@@ -3696,7 +3696,6 @@ export function InventoryHub() {
       itemTypeKey: row.itemKind,
       itemNo: row.itemNo,
       itemName: row.itemName,
-      category: row.category,
       type: row.type,
       grade: row.grade === "" ? "" : row.grade,
       dimLength: row.dimLength === "" ? "" : row.dimLength,
@@ -3892,7 +3891,6 @@ export function InventoryHub() {
         date: today,
         itemName: itemForm.itemName.trim(),
         itemKind: KIND_ROUGH,
-        category: "Services",
         type: "Service",
         grade: "",
         dimLength: "",
@@ -3939,7 +3937,6 @@ export function InventoryHub() {
     const rUom = resolveStandardFieldRule("uomQty", customStd);
     const rPieces = resolveStandardFieldRule("pieces", customStd);
     const rRate = resolveStandardFieldRule("rate", customStd);
-    const rCat = resolveStandardFieldRule("category", customStd);
     const rLoc = resolveStandardFieldRule("location", customStd);
     const rCust = resolveStandardFieldRule("custodian", customStd);
     const rDet = resolveStandardFieldRule("details", customStd);
@@ -4016,7 +4013,6 @@ export function InventoryHub() {
       date: itemForm.date.trim(),
       itemName: itemForm.itemName.trim(),
       itemKind: itemForm.itemTypeKey,
-      category: rCat.enabled ? itemForm.category : "Faceted",
       type: "Product",
       grade: mode === "rough" ? itemForm.grade.trim() || "" : "",
       dimLength: mode === "cut" ? itemForm.dimLength.trim() : "",
@@ -4055,7 +4051,8 @@ export function InventoryHub() {
           pushToast("Item updated on the server.", "success");
         } else if (!editingItemId) {
           const types = await fetchItemTypes();
-          const created = await createStockFromItemForm({
+          const wantSellables = trackEachPieceSeparately && Math.floor(effPieces) > 1;
+          const { parent, sellableUnits } = await createStockWithOptionalSellablePieces({
             types,
             form: itemForm,
             effUom,
@@ -4064,10 +4061,18 @@ export function InventoryHub() {
             mode,
             locationEnabled: rLoc.enabled,
             custodianEnabled: rCust.enabled,
+            trackEachPieceSeparately,
           });
           await refetchInventoryCatalog();
-          setNewItemQrUnitId(created.id);
-          pushToast("Item created on the server — QR / label niche.", "success");
+          setNewItemQrUnitId(parent.id);
+          if (wantSellables && sellableUnits.length > 0) {
+            pushToast(
+              `Item created with ${sellableUnits.length} sellable piece(s) — each has a unique # + QR. Click the stock unit to view them.`,
+              "success",
+            );
+          } else {
+            pushToast("Item created on the server — QR / label niche.", "success");
+          }
         } else {
           pushToast("This line is not on the server yet. Refresh after enabling server inventory, or delete the local row.", "error");
           setInventorySaving(false);
@@ -4107,6 +4112,48 @@ export function InventoryHub() {
       pushToast("QR download failed.", "error");
     }
   }, [newItemQrUnitId, itemForm.itemNo, pushToast]);
+
+  /** Download the QR PNG for any server-backed stock unit / sellable piece. */
+  const downloadUnitQr = useCallback(
+    async (unitId: string, code: string) => {
+      if (!isServerUuid(unitId)) {
+        pushToast("This line isn't saved on the server yet — QR is only available for saved units.", "info");
+        return;
+      }
+      try {
+        const blob = await fetchStockUnitQrPng(unitId, 256);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${(code || "unit").replace(/[^\w.-]+/g, "_")}-qr.png`;
+        a.rel = "noopener";
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        pushToast("QR download failed.", "error");
+      }
+    },
+    [pushToast],
+  );
+
+  /** Open a printable single-unit label sheet (with QR) for any sellable piece. */
+  const printUnitLabel = useCallback(
+    async (unitId: string) => {
+      if (!isServerUuid(unitId)) {
+        pushToast("This line isn't saved on the server yet — labels are only available for saved units.", "info");
+        return;
+      }
+      try {
+        const blob = await fetchStockUnitLabelPdf(unitId, "single");
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+      } catch (e) {
+        pushToast(e instanceof Error ? e.message : "Label PDF failed", "error");
+      }
+    },
+    [pushToast],
+  );
 
   const printNewItemLabelPdf = useCallback(async () => {
     const uid = newItemQrUnitId;
@@ -4360,6 +4407,26 @@ export function InventoryHub() {
       .finally(() => setReportsApiLoading(false));
   }, [pushToast]);
 
+  if (!hasAuthToken) {
+    return (
+      <div className="w-full">
+        <div className="mx-auto max-w-lg rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-8 text-center shadow-sm">
+          <h2 className="text-lg font-bold text-[var(--gs-text)]">Sign in required</h2>
+          <p className="mt-2 text-sm text-[var(--gs-muted)]">
+            Inventory is available to signed-in users only. All item types, stock, locations, and custodians are stored
+            on the server.
+          </p>
+          <a
+            href="/login"
+            className="mt-5 inline-flex items-center justify-center rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white hover:bg-[var(--gs-accent-hover)]"
+          >
+            Go to sign in
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full space-y-6">
       {tab !== "items" ? (
@@ -4425,10 +4492,10 @@ export function InventoryHub() {
                 </div>
                 {itemCatalogScope === "stock" ? (
                   <p className="mt-2 text-xs text-[var(--gs-muted)]">
-                    Click a stock row (outside Actions) to open{" "}
-                    <span className="font-semibold text-[var(--gs-text)]">child parcels & splits</span>. To break a
-                    parcel into smaller bags or individual pieces, use that row&apos;s{" "}
-                    <span className="font-semibold text-[var(--gs-text)]">Actions → Split parcel</span>.
+                    This table shows only <span className="font-semibold text-[var(--gs-text)]">stock units</span> (from a lot or the Items form).
+                    Click a stock row to view its <span className="font-semibold text-[var(--gs-text)]">sellable pieces</span> (unique # + QR).
+                    Create pieces with <span className="font-semibold text-[var(--gs-text)]">Track each piece separately</span> on the New item form,
+                    or a row&apos;s <span className="font-semibold text-[var(--gs-text)]">Actions → Split parcel</span>.
                   </p>
                 ) : null}
               </div>
@@ -4662,8 +4729,8 @@ export function InventoryHub() {
             ) : (
             <table className="w-full table-fixed border-collapse overflow-visible text-left text-[11px] sm:text-sm">
               <colgroup>
-                {Array.from({ length: 12 }, (_, i) => (
-                  <col key={i} style={{ width: `${100 / 12}%` }} />
+                {Array.from({ length: 11 }, (_, i) => (
+                  <col key={i} style={{ width: `${100 / 11}%` }} />
                 ))}
               </colgroup>
               <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)] sm:text-xs">
@@ -4709,9 +4776,6 @@ export function InventoryHub() {
                   <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle leading-tight">
                     <span className="line-clamp-2 break-words">Item Name</span>
                   </th>
-                  <th className="min-w-0 overflow-hidden px-2 py-2.5 text-left align-middle leading-tight">
-                    <span className="line-clamp-2 break-words">Category</span>
-                  </th>
                   <th className="min-w-0 overflow-hidden px-2 py-2.5 text-center align-middle leading-tight">
                     <span className="line-clamp-2 break-words">Grade / Dims / Attr.</span>
                   </th>
@@ -4744,7 +4808,7 @@ export function InventoryHub() {
                     const isCollapsed = collapsedLotIds.has(entry.lotKey);
                     return (
                       <tr key={`lot-h-${entry.lotKey}`} className="bg-[var(--gs-hover)]/80">
-                        <td colSpan={12} className="px-2 py-1.5">
+                        <td colSpan={11} className="px-2 py-1.5">
                           <button
                             type="button"
                             className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-xs font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-card)]"
@@ -4811,6 +4875,17 @@ export function InventoryHub() {
                               Locked
                             </span>
                           ) : null}
+                          {(() => {
+                            const sellableCount = sellableCountByParent.get(r.serverUnitId ?? r.id) ?? 0;
+                            return sellableCount > 0 ? (
+                              <span
+                                className="inline-flex items-center rounded-full border border-sky-400/50 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-sky-700 dark:text-sky-300"
+                                title={`${sellableCount} sellable piece(s) — click row to view`}
+                              >
+                                {sellableCount} sellable
+                              </span>
+                            ) : null;
+                          })()}
                           {r.serverPurchaseLotId && lotBalances[r.serverPurchaseLotId] ? (
                             <span
                               className={cn(
@@ -4825,12 +4900,6 @@ export function InventoryHub() {
                             </span>
                           ) : null}
                         </span>
-                      </td>
-                      <td
-                        className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 align-middle text-[var(--gs-muted)]"
-                        title={r.category}
-                      >
-                        {r.category}
                       </td>
                       <td
                         className="min-w-0 max-w-0 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-2.5 text-center align-middle text-xs text-[var(--gs-muted)]"
@@ -4874,7 +4943,7 @@ export function InventoryHub() {
                             extraItems={(() => {
                               const items: { label: string; onSelect: () => void; danger?: boolean; icon?: "split" }[] = [
                                 {
-                                  label: "Child parcels / splits…",
+                                  label: "Sellable pieces / splits…",
                                   onSelect: () => openParcelLinesDrawer(r),
                                 },
                               ];
@@ -4961,7 +5030,7 @@ export function InventoryHub() {
             <div className="flex items-start justify-between gap-2 border-b border-[var(--gs-border)] px-4 py-3">
               <div className="min-w-0">
                 <h3 id="parcel-lines-title" className="text-base font-bold text-[var(--gs-text)]">
-                  Child parcels & split lines
+                  Sellable pieces & split lines
                 </h3>
                 <p className="mt-1 text-xs text-[var(--gs-muted)]">
                   Parent: <span className="font-medium text-[var(--gs-text)]">{parcelLinesParent.itemName}</span> · Item #
@@ -4996,7 +5065,7 @@ export function InventoryHub() {
                       : "border-transparent text-[var(--gs-muted)] hover:text-[var(--gs-text)]",
                   )}
                 >
-                  Children
+                  Sellable pieces
                 </button>
                 <button
                   type="button"
@@ -5029,19 +5098,21 @@ export function InventoryHub() {
               {parcelDrawerTab === "children" ? (
                 parcelChildRows.length === 0 ? (
                   <p className="text-sm text-[var(--gs-muted)]">
-                    No child lines reference this unit yet. Use <span className="font-semibold text-[var(--gs-text)]">Split parcel</span>{" "}
-                    to create parcels that appear here.
+                    This stock unit has no sellable pieces yet. Use{" "}
+                    <span className="font-semibold text-[var(--gs-text)]">Track each piece separately</span> on the New item form, or{" "}
+                    <span className="font-semibold text-[var(--gs-text)]">Split parcel → Break into individual pieces</span> to create them.
                   </p>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border border-[var(--gs-border)]">
-                    <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
+                    <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
                       <thead className="bg-[var(--gs-table-head)] text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">
                         <tr>
-                          <th className="px-3 py-2">Item #</th>
+                          <th className="px-3 py-2">Unique #</th>
                           <th className="px-3 py-2">Name</th>
                           <th className="px-3 py-2 text-right">UOM</th>
                           <th className="px-3 py-2 text-right">Pieces</th>
                           <th className="px-3 py-2">Location</th>
+                          <th className="px-3 py-2 text-center">QR / Label</th>
                         </tr>
                       </thead>
                       <tbody className="gs-striped-rows divide-y divide-[var(--gs-border)]">
@@ -5061,6 +5132,24 @@ export function InventoryHub() {
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums text-[var(--gs-muted)]">{c.pieces}</td>
                             <td className="px-3 py-2 text-xs text-[var(--gs-muted)]">{c.location || "—"}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => void downloadUnitQr(c.serverUnitId ?? c.id, c.itemNo)}
+                                  className="rounded-lg border border-[var(--gs-border)] px-2 py-1 text-[10px] font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)]"
+                                >
+                                  QR
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void printUnitLabel(c.serverUnitId ?? c.id)}
+                                  className="rounded-lg border border-[var(--gs-border)] px-2 py-1 text-[10px] font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)]"
+                                >
+                                  Label
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -5130,7 +5219,7 @@ export function InventoryHub() {
                   ) : (
                     <div className="space-y-3 text-sm">
                       <p className="text-[11px] text-[var(--gs-muted)]">
-                        Row dabao — woh unit is drawer mein khul jayegi (Lineage tab yahi rehta hai).
+                        Click a row to open that unit in this drawer (the Lineage tab stays here).
                       </p>
                       {(() => {
                         const d = lineageData;
@@ -5295,7 +5384,7 @@ export function InventoryHub() {
                     if (splitSourceRow) {
                       const pcs = splitSourceRow.pieces;
                       const defU = pcs > 0 ? splitSourceRow.uom / pcs : splitSourceRow.uom;
-                      setSplitPiecesCount("1");
+                      setSplitPiecesCount(pcs > 1 ? String(pcs) : "1");
                       setSplitPerPieceUom(String(defU));
                       setSplitPerPieceRate(String(splitSourceRow.rate));
                     }
@@ -6449,7 +6538,7 @@ export function InventoryHub() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="add-type-title"
-            className="max-h-[min(92vh,44rem)] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-2xl"
+            className="max-h-[min(94vh,52rem)] w-full max-w-6xl overflow-y-auto rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-2">
@@ -6469,7 +6558,7 @@ export function InventoryHub() {
               </button>
             </div>
             <p className="mt-1 text-sm text-[var(--gs-muted)]">
-              Configure which fields appear on <strong className="text-[var(--gs-text)]">New item</strong>, optional Rough/Cut-style attributes, and extra custom columns. Built-in Rough/Cut types are unchanged.
+              Give the type a name, pick a starting template, then define its attribute fields and which standard <strong className="text-[var(--gs-text)]">New item</strong> fields show. Built-in Rough/Cut types are unchanged.
             </p>
             <div className="mt-4 space-y-4">
               <div>
@@ -6485,6 +6574,8 @@ export function InventoryHub() {
                   autoComplete="off"
                 />
               </div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
+                <div className="flex flex-col gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Attribute style</p>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -6498,7 +6589,9 @@ export function InventoryHub() {
                     <button
                       key={id}
                       type="button"
-                      onClick={() => setAddTypeDraft((d) => ({ ...d, specMode: id }))}
+                      onClick={() =>
+                        setAddTypeDraft((d) => ({ ...d, specMode: id, builderFields: builderTemplateForStyle(id) }))
+                      }
                       className={cn(
                         "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
                         addTypeDraft.specMode === id
@@ -6511,10 +6604,12 @@ export function InventoryHub() {
                   ))}
                 </div>
                 <p className="mt-1 text-[11px] text-[var(--gs-muted)]">
-                  Rough/Cut mirror the built-in controls. Custom fields uses the attribute list below (at least one required).
+                  Pick a starting template: <strong className="text-[var(--gs-text)]">Rough</strong> adds a Grade dropdown,{" "}
+                  <strong className="text-[var(--gs-text)]">Cut</strong> adds Length/Width/Height, and{" "}
+                  <strong className="text-[var(--gs-text)]">Custom fields</strong> starts blank. You can edit, add, or remove any field below.
                 </p>
               </div>
-              <div className="rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 p-4">
+              <div className="order-4 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/60 p-4">
                 <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Standard New Item fields</p>
                 <p className="mt-1 text-[11px] text-[var(--gs-muted)]">
                   Item #, date, item name, and inventory type selector are always shown. Toggle the rest.
@@ -6580,7 +6675,9 @@ export function InventoryHub() {
                   })}
                 </div>
               </div>
-              <div>
+                </div>
+                <div className="flex flex-col gap-4">
+              <div className="order-2">
                 <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">UOM</p>
                 <div className="mt-1.5 flex flex-wrap gap-2">
                   {(
@@ -6616,10 +6713,9 @@ export function InventoryHub() {
                   />
                 ) : null}
               </div>
-              {addTypeDraft.specMode === "builder" ? (
-              <div>
+              <div className="order-1">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Custom attribute fields</p>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Attribute fields *</p>
                   <button
                     type="button"
                     onClick={() =>
@@ -6754,14 +6850,10 @@ export function InventoryHub() {
                   ))}
                 </div>
               </div>
-              ) : (
-                <p className="rounded-xl border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-3 text-sm text-[var(--gs-muted)]">
-                  Attribute fields follow <strong className="text-[var(--gs-text)]">Rough</strong> or <strong className="text-[var(--gs-text)]">Cut</strong> layouts. Choose{" "}
-                  <strong>Custom fields</strong> to add named columns (text, number, dropdown).
-                </p>
-              )}
+                </div>
+              </div>
             </div>
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="sticky bottom-0 -mx-5 -mb-5 mt-6 flex justify-end gap-2 border-t border-[var(--gs-border)] bg-[var(--gs-card)] px-5 py-4">
               <button
                 type="button"
                 onClick={() => {
@@ -6787,52 +6879,37 @@ export function InventoryHub() {
                       return;
                     }
                     const mergedStd = mergeStandardFields(addTypeDraft.standardFields);
-                    if (addTypeDraft.specMode !== "builder") {
-                      if (!Object.values(mergedStd).some((r) => r.enabled)) {
-                        pushToast("Enable at least one standard field, or switch to Custom fields.", "error");
+                    const trimmedFields: CustomFieldDef[] = addTypeDraft.builderFields.map((f) => ({
+                      id: f.id,
+                      label: f.label.trim(),
+                      kind: f.kind,
+                      options: f.kind === "dropdown" ? (f.options ?? []).filter(Boolean) : undefined,
+                      required: f.required !== false,
+                      visible: f.visible !== false,
+                    }));
+                    if (trimmedFields.length < 1) {
+                      pushToast("Add at least one attribute field.", "error");
+                      return;
+                    }
+                    for (const f of trimmedFields) {
+                      if (!f.label) {
+                        pushToast("Each field needs a label.", "error");
+                        return;
+                      }
+                      if (f.kind === "dropdown" && (!f.options || f.options.length < 1)) {
+                        pushToast(`Add at least one option for dropdown "${f.label || "field"}".`, "error");
                         return;
                       }
                     }
-                    const cleaned: CustomFieldDef[] =
-                      addTypeDraft.specMode === "builder"
-                        ? addTypeDraft.builderFields.map((f) => ({
-                            id: f.id,
-                            label: f.label.trim(),
-                            kind: f.kind,
-                            options: f.kind === "dropdown" ? (f.options ?? []).filter(Boolean) : undefined,
-                            required: f.required !== false,
-                            visible: f.visible !== false,
-                          }))
-                        : [];
-                    if (addTypeDraft.specMode === "builder") {
-                      if (cleaned.length < 1) {
-                        pushToast("Add at least one custom attribute field.", "error");
-                        return;
-                      }
-                      for (const f of cleaned) {
-                        if (!f.label) {
-                          pushToast("Each field needs a label.", "error");
-                          return;
-                        }
-                        if (f.kind === "dropdown" && (!f.options || f.options.length < 1)) {
-                          pushToast(`Add at least one option for dropdown "${f.label || "field"}".`, "error");
-                          return;
-                        }
-                      }
-                    }
+                    // Stable, readable keys so values persist correctly under attributes_json.custom.
+                    const cleaned: CustomFieldDef[] = assignBuilderFieldSlugs(trimmedFields);
                     const id = editingInventoryTypeId ?? `ctype-${Date.now()}`;
-                    const fieldPreset =
-                      addTypeDraft.specMode === "rough"
-                        ? KIND_ROUGH
-                        : addTypeDraft.specMode === "cut"
-                          ? KIND_CUT
-                          : undefined;
                     const nextType: CustomInventoryType = {
                       id,
                       label,
                       uomTab: addTypeDraft.uomTab,
                       customUomLabel: addTypeDraft.uomTab === "custom" ? addTypeDraft.customUom.trim() : undefined,
-                      fieldPreset,
+                      fieldPreset: undefined,
                       builderFields: cleaned,
                       standardFields: mergedStd,
                     };
@@ -7187,6 +7264,14 @@ export function InventoryHub() {
                   ))}
                   <option value={ADD_NEW_TYPE_VALUE}>+ Add New Type</option>
                 </select>
+                <button
+                  type="button"
+                  onClick={() => setViewAllTypesOpen(true)}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[var(--gs-accent)] hover:underline"
+                >
+                  <Pencil className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                  Manage types (edit / delete)
+                </button>
                 {itemForm.itemTypeKey === KIND_ROUGH ? (
                   <div className="mt-4">
                     <label htmlFor="ni-rough-lot" className={FIELD_LABEL}>
@@ -7208,30 +7293,6 @@ export function InventoryHub() {
                   </div>
                 ) : null}
               </div>
-              {stdRule("category").enabled ? (
-                <div>
-                  <SearchableFieldPicker
-                    id="ni-cat"
-                    label={`Category${stdRule("category").required ? " *" : ""}`}
-                    value={itemForm.category}
-                    onChange={(v) => setItemForm((s) => ({ ...s, category: v }))}
-                    options={categoryOptionsMerged}
-                    placeholder="Search categories..."
-                    emptyLabel="Select category…"
-                    canManageOption={canManageCategoryOption}
-                    onRenameOption={renameCategoryOption}
-                    onDeleteOption={deleteCategoryOption}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void addCustomCategory()}
-                    className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-3 py-2 text-xs font-semibold text-[var(--gs-text)] transition hover:bg-[var(--gs-hover)]"
-                  >
-                    <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-                    Add new category
-                  </button>
-                </div>
-              ) : null}
               {activeUiMode === "rough" ? (
                 <div>
                   <label htmlFor="ni-grade" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
@@ -7406,6 +7467,23 @@ export function InventoryHub() {
                     </div>
                   ) : null}
                 </div>
+              ) : null}
+              {!editingItemId && stdRule("pieces").enabled && (Number(itemForm.pieces) || 0) > 1 ? (
+                <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/40 p-3">
+                  <input
+                    type="checkbox"
+                    checked={trackEachPieceSeparately}
+                    onChange={(e) => setTrackEachPieceSeparately(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--gs-accent)]"
+                  />
+                  <span className="text-xs text-[var(--gs-text)]">
+                    <span className="font-semibold">Track each piece separately</span>
+                    <span className="block text-[var(--gs-muted)]">
+                      Create {Number(itemForm.pieces) || 0} sellable pieces for this stock unit — each with its own unique # and QR.
+                      The inventory table shows only this stock unit; the pieces appear when you click the row.
+                    </span>
+                  </span>
+                </label>
               ) : null}
                     </FormSection>
                     <FormSection title="Pricing" subtitle="Unit rate and calculated amount (UOM × rate)">
@@ -8576,15 +8654,15 @@ export function InventoryHub() {
             role="dialog"
             aria-labelledby="view-types-title"
             aria-modal="true"
-            className="my-8 w-full max-w-2xl rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-2xl"
+            className="my-8 flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start justify-between gap-2 border-b border-[var(--gs-border)] px-6 py-4">
               <div>
                 <h2 id="view-types-title" className="text-lg font-bold text-[var(--gs-text)]">
-                  Type reference
+                  Manage types
                 </h2>
-                <p className="mt-1 text-sm text-[var(--gs-muted)]">Built-in and custom inventory item types and their configurations (UOM, fields, structure).</p>
+                <p className="mt-1 text-sm text-[var(--gs-muted)]">Edit or delete your inventory types. Built-in Rough and Cut cannot be changed.</p>
               </div>
               <button
                 type="button"
@@ -8595,20 +8673,20 @@ export function InventoryHub() {
                 <X className="h-5 w-5" strokeWidth={2} aria-hidden />
               </button>
             </div>
-            <div className="mt-6 space-y-6">
+            <div className="space-y-6 overflow-y-auto px-6 py-5">
               <section>
                 <h3 className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Built-in</h3>
-                <ul className="mt-2 space-y-3">
-                  <li className="rounded-xl border border-[var(--gs-border)] p-4">
+                <ul className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <li className="rounded-xl border border-[var(--gs-border)] p-3">
                     <p className="font-semibold text-[var(--gs-text)]">Rough</p>
-                    <p className="mt-1 text-sm text-[var(--gs-muted)]">
-                      Structure: grade (fixed list), UOM quantity, pieces, rate, amount (UOM × rate), category, location, custodian, details. The Rough grade control is not modified by custom types.
+                    <p className="mt-1 text-xs text-[var(--gs-muted)]">
+                      Grade (fixed list), UOM quantity, pieces, rate, amount, location, custodian, details.
                     </p>
                   </li>
-                  <li className="rounded-xl border border-[var(--gs-border)] p-4">
+                  <li className="rounded-xl border border-[var(--gs-border)] p-3">
                     <p className="font-semibold text-[var(--gs-text)]">Cut</p>
-                    <p className="mt-1 text-sm text-[var(--gs-muted)]">
-                      Structure: length, width, height/thickness, UOM quantity, pieces, rate, amount, plus common fields.
+                    <p className="mt-1 text-xs text-[var(--gs-muted)]">
+                      Length, width, height/thickness, UOM quantity, pieces, rate, amount, plus common fields.
                     </p>
                   </li>
                 </ul>
@@ -8616,9 +8694,9 @@ export function InventoryHub() {
               <section>
                 <h3 className="text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">Other types</h3>
                 {customInventoryTypes.length > 0 ? (
-                  <ul className="mt-2 space-y-3">
+                  <ul className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {customInventoryTypes.map((t) => (
-                      <li key={t.id} className="rounded-xl border border-[var(--gs-border)] p-4">
+                      <li key={t.id} className="rounded-xl border border-[var(--gs-border)] p-3">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <p className="font-semibold text-[var(--gs-text)]">{t.label}</p>
                           <div className="flex shrink-0 items-center gap-1">
@@ -8640,7 +8718,7 @@ export function InventoryHub() {
                             </button>
                           </div>
                         </div>
-                        <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                        <p className="mt-1 text-xs text-[var(--gs-muted)]">
                           UOM:{" "}
                           {t.uomTab === "custom" && t.customUomLabel
                             ? t.customUomLabel
@@ -8653,7 +8731,7 @@ export function InventoryHub() {
                                   : ""}
                         </p>
                         {t.builderFields && t.builderFields.length > 0 ? (
-                          <ul className="mt-2 list-inside list-disc text-sm text-[var(--gs-muted)]">
+                          <ul className="mt-2 list-inside list-disc text-xs text-[var(--gs-muted)]">
                             {t.builderFields.map((f) => (
                               <li key={f.id}>
                                 {f.label} ({f.kind}

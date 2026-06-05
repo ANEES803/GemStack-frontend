@@ -9,6 +9,7 @@ import { RowActionsMenu } from "@/components/ui/RowActionsMenu";
 import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { formatMoney } from "@/lib/format";
 import {
+  bootstrapStandardChart,
   createGlAccount,
   createJournalEntry,
   createJournalReversalDraft,
@@ -374,6 +375,7 @@ export function AccountingWorkspace() {
   const [glPostingSave, setGlPostingSave] = useState(false);
   const [glPostingSaveFlash, setGlPostingSaveFlash] = useState<string | null>(null);
   const [glPostingErr, setGlPostingErr] = useState<string | null>(null);
+  const [glBootstrapBusy, setGlBootstrapBusy] = useState(false);
 
   const [bankCards] = useState([
     { id: "b1", bank: "HBL", last4: "9012", balance: 125000, recon: "2026-03-15" },
@@ -1144,6 +1146,36 @@ export function AccountingWorkspace() {
     }
   }
 
+  async function createStandardAccounts() {
+    if (glBootstrapBusy) return;
+    const ok = window.confirm(
+      "Create the standard chart of accounts (Assets, Receivable, Inventory, Payable, Sales revenue, COGS, Purchases, etc.) and map the missing posting defaults to them? Existing accounts and mappings are kept unchanged.",
+    );
+    if (!ok) return;
+    setGlBootstrapBusy(true);
+    setGlPostingErr(null);
+    try {
+      await bootstrapStandardChart();
+      const [s, acc] = await Promise.all([getGlSettings(), listPostableGlAccounts()]);
+      setGlPostingSettings({
+        ...s,
+        auto_post_sales_invoices: s.auto_post_sales_invoices ?? true,
+        account_ar_id: s.account_ar_id ?? null,
+        account_sales_revenue_id: s.account_sales_revenue_id ?? null,
+        account_cogs_id: s.account_cogs_id ?? null,
+      });
+      setGlPostingAccounts(acc);
+      setFunctionalCurrency(s.functional_currency || "USD");
+      pushToast("Standard accounts created and posting defaults mapped.", "success");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not create standard accounts";
+      setGlPostingErr(msg);
+      pushToast(msg, "error");
+    } finally {
+      setGlBootstrapBusy(false);
+    }
+  }
+
   async function createReversalFromViewer() {
     if (!journalViewerDetail || journalViewerDetail.status !== "posted") return;
     setJournalReversalBusy(true);
@@ -1167,6 +1199,96 @@ export function AccountingWorkspace() {
   const selectedBank = bankCards.find((b) => b.id === bankDetailId) ?? null;
 
   const coaRibbonTotal = COA_TYPE_ORDER.reduce((sum, t) => sum + coaCountsByType[t], 0);
+
+  // --- GL posting defaults: derived readiness + display helpers ---
+  const glAccountLabel = (id: string | null | undefined): string | null => {
+    if (!id) return null;
+    const a = glPostingAccounts.find((x) => x.id === id);
+    return a ? `${a.code} ${a.name}` : null;
+  };
+  const glPurchaseMode = glPostingSettings?.purchase_receipt_mode ?? "inventory";
+  const glSalesMissing: string[] = glPostingSettings
+    ? [
+        !glPostingSettings.account_ar_id ? "Accounts receivable" : null,
+        !glPostingSettings.account_sales_revenue_id ? "Sales revenue" : null,
+        !glPostingSettings.account_cogs_id ? "Cost of goods sold" : null,
+        !glPostingSettings.account_inventory_id ? "Inventory" : null,
+      ].filter((x): x is string => x !== null)
+    : [];
+  const glPurchaseMissing: string[] = glPostingSettings
+    ? [
+        !glPostingSettings.account_ap_id ? "Accounts payable" : null,
+        glPurchaseMode === "inventory"
+          ? !glPostingSettings.account_inventory_id
+            ? "Inventory"
+            : null
+          : !glPostingSettings.account_purchases_id
+            ? "Purchases"
+            : null,
+      ].filter((x): x is string => x !== null)
+    : [];
+  const glSalesReady = glSalesMissing.length === 0;
+  const glPurchaseReady = glPurchaseMissing.length === 0;
+  const glRequiredRolesMissing =
+    !!glPostingSettings &&
+    (!glPostingSettings.account_ar_id ||
+      !glPostingSettings.account_sales_revenue_id ||
+      !glPostingSettings.account_cogs_id ||
+      !glPostingSettings.account_inventory_id ||
+      !glPostingSettings.account_ap_id ||
+      !glPostingSettings.account_default_bank_id);
+  const glShowCreateStandard = glPostingAccounts.length === 0 || glRequiredRolesMissing;
+
+  const renderGlAccountSelect = (opts: {
+    label: string;
+    value: string | null;
+    type: string;
+    recommendedSubtype?: string;
+    helper: string;
+    onPick: (id: string | null) => void;
+    className?: string;
+  }) => {
+    const matches = glPostingAccounts.filter((a) => a.account_type.toLowerCase() === opts.type);
+    const recommended = opts.recommendedSubtype
+      ? matches.filter((a) => (a.account_subtype ?? "").toLowerCase() === opts.recommendedSubtype)
+      : [];
+    const others = opts.recommendedSubtype
+      ? matches.filter((a) => (a.account_subtype ?? "").toLowerCase() !== opts.recommendedSubtype)
+      : matches;
+    const renderOpt = (a: GlAccountDto) => (
+      <option key={a.id} value={a.id}>
+        {a.code} {a.name}
+      </option>
+    );
+    return (
+      <label className={`block text-sm ${opts.className ?? ""}`}>
+        <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">{opts.label}</span>
+        <select value={opts.value ?? ""} onChange={(e) => opts.onPick(e.target.value || null)} className="gs-field">
+          <option value="">— None —</option>
+          {recommended.length > 0 ? (
+            <>
+              <optgroup label="Recommended">{recommended.map(renderOpt)}</optgroup>
+              {others.length > 0 ? <optgroup label="Other accounts">{others.map(renderOpt)}</optgroup> : null}
+            </>
+          ) : (
+            matches.map(renderOpt)
+          )}
+        </select>
+        <span className="mt-1 block text-xs text-[var(--gs-muted)]">{opts.helper}</span>
+      </label>
+    );
+  };
+
+  const glReadinessBadge = (ready: boolean, missing: string[]) =>
+    ready ? (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800">
+        Ready
+      </span>
+    ) : (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-800">
+        Incomplete — set: {missing.join(", ")}
+      </span>
+    );
 
   return (
     <div className="mx-auto max-w-screen-2xl space-y-6 px-4 sm:px-6 lg:px-10">
@@ -1485,13 +1607,24 @@ export function AccountingWorkspace() {
 
       {tab === "gl_posting" && (
         <section className="overflow-hidden rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] shadow-sm">
-          <div className="border-b border-[var(--gs-border)] p-5">
-            <h2 className="text-lg font-bold text-[var(--gs-text)]">GL posting defaults</h2>
-            <p className="mt-1 text-sm text-[var(--gs-muted)]">
-              Choose which chart accounts receive <strong>inventory</strong>, <strong>purchases</strong>, <strong>accounts payable</strong>, and{" "}
-              <strong>bank / cash</strong> postings when purchase receipts and vendor payments are recorded. When auto-post is on, those
-              vouchers create journal entries against these accounts.
-            </p>
+          <div className="flex flex-col gap-3 border-b border-[var(--gs-border)] p-5 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-[var(--gs-text)]">GL posting defaults</h2>
+              <p className="mt-1 text-sm text-[var(--gs-muted)]">
+                Map your chart accounts to the roles used when <strong>sales invoices</strong> and <strong>purchase receipts</strong> auto-post to
+                the general ledger. When a section is &ldquo;Ready&rdquo;, those vouchers create balanced journal entries against the accounts you pick here.
+              </p>
+            </div>
+            {glShowCreateStandard && !glPostingLoad && glPostingSettings ? (
+              <button
+                type="button"
+                disabled={glBootstrapBusy}
+                onClick={() => void createStandardAccounts()}
+                className="shrink-0 rounded-full border border-[var(--gs-accent)] bg-[var(--gs-accent-soft)] px-4 py-2 text-sm font-semibold text-[var(--gs-text)] disabled:opacity-60"
+              >
+                {glBootstrapBusy ? "Creating…" : "Create standard accounts"}
+              </button>
+            ) : null}
           </div>
           {glPostingErr ? <div className="gs-strip-danger px-5 py-3">{glPostingErr}</div> : null}
           <div className="p-5">
@@ -1513,208 +1646,174 @@ export function AccountingWorkspace() {
                     <p className="text-sm font-medium text-[var(--gs-text)]">Saving settings…</p>
                   </div>
                 ) : null}
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <label className="block text-sm">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Functional currency</span>
-                  <input
-                    value={glPostingSettings.functional_currency}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) => (p ? { ...p, functional_currency: e.target.value.toUpperCase().slice(0, 3) } : p))
-                    }
-                    maxLength={3}
-                    className="gs-field font-mono"
-                  />
-                </label>
-                <label className="block text-sm sm:col-span-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Purchase receipt mode</span>
-                  <select
-                    value={glPostingSettings.purchase_receipt_mode}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) => (p ? { ...p, purchase_receipt_mode: e.target.value } : p))
-                    }
-                    className="gs-field"
-                  >
-                    <option value="inventory">Debit inventory (asset)</option>
-                    <option value="expense">Debit purchases (expense)</option>
-                  </select>
-                </label>
-                <label className="flex items-center gap-2 text-sm text-[var(--gs-text)] sm:col-span-3">
-                  <input
-                    type="checkbox"
-                    checked={glPostingSettings.auto_post_purchase_lots}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) => (p ? { ...p, auto_post_purchase_lots: e.target.checked } : p))
-                    }
-                  />
-                  Auto-post purchase receipts and vendor payments to the general ledger
-                </label>
-                <label className="flex items-center gap-2 text-sm text-[var(--gs-text)] sm:col-span-3">
-                  <input
-                    type="checkbox"
-                    checked={glPostingSettings.auto_post_sales_invoices}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) => (p ? { ...p, auto_post_sales_invoices: e.target.checked } : p))
-                    }
-                  />
-                  Auto-post sales invoices and customer payments to the general ledger
-                </label>
-                <p className="text-xs text-[var(--gs-muted)] sm:col-span-3">
-                  Sales posting requires Accounts receivable, Sales revenue, COGS, and Inventory below (for Save &amp; post on invoices).
-                </p>
-                <label className="block text-sm">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Accounts receivable (asset)</span>
-                  <select
-                    value={glPostingSettings.account_ar_id ?? ""}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) => (p ? { ...p, account_ar_id: e.target.value || null } : p))
-                    }
-                    className="gs-field"
-                  >
-                    <option value="">— None —</option>
-                    {glPostingAccounts
-                      .filter((a) => a.account_type.toLowerCase() === "asset")
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} {a.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label className="block text-sm">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Sales revenue</span>
-                  <select
-                    value={glPostingSettings.account_sales_revenue_id ?? ""}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) =>
-                        p ? { ...p, account_sales_revenue_id: e.target.value || null } : p,
-                      )
-                    }
-                    className="gs-field"
-                  >
-                    <option value="">— None —</option>
-                    {glPostingAccounts
-                      .filter((a) => a.account_type.toLowerCase() === "revenue")
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} {a.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label className="block text-sm">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Cost of goods sold (expense)</span>
-                  <select
-                    value={glPostingSettings.account_cogs_id ?? ""}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) => (p ? { ...p, account_cogs_id: e.target.value || null } : p))
-                    }
-                    className="gs-field"
-                  >
-                    <option value="">— None —</option>
-                    {glPostingAccounts
-                      .filter((a) => a.account_type.toLowerCase() === "expense")
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} {a.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label className="block text-sm">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Inventory (asset)</span>
-                  <select
-                    value={glPostingSettings.account_inventory_id ?? ""}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) =>
-                        p ? { ...p, account_inventory_id: e.target.value || null } : p,
-                      )
-                    }
-                    className="gs-field"
-                  >
-                    <option value="">— None —</option>
-                    {glPostingAccounts
-                      .filter((a) => a.account_type.toLowerCase() === "asset")
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} {a.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label className="block text-sm">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Purchases (expense)</span>
-                  <select
-                    value={glPostingSettings.account_purchases_id ?? ""}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) =>
-                        p ? { ...p, account_purchases_id: e.target.value || null } : p,
-                      )
-                    }
-                    className="gs-field"
-                  >
-                    <option value="">— None —</option>
-                    {glPostingAccounts
-                      .filter((a) => a.account_type.toLowerCase() === "expense")
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} {a.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label className="block text-sm">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Accounts payable</span>
-                  <select
-                    value={glPostingSettings.account_ap_id ?? ""}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) => (p ? { ...p, account_ap_id: e.target.value || null } : p))
-                    }
-                    className="gs-field"
-                  >
-                    <option value="">— None —</option>
-                    {glPostingAccounts
-                      .filter((a) => a.account_type.toLowerCase() === "liability")
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} {a.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label className="block text-sm sm:col-span-2 lg:col-span-3">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Default bank / cash (asset)</span>
-                  <select
-                    value={glPostingSettings.account_default_bank_id ?? ""}
-                    onChange={(e) =>
-                      setGlPostingSettings((p) =>
-                        p ? { ...p, account_default_bank_id: e.target.value || null } : p,
-                      )
-                    }
-                    className="gs-field max-w-md"
-                  >
-                    <option value="">— None —</option>
-                    {glPostingAccounts
-                      .filter((a) => a.account_type.toLowerCase() === "asset")
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} {a.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <div className="flex flex-wrap items-center gap-3 sm:col-span-2 lg:col-span-3">
-                  {glPostingSaveFlash ? (
-                    <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{glPostingSaveFlash}</span>
-                  ) : null}
-                  <button
-                    type="button"
-                    disabled={glPostingSave}
-                    onClick={() => void saveGlPostingSettings()}
-                    className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                  >
-                    {glPostingSave ? "Saving…" : "Save GL posting settings"}
-                  </button>
-                </div>
+                <div className="space-y-5">
+                  {(() => {
+                    const warnSales = glPostingSettings.auto_post_sales_invoices && !glSalesReady;
+                    const warnPurchase = glPostingSettings.auto_post_purchase_lots && !glPurchaseReady;
+                    if (!warnSales && !warnPurchase) return null;
+                    return (
+                      <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+                        <p className="font-semibold">Auto-posting is on but not ready</p>
+                        <ul className="mt-1 list-disc pl-5">
+                          {warnSales ? <li>Sales invoices: set {glSalesMissing.join(", ")}.</li> : null}
+                          {warnPurchase ? <li>Purchase receipts: set {glPurchaseMissing.join(", ")}.</li> : null}
+                        </ul>
+                        <p className="mt-1 text-xs">You can still save; auto-posting just won&apos;t run until these accounts are set.</p>
+                      </div>
+                    );
+                  })()}
+
+                  <section className="rounded-xl border border-[var(--gs-border)] p-4">
+                    <h3 className="text-sm font-bold text-[var(--gs-text)]">General</h3>
+                    <p className="mt-0.5 text-xs text-[var(--gs-muted)]">Base currency for the general ledger.</p>
+                    <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <label className="block text-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Functional currency</span>
+                        <input
+                          value={glPostingSettings.functional_currency}
+                          onChange={(e) =>
+                            setGlPostingSettings((p) => (p ? { ...p, functional_currency: e.target.value.toUpperCase().slice(0, 3) } : p))
+                          }
+                          maxLength={3}
+                          className="gs-field font-mono"
+                        />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="rounded-xl border border-[var(--gs-border)] p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-bold text-[var(--gs-text)]">Sales posting</h3>
+                        <p className="mt-0.5 text-xs text-[var(--gs-muted)]">Used when a sales invoice is posted (Save &amp; post).</p>
+                      </div>
+                      {glReadinessBadge(glSalesReady, glSalesMissing)}
+                    </div>
+                    <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {renderGlAccountSelect({
+                        label: "Accounts receivable (asset)",
+                        value: glPostingSettings.account_ar_id,
+                        type: "asset",
+                        recommendedSubtype: "receivable",
+                        helper: "Debited for the amount the customer owes.",
+                        onPick: (id) => setGlPostingSettings((p) => (p ? { ...p, account_ar_id: id } : p)),
+                      })}
+                      {renderGlAccountSelect({
+                        label: "Sales revenue",
+                        value: glPostingSettings.account_sales_revenue_id,
+                        type: "revenue",
+                        helper: "Credited with the sale amount (income).",
+                        onPick: (id) => setGlPostingSettings((p) => (p ? { ...p, account_sales_revenue_id: id } : p)),
+                      })}
+                      {renderGlAccountSelect({
+                        label: "Cost of goods sold (expense)",
+                        value: glPostingSettings.account_cogs_id,
+                        type: "expense",
+                        helper: "Debited with the cost of the items sold.",
+                        onPick: (id) => setGlPostingSettings((p) => (p ? { ...p, account_cogs_id: id } : p)),
+                      })}
+                    </div>
+                    <label className="mt-3 flex items-center gap-2 text-sm text-[var(--gs-text)]">
+                      <input
+                        type="checkbox"
+                        checked={glPostingSettings.auto_post_sales_invoices}
+                        onChange={(e) => setGlPostingSettings((p) => (p ? { ...p, auto_post_sales_invoices: e.target.checked } : p))}
+                      />
+                      Auto-post sales invoices and customer payments to the general ledger
+                    </label>
+                    <div className="mt-3 rounded-lg bg-black/5 p-3 text-xs text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)] dark:bg-white/5">
+                      <p className="font-semibold text-[var(--gs-text)]">Posting preview (per invoice)</p>
+                      <p className="mt-1">
+                        Dr {glAccountLabel(glPostingSettings.account_ar_id) ?? "Accounts receivable"} / Cr {glAccountLabel(glPostingSettings.account_sales_revenue_id) ?? "Sales revenue"} <span className="opacity-70">(sale)</span>
+                      </p>
+                      <p>
+                        Dr {glAccountLabel(glPostingSettings.account_cogs_id) ?? "Cost of goods sold"} / Cr {glAccountLabel(glPostingSettings.account_inventory_id) ?? "Inventory"} <span className="opacity-70">(cost)</span>
+                      </p>
+                    </div>
+                  </section>
+
+                  <section className="rounded-xl border border-[var(--gs-border)] p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-bold text-[var(--gs-text)]">Purchases posting</h3>
+                        <p className="mt-0.5 text-xs text-[var(--gs-muted)]">Used when a purchase receipt or vendor payment is posted.</p>
+                      </div>
+                      {glReadinessBadge(glPurchaseReady, glPurchaseMissing)}
+                    </div>
+                    <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <label className="block text-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--gs-muted)]">Purchase receipt mode</span>
+                        <select
+                          value={glPostingSettings.purchase_receipt_mode}
+                          onChange={(e) => setGlPostingSettings((p) => (p ? { ...p, purchase_receipt_mode: e.target.value } : p))}
+                          className="gs-field"
+                        >
+                          <option value="inventory">Debit inventory (asset)</option>
+                          <option value="expense">Debit purchases (expense)</option>
+                        </select>
+                        <span className="mt-1 block text-xs text-[var(--gs-muted)]">Where the received goods&apos; cost lands.</span>
+                      </label>
+                      {renderGlAccountSelect({
+                        label: "Inventory (asset)",
+                        value: glPostingSettings.account_inventory_id,
+                        type: "asset",
+                        recommendedSubtype: "inventory",
+                        helper: "Stock asset; debited on receipt (inventory mode), credited on sale.",
+                        onPick: (id) => setGlPostingSettings((p) => (p ? { ...p, account_inventory_id: id } : p)),
+                      })}
+                      {renderGlAccountSelect({
+                        label: "Purchases (expense)",
+                        value: glPostingSettings.account_purchases_id,
+                        type: "expense",
+                        helper: "Used instead of Inventory when receipt mode is Expense.",
+                        onPick: (id) => setGlPostingSettings((p) => (p ? { ...p, account_purchases_id: id } : p)),
+                      })}
+                      {renderGlAccountSelect({
+                        label: "Accounts payable (liability)",
+                        value: glPostingSettings.account_ap_id,
+                        type: "liability",
+                        recommendedSubtype: "payable",
+                        helper: "Credited with the amount owed to the vendor.",
+                        onPick: (id) => setGlPostingSettings((p) => (p ? { ...p, account_ap_id: id } : p)),
+                      })}
+                      {renderGlAccountSelect({
+                        label: "Default bank / cash (asset)",
+                        value: glPostingSettings.account_default_bank_id,
+                        type: "asset",
+                        recommendedSubtype: "bank",
+                        helper: "Credited on vendor payments; debited on customer receipts.",
+                        onPick: (id) => setGlPostingSettings((p) => (p ? { ...p, account_default_bank_id: id } : p)),
+                      })}
+                    </div>
+                    <label className="mt-3 flex items-center gap-2 text-sm text-[var(--gs-text)]">
+                      <input
+                        type="checkbox"
+                        checked={glPostingSettings.auto_post_purchase_lots}
+                        onChange={(e) => setGlPostingSettings((p) => (p ? { ...p, auto_post_purchase_lots: e.target.checked } : p))}
+                      />
+                      Auto-post purchase receipts and vendor payments to the general ledger
+                    </label>
+                    <div className="mt-3 rounded-lg bg-black/5 p-3 text-xs text-[var(--gs-muted)] ring-1 ring-[var(--gs-border)] dark:bg-white/5">
+                      <p className="font-semibold text-[var(--gs-text)]">Posting preview (per receipt)</p>
+                      <p className="mt-1">
+                        Dr {glPurchaseMode === "inventory" ? (glAccountLabel(glPostingSettings.account_inventory_id) ?? "Inventory") : (glAccountLabel(glPostingSettings.account_purchases_id) ?? "Purchases")} / Cr {glAccountLabel(glPostingSettings.account_ap_id) ?? "Accounts payable"} <span className="opacity-70">(goods received)</span>
+                      </p>
+                    </div>
+                  </section>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    {glPostingSaveFlash ? (
+                      <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{glPostingSaveFlash}</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={glPostingSave}
+                      onClick={() => void saveGlPostingSettings()}
+                      className="rounded-full bg-[var(--gs-accent)] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      {glPostingSave ? "Saving…" : "Save GL posting settings"}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

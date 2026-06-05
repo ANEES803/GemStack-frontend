@@ -6,8 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 import { AddCustomerModal } from "@/components/sales/AddCustomerModal";
 import { ReceivePaymentModal, type ReceivePaymentInitial } from "@/components/sales/ReceivePaymentModal";
+import { SalesReceiptsWorkspace } from "@/components/sales/SalesReceiptsWorkspace";
 import { AppDialog } from "@/components/ui/AppDialog";
+import { useOptionalPermissions } from "@/contexts/PermissionContext";
 import { getAccessToken } from "@/lib/authClient";
+import { canAccess } from "@/lib/permissions";
 import {
   createCustomer,
   customerDtoToDisplay,
@@ -35,7 +38,9 @@ import {
   addSalesInvoicePayment,
   fetchSalesInvoices,
   postSalesInvoice,
+  receivePaymentToCreateBody,
   summaryToListRow,
+  type ReceivePaymentSubmitPayload,
   voidSalesInvoice,
 } from "@/lib/salesInvoicesApi";
 
@@ -75,7 +80,7 @@ const SORT_OPTIONS: SortOption[] = [
   { id: "amount_high", label: "Amount (high → low)" },
   { id: "amount_low", label: "Amount (low → high)" },
   { id: "customer_az", label: "Customer (A → Z)" },
-  { id: "fep_az", label: "FEP (A → Z)" },
+  { id: "fep_az", label: "Salesperson (A → Z)" },
   { id: "invoice_asc", label: "Invoice # (A → Z)" },
   { id: "invoice_desc", label: "Invoice # (Z → A)" },
   { id: "status_az", label: "Status (A → Z)" },
@@ -83,7 +88,7 @@ const SORT_OPTIONS: SortOption[] = [
 
 const METHODS = ["PayPal", "Bank", "Cash", "Wire (SWIFT)", "Other"] as const;
 
-function pill(status: DemoInvoiceRow["status"]) {
+function pill(status: DemoInvoiceRow["status"] | "Partial" | "Open" | "Draft") {
   if (status === "Paid") {
     return (
       <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-200 dark:bg-emerald-900/90 dark:text-emerald-50 dark:ring-emerald-600">
@@ -91,9 +96,16 @@ function pill(status: DemoInvoiceRow["status"]) {
       </span>
     );
   }
+  if (status === "Partial") {
+    return (
+      <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-950 ring-1 ring-sky-200">
+        Partial
+      </span>
+    );
+  }
   return (
     <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-950 ring-1 ring-amber-200 dark:bg-amber-950/85 dark:text-amber-100 dark:ring-amber-700">
-      Pending
+      {status === "Open" ? "Open" : status === "Draft" ? "Draft" : "Pending"}
     </span>
   );
 }
@@ -140,6 +152,7 @@ function csvEscape(cell: string): string {
 
 function SalesPageContent() {
   const { pushToast } = useAppNotifications();
+  const permCtx = useOptionalPermissions();
   const router = useRouter();
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab") ?? "transactions";
@@ -150,6 +163,7 @@ function SalesPageContent() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentInitial, setPaymentInitial] = useState<ReceivePaymentInitial | undefined>(undefined);
   const [paymentRow, setPaymentRow] = useState<InvoiceView | null>(null);
+  const [receiptsRefreshKey, setReceiptsRefreshKey] = useState(0);
   const [customers, setCustomers] = useState<CustomerDisplayRow[]>([]);
   const [customersSource, setCustomersSource] = useState<"api" | "local">("local");
   const [customersLoading, setCustomersLoading] = useState(false);
@@ -169,6 +183,7 @@ function SalesPageContent() {
   );
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [salespersonFilter, setSalespersonFilter] = useState("");
 
   const refreshInvoices = useCallback(async () => {
     if (!getAccessToken()) {
@@ -209,7 +224,7 @@ function SalesPageContent() {
   }, [pushToast]);
 
   useEffect(() => {
-    if (tab === "transactions") void refreshInvoices();
+    if (tab === "transactions" || tab === "receipts") void refreshInvoices();
   }, [tab, refreshInvoices]);
 
   const refreshCustomers = useCallback(async () => {
@@ -276,30 +291,36 @@ function SalesPageContent() {
     [rows],
   );
 
-  async function handleRecordPayment(
-    row: InvoiceView,
-    payload: { amount: number; method: string; depositTo: string; date: string },
-  ) {
-    if (!row.apiId) {
-      pushToast("Sign in and use server invoices to record payments.", "info");
+  const openInvoicesForPayment = useMemo(
+    () =>
+      viewRows
+        .filter((row) => row.apiId && (row.balanceDue ?? 0) > 0 && row.rawStatus !== "draft" && row.rawStatus !== "void")
+        .map((row) => ({
+          apiId: row.apiId!,
+          invoiceCode: row.invoiceCode ?? row.id,
+          customerName: row.customer,
+          balanceDue: row.balanceDue ?? 0,
+          currency: "USD",
+        })),
+    [viewRows],
+  );
+
+  const showSalespersonColumn = useMemo(() => {
+    const perms = permCtx?.permissions ?? {};
+    return canAccess(perms.users_roles, "view") || canAccess(perms.reports, "view");
+  }, [permCtx?.permissions]);
+
+  async function handleRecordPayment(payload: ReceivePaymentSubmitPayload) {
+    const invoiceId = payload.invoiceApiId || paymentRow?.apiId;
+    if (!invoiceId) {
+      pushToast("Sign in and select a server invoice to record payments.", "info");
       return;
     }
-    const methodMap: Record<string, string> = {
-      Cash: "cash",
-      "Bank Transfer": "bank",
-      "Direct to Bank Account": "bank",
-      Cheque: "cheque",
-      Online: "bank",
-    };
     try {
-      await addSalesInvoicePayment(row.apiId, {
-        amount: payload.amount,
-        payment_method: methodMap[payload.method] ?? "bank",
-        pay_date: payload.date,
-        reference_no: payload.depositTo,
-      });
+      await addSalesInvoicePayment(invoiceId, receivePaymentToCreateBody(payload));
       pushToast("Payment recorded.", "success");
       await refreshInvoices();
+      setReceiptsRefreshKey((k) => k + 1);
     } catch (e) {
       pushToast(e instanceof Error ? e.message : "Payment failed", "error");
     }
@@ -307,8 +328,8 @@ function SalesPageContent() {
 
   const hasActiveFilters = useMemo(() => {
     const anyMethod = METHODS.some((m) => methodFilters[m]);
-    return statusPaid || statusPending || anyMethod || Boolean(dateFrom) || Boolean(dateTo);
-  }, [statusPaid, statusPending, methodFilters, dateFrom, dateTo]);
+    return statusPaid || statusPending || anyMethod || Boolean(dateFrom) || Boolean(dateTo) || Boolean(salespersonFilter);
+  }, [statusPaid, statusPending, methodFilters, dateFrom, dateTo, salespersonFilter]);
 
   function resetFilters() {
     setStatusPaid(false);
@@ -316,7 +337,17 @@ function SalesPageContent() {
     setMethodFilters(Object.fromEntries(METHODS.map((m) => [m, false])));
     setDateFrom("");
     setDateTo("");
+    setSalespersonFilter("");
   }
+
+  const salespersonOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const name = (r as DemoInvoiceRow).fep;
+      if (name && name !== "-") set.add(name);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
 
   const filteredSorted = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -327,11 +358,14 @@ function SalesPageContent() {
       }
       if (statusPaid || statusPending) {
         const match =
-          (statusPaid && row.status === "Paid") || (statusPending && row.status === "Pending");
+          (statusPaid && row.status === "Paid") ||
+          (statusPending &&
+            (row.status === "Pending" || row.status === "Partial" || row.status === "Open" || row.status === "Draft"));
         if (!match) return false;
       }
       const anyMethod = METHODS.some((m) => methodFilters[m]);
       if (anyMethod && !methodFilters[row.method]) return false;
+      if (salespersonFilter && row.fep !== salespersonFilter) return false;
       if (dateFrom && row.dateIso < dateFrom) return false;
       if (dateTo && row.dateIso > dateTo) return false;
       return true;
@@ -370,10 +404,10 @@ function SalesPageContent() {
         break;
     }
     return sorted;
-  }, [viewRows, search, sortId, statusPaid, statusPending, methodFilters, dateFrom, dateTo]);
+  }, [viewRows, search, sortId, statusPaid, statusPending, methodFilters, salespersonFilter, dateFrom, dateTo]);
 
   const exportCsv = useCallback(() => {
-    const headers = ["Invoice", "Customer", "FEP", "Payment method", "Amount", "Status", "Date"];
+    const headers = ["Invoice", "Customer", "Salesperson", "Payment method", "Amount", "Status", "Date"];
     const lines = filteredSorted.map((r) =>
       [r.id, r.customer, r.fep, r.method, r.amount, r.status, r.dateIso].map(csvEscape).join(","),
     );
@@ -726,26 +760,16 @@ function SalesPageContent() {
       )}
 
       {tab === "receipts" && (
-        <section className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)] p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-[var(--gs-text)]">Receipts & customer payments</h2>
-          <p className="mt-1 text-sm text-[var(--gs-muted)]">Allocate incoming payments to open invoices  same flow as Receive payment on invoices.</p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => openReceivePayment()}
-              className="rounded-full bg-[var(--gs-accent)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm"
-            >
-              Receive payment
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push("/sales?tab=receipts")}
-              className="rounded-full border border-[var(--gs-border)] px-5 py-2.5 text-sm font-semibold text-[var(--gs-text)] hover:bg-[var(--gs-hover)]"
-            >
-              Receipts tab
-            </button>
-          </div>
-        </section>
+        <SalesReceiptsWorkspace
+          openInvoices={openInvoicesForPayment}
+          showSalespersonColumn={showSalespersonColumn}
+          refreshKey={receiptsRefreshKey}
+          onReceivePayment={(initial) => {
+            setPaymentRow(null);
+            setPaymentInitial(initial);
+            setPaymentOpen(true);
+          }}
+        />
       )}
 
       {tab === "transactions" && (
@@ -801,7 +825,7 @@ function SalesPageContent() {
       }
       toolbar={
         <ListToolbarInteractive
-          placeholder="Search by invoice, customer, FEP..."
+          placeholder="Search by invoice, customer, salesperson..."
           search={search}
           onSearchChange={setSearch}
           sortOptions={SORT_OPTIONS}
@@ -817,6 +841,22 @@ function SalesPageContent() {
                   <FilterCheckboxRow label="Pending" checked={statusPending} onChange={setStatusPending} />
                 </FilterCheckboxGrid>
               </FilterSection>
+              {salespersonOptions.length > 0 ? (
+                <FilterSection title="Salesperson">
+                  <select
+                    value={salespersonFilter}
+                    onChange={(e) => setSalespersonFilter(e.target.value)}
+                    className="gs-field"
+                  >
+                    <option value="">All salespeople</option>
+                    {salespersonOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </FilterSection>
+              ) : null}
               <FilterSection title="Payment method">
                 <FilterCheckboxGrid>
                   {METHODS.map((m) => (
@@ -843,8 +883,8 @@ function SalesPageContent() {
             <tr className="border-b border-[var(--gs-border)]/80 bg-[var(--gs-table-head)] text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
               <th className="px-5 py-3.5 sm:px-6 sm:py-4">Invoice</th>
               <th className="px-5 py-3.5 sm:px-6 sm:py-4">Customer</th>
-              <th className="px-5 py-3.5 sm:px-6 sm:py-4">FEP</th>
-              <th className="px-5 py-3.5 sm:px-6 sm:py-4">Payment</th>
+              <th className="px-5 py-3.5 sm:px-6 sm:py-4">Salesperson</th>
+              <th className="px-5 py-3.5 sm:px-6 sm:py-4">Invoice status</th>
               <th className="px-5 py-3.5 text-right sm:px-6 sm:py-4">Amount</th>
               <th className="px-5 py-3.5 sm:px-6 sm:py-4">Status</th>
               <th className="px-5 py-3.5 text-right sm:px-6 sm:py-4">Actions</th>
@@ -954,14 +994,17 @@ function SalesPageContent() {
         open={paymentOpen}
         onClose={() => setPaymentOpen(false)}
         initial={paymentInitial}
+        openInvoices={openInvoicesForPayment}
+        requireInvoiceSelection={Boolean(getAccessToken())}
         amountDue={
           paymentInitial?.invoiceId
-            ? viewRows.find((r) => (r.apiId ?? r.id) === paymentInitial.invoiceId)?.balanceDue
-            : undefined
+            ? openInvoicesForPayment.find(
+                (r) => r.apiId === paymentInitial.invoiceId || r.invoiceCode === paymentInitial.invoiceId,
+              )?.balanceDue ??
+              viewRows.find((r) => (r.apiId ?? r.id) === paymentInitial.invoiceId)?.balanceDue
+            : paymentRow?.balanceDue
         }
-        onSubmitPayment={(payload) => {
-          if (paymentRow) void handleRecordPayment(paymentRow, payload);
-        }}
+        onSubmitPayment={(payload) => void handleRecordPayment(payload)}
       />
     </>
   );

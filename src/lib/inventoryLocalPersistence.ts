@@ -1,11 +1,9 @@
 /**
- * Inventory Hub browser persistence is for guests only (no auth token).
- * Signed-in users must use `/inv/*` APIs; do not read or write these keys.
+ * Inventory is backend-only and requires sign-in. It never persists to localStorage.
+ * These helpers remain to clear any legacy keys written by older builds.
  */
 
-import { getAccessToken } from "@/lib/authClient";
-
-/** Keys written by Inventory Hub / item catalog demo storage. */
+/** Legacy keys written by older Inventory Hub / item catalog demo builds (cleared on load). */
 export const INVENTORY_LOCAL_STORAGE_KEYS = [
   "gemstack-items-catalog-v1",
   "gemstack-inventory-audit-records-v1",
@@ -18,10 +16,12 @@ export const INVENTORY_LOCAL_STORAGE_KEYS = [
   "gemstack-inventory-hidden-category-presets-v1",
 ] as const;
 
-/** True when inventory may use localStorage (signed-out / demo). */
+/**
+ * Inventory no longer supports a guest/localStorage mode. Always false so every
+ * legacy persistence branch becomes a no-op and all data flows through `/inv/*`.
+ */
 export function isInventoryGuestMode(): boolean {
-  if (typeof window === "undefined") return false;
-  return !getAccessToken();
+  return false;
 }
 
 /** Remove stale inventory keys after sign-in so DevTools does not show old data. */

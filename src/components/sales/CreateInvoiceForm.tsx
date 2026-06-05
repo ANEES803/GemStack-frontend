@@ -7,7 +7,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AddCustomerModal } from "@/components/sales/AddCustomerModal";
 import { ReceivePaymentModal } from "@/components/sales/ReceivePaymentModal";
 import { AppDialog } from "@/components/ui/AppDialog";
-import { getAccessToken } from "@/lib/authClient";
+import { displayName, getAccessToken } from "@/lib/authClient";
+import { useOptionalPermissions } from "@/contexts/PermissionContext";
+import { canAccess } from "@/lib/permissions";
+import { fetchAdminUsers, type AdminUserRecord } from "@/lib/rbacApi";
 import {
   createCustomer,
   customerDtoToDisplay,
@@ -69,9 +72,12 @@ export function CreateInvoiceForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const todayIso = useHydratedTodayIso();
+  const permCtx = useOptionalPermissions();
+  const currentUser = permCtx?.user ?? null;
+  const canAssignSalesperson = canAccess(currentUser?.permissions?.["users_roles"], "view");
   const prefillCustomerId = searchParams.get("customerId");
   const prefillStockUnitIds = searchParams.get("stockUnitIds");
-  const prefillPurchaseLotId = searchParams.get("purchaseLotId");
+  const prefillStockId = searchParams.get("stockId");
   const prefillApplied = useRef(false);
   const stockPrefillApplied = useRef(false);
 
@@ -99,6 +105,29 @@ export function CreateInvoiceForm() {
   const [lines, setLines] = useState<InvoiceLine[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [salespersonId, setSalespersonId] = useState("");
+  const [teamMembers, setTeamMembers] = useState<AdminUserRecord[]>([]);
+
+  useEffect(() => {
+    if (currentUser?.id) setSalespersonId((prev) => prev || currentUser.id);
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!getAccessToken() || !canAssignSalesperson) return;
+      try {
+        const users = await fetchAdminUsers();
+        if (!cancelled) setTeamMembers(users.filter((u) => u.is_active));
+      } catch {
+        /* fall back to self-only assignment */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canAssignSalesperson]);
 
   useEffect(() => {
     let cancelled = false;
@@ -312,6 +341,7 @@ export function CreateInvoiceForm() {
           payment_terms: paymentTerms,
           reference_no: referenceNo.trim(),
           memo: notes.trim(),
+          salesperson_id: salespersonId || undefined,
           lines: lines.map((l, i) => ({
             stock_unit_id: l.stockUnitId,
             description: l.description || l.item,
@@ -433,6 +463,35 @@ export function CreateInvoiceForm() {
               <label className="gs-label">Invoice no.</label>
               <input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className="gs-field" />
             </div>
+            {getAccessToken() && currentUser ? (
+              <div>
+                <label className="gs-label">Salesperson</label>
+                {canAssignSalesperson && teamMembers.length > 0 ? (
+                  <select
+                    value={salespersonId}
+                    onChange={(e) => setSalespersonId(e.target.value)}
+                    className="gs-field"
+                  >
+                    {!teamMembers.some((u) => u.id === currentUser.id) ? (
+                      <option value={currentUser.id}>{displayName(currentUser)} (me)</option>
+                    ) : null}
+                    {teamMembers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {displayName(u)}
+                        {u.id === currentUser.id ? " (me)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input value={displayName(currentUser)} readOnly className="gs-field opacity-80" />
+                )}
+                <p className="mt-1 text-xs text-[var(--gs-muted)]">
+                  {canAssignSalesperson
+                    ? "Credit this sale to a team member."
+                    : "Sales are credited to you."}
+                </p>
+              </div>
+            ) : null}
             <div className="sm:col-span-2">
               <label className="gs-label">Notes / Memo</label>
               <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} className="gs-field" />
@@ -484,7 +543,7 @@ export function CreateInvoiceForm() {
         onClose={() => setPickerOpen(false)}
         onConfirm={addUnitsFromPicker}
         excludeUnitIds={lines.map((l) => l.stockUnitId).filter(Boolean)}
-        initialLotId={prefillPurchaseLotId}
+        initialStockUnitId={prefillStockId}
       />
 
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-[var(--gs-border)] bg-[var(--gs-card)]/95 backdrop-blur">

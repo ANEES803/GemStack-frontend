@@ -14,7 +14,6 @@ export type StoredItemRow = {
   date: string;
   itemName: string;
   itemKind: ItemKindKey;
-  category: string;
   type: "Product" | "Service" | "Raw";
   grade: string;
   dimLength: string;

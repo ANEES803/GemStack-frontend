@@ -72,6 +72,11 @@ export function gradeFromAttributes(attrs: Record<string, unknown> | null | unde
 
 export function imageUrlFromAttributes(attrs: Record<string, unknown> | null | undefined): string | null {
   if (!attrs) return null;
+  const hub = attrs.hub;
+  if (hub && typeof hub === "object") {
+    const url = (hub as { primary_image_url?: string }).primary_image_url;
+    if (typeof url === "string" && url.trim()) return url.trim();
+  }
   const media = attrs.media;
   if (media && typeof media === "object") {
     const url = (media as { primary_image_url?: string }).primary_image_url;

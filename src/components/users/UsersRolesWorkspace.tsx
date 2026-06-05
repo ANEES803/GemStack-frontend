@@ -4,8 +4,9 @@ import { useState } from "react";
 
 import { RolesAccessTable } from "@/components/rbac/RolesAccessTable";
 import { UsersAdminTable } from "@/components/rbac/UsersAdminTable";
+import { SalespersonReportPanel } from "@/components/sales/SalespersonReportPanel";
 
-type TabId = "roles" | "users";
+type TabId = "roles" | "users" | "team_sales";
 
 function cx(...parts: (string | false | undefined)[]) {
   return parts.filter(Boolean).join(" ");
@@ -41,6 +42,7 @@ export function UsersRolesWorkspace({ embedded = false }: { embedded?: boolean }
           [
             ["roles", "Roles & access"],
             ["users", "Users"],
+            ["team_sales", "Team sales"],
           ] as const
         ).map(([id, label]) => {
           const active = tab === id;
@@ -73,7 +75,13 @@ export function UsersRolesWorkspace({ embedded = false }: { embedded?: boolean }
       </div>
 
       <div className={embedded ? "min-w-0 pt-1" : undefined}>
-        {tab === "roles" ? <RolesAccessTable embedded={embedded} /> : <UsersAdminTable embedded={embedded} />}
+        {tab === "roles" ? (
+          <RolesAccessTable embedded={embedded} />
+        ) : tab === "users" ? (
+          <UsersAdminTable embedded={embedded} />
+        ) : (
+          <SalespersonReportPanel />
+        )}
       </div>
     </div>
   );

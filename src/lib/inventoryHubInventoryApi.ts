@@ -75,10 +75,19 @@ export function builderFieldsToJsonSchema(fields: CustomFieldDef[]): Record<stri
     }
     if (f.required !== false) required.push(key);
   }
+  // Field values live under attributes_json.custom (governance-allowed root key), so the
+  // schema nests the field definitions under `custom`. The backend coarse-check only looks at
+  // top-level `required`, so we keep field keys out of the top level to avoid false warnings.
   return {
     type: "object",
-    properties,
-    required: required.length ? required : undefined,
+    properties: {
+      custom: {
+        type: "object",
+        properties,
+        required: required.length ? required : undefined,
+        additionalProperties: true,
+      },
+    },
     additionalProperties: true,
   };
 }
@@ -126,28 +135,78 @@ export type ItemFormLike = {
   details: string;
   customFields: Record<string, string>;
   linkedRoughLotCode: string;
+  imageDataUrl?: string | null;
 };
+
+/**
+ * Downscale a data-URL image into a compact JPEG thumbnail that fits within the
+ * stock `attributes_json` budget (server default 32KB). Returns null when running
+ * server-side or when the source cannot be decoded so callers simply skip the image.
+ */
+export async function imageDataUrlToThumbnail(
+  dataUrl: string | null | undefined,
+  maxBytes = 24000,
+): Promise<string | null> {
+  if (!dataUrl || typeof document === "undefined") return null;
+  const src = dataUrl.trim();
+  if (!src.startsWith("data:image/")) {
+    // Already a hosted/short URL: keep it only when small enough to store inline.
+    return src.length <= maxBytes ? src : null;
+  }
+  const img = await new Promise<HTMLImageElement | null>((resolve) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => resolve(null);
+    el.src = src;
+  });
+  if (!img || !img.width || !img.height) return null;
+  let dimension = 320;
+  let quality = 0.72;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const scale = Math.min(1, dimension / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    const out = canvas.toDataURL("image/jpeg", quality);
+    if (out.length <= maxBytes) return out;
+    if (quality > 0.4) quality -= 0.15;
+    else dimension = Math.round(dimension * 0.75);
+  }
+  return null;
+}
 
 export async function buildAttributesJsonForStock(
   itemTypeKey: string,
   mode: "rough" | "cut" | "builder",
-  form: Pick<ItemFormLike, "grade" | "dimLength" | "dimWidth" | "dimHeight" | "customFields">,
+  form: Pick<ItemFormLike, "grade" | "dimLength" | "dimWidth" | "dimHeight" | "customFields" | "imageDataUrl">,
 ): Promise<Record<string, unknown> | null> {
+  // attributes_json must only use governance-allowed root keys (spec/custom/hub/...).
+  // Builder field values nest under `custom`; grade/dimensions nest under `spec`;
+  // the display image lives under `hub.primary_image_url` (a hub-owned root key).
+  const base: Record<string, unknown> = {};
   if (mode === "builder") {
-    const attrs: Record<string, unknown> = { ...form.customFields };
-    return Object.keys(attrs).length ? attrs : null;
-  }
-  if (mode === "cut") {
-    return {
-      spec: {
-        dimLength: form.dimLength.trim(),
-        dimWidth: form.dimWidth.trim(),
-        dimHeight: form.dimHeight.trim(),
-      },
+    const custom: Record<string, unknown> = { ...form.customFields };
+    if (Object.keys(custom).length) base.custom = custom;
+  } else if (mode === "cut") {
+    base.spec = {
+      dimLength: form.dimLength.trim(),
+      dimWidth: form.dimWidth.trim(),
+      dimHeight: form.dimHeight.trim(),
     };
+  } else {
+    const g = form.grade.trim();
+    if (g) base.spec = { grade: g };
   }
-  const g = form.grade.trim();
-  return g ? { grade: g } : null;
+  const thumb = await imageDataUrlToThumbnail(form.imageDataUrl);
+  if (thumb) {
+    base.hub = { ...(base.hub as Record<string, unknown> | undefined), primary_image_url: thumb };
+  }
+  return Object.keys(base).length ? base : null;
 }
 
 export async function resolveLocationAndCustodian(

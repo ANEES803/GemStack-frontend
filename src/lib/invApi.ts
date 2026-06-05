@@ -65,6 +65,7 @@ export type InvStockUnitDto = {
   location_id: string | null;
   custodian_user_id: string | null;
   custodian_party_id?: string | null;
+  custodian_party_name?: string;
   purchase_lot_id: string | null;
   purchase_lot_line_id: string | null;
   parent_unit_id: string | null;
@@ -172,6 +173,42 @@ export async function fetchSellableByLot(params?: {
   return (await res.json()) as InvSellableByLotDto;
 }
 
+/** Sellable stock grouped by its root stock unit (stock-first sales picker). */
+export type InvSellableStockGroupDto = {
+  root_unit_id: string;
+  root_public_code: string;
+  root_display_name: string;
+  item_type_label: string;
+  primary_image_url: string | null;
+  purchase_lot_id: string | null;
+  lot_code: string;
+  requires_split: boolean;
+  sellable_unit_count: number;
+  sellable_uom_total: string;
+  sellable_pieces_total: number;
+  units: InvStockUnitDto[];
+};
+
+export type InvSellableByStockDto = {
+  stocks: InvSellableStockGroupDto[];
+};
+
+export async function fetchSellableByStock(params?: {
+  search?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<InvSellableByStockDto> {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/sellable-by-stock?${q.toString()}`, {
+    method: "GET",
+    signal: params?.signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvSellableByStockDto;
+}
+
 export async function fetchStockUnit(unitId: string, signal?: AbortSignal): Promise<InvStockUnitDto> {
   const res = await apiAuthFetch(`${API_BASE_URL}/inv/stock-units/${encodeURIComponent(unitId)}`, {
     method: "GET",
@@ -254,6 +291,63 @@ export async function createLocation(
   });
   if (!res.ok) throw new Error(await parseError(res));
   return (await res.json()) as InvLocationDto;
+}
+
+export async function updateLocation(
+  locId: string,
+  body: { name?: string; parent_location_id?: string | null; is_active?: boolean },
+  signal?: AbortSignal,
+): Promise<InvLocationDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/locations/${locId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvLocationDto;
+}
+
+export type InvCustodianDto = {
+  id: string;
+  business_id: string;
+  display_name: string;
+  linked_user_id: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchCustodians(signal?: AbortSignal): Promise<InvCustodianDto[]> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/custodians`, { method: "GET", signal });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvCustodianDto[];
+}
+
+export async function createCustodian(
+  body: { display_name: string; linked_user_id?: string | null },
+  signal?: AbortSignal,
+): Promise<InvCustodianDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/custodians`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvCustodianDto;
+}
+
+export async function updateCustodian(
+  custodianId: string,
+  body: { display_name?: string; linked_user_id?: string | null; is_active?: boolean },
+  signal?: AbortSignal,
+): Promise<InvCustodianDto> {
+  const res = await apiAuthFetch(`${API_BASE_URL}/inv/custodians/${custodianId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as InvCustodianDto;
 }
 
 export async function resolveInventoryEntities(
