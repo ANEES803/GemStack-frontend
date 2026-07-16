@@ -7,6 +7,9 @@ import { useState } from "react";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { useAppNotifications } from "@/components/providers/AppNotificationsProvider";
 
+const fieldClass =
+  "mt-2 w-full rounded-xl border border-white/15 bg-white/10 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/40 focus:border-[#f15a24] focus:bg-white/15 focus:ring-2 focus:ring-[#f15a24]/30";
+
 export default function SignupPage() {
   const { pushToast } = useAppNotifications();
   const router = useRouter();
@@ -37,11 +40,11 @@ export default function SignupPage() {
   return (
     <AuthShell
       title="Create account"
-      subtitle="Start with your company details. You can invite teammates after setup."
+      subtitle="Start with your company details. Invite teammates after setup."
       footer={
         <>
           Already have an account?{" "}
-          <Link href="/login" className="font-semibold text-[var(--gs-accent)] hover:underline">
+          <Link href="/login" className="font-semibold text-white hover:underline">
             Sign in
           </Link>
         </>
@@ -49,7 +52,7 @@ export default function SignupPage() {
     >
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label htmlFor="signup-name" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+          <label htmlFor="signup-name" className="block text-xs font-bold uppercase tracking-wide text-white/70">
             Full name
           </label>
           <input
@@ -60,12 +63,12 @@ export default function SignupPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            className="mt-2 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-4 py-3 text-sm text-[var(--gs-text)] outline-none transition focus:border-[var(--gs-accent)] focus:bg-[var(--gs-card)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
+            className={fieldClass}
             placeholder="Sara Malik"
           />
         </div>
         <div>
-          <label htmlFor="signup-email" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+          <label htmlFor="signup-email" className="block text-xs font-bold uppercase tracking-wide text-white/70">
             Work email
           </label>
           <input
@@ -76,12 +79,12 @@ export default function SignupPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="mt-2 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-4 py-3 text-sm text-[var(--gs-text)] outline-none transition focus:border-[var(--gs-accent)] focus:bg-[var(--gs-card)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
+            className={fieldClass}
             placeholder="you@company.com"
           />
         </div>
         <div>
-          <label htmlFor="signup-password" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+          <label htmlFor="signup-password" className="block text-xs font-bold uppercase tracking-wide text-white/70">
             Password
           </label>
           <input
@@ -93,12 +96,12 @@ export default function SignupPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={8}
-            className="mt-2 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-4 py-3 text-sm text-[var(--gs-text)] outline-none transition focus:border-[var(--gs-accent)] focus:bg-[var(--gs-card)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
+            className={fieldClass}
             placeholder="At least 8 characters"
           />
         </div>
         <div>
-          <label htmlFor="signup-confirm" className="block text-xs font-bold uppercase tracking-wide text-[var(--gs-muted)]">
+          <label htmlFor="signup-confirm" className="block text-xs font-bold uppercase tracking-wide text-white/70">
             Confirm password
           </label>
           <input
@@ -109,26 +112,33 @@ export default function SignupPage() {
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             required
-            className="mt-2 w-full rounded-xl border border-[var(--gs-border)] bg-[var(--gs-hover)]/80 px-4 py-3 text-sm text-[var(--gs-text)] outline-none transition focus:border-[var(--gs-accent)] focus:bg-[var(--gs-card)] focus:ring-2 focus:ring-[var(--gs-accent)]/25"
+            className={fieldClass}
             placeholder="Repeat password"
           />
         </div>
-        <label className="flex cursor-pointer items-start gap-2 text-sm text-[var(--gs-muted)]">
+        <label className="flex cursor-pointer items-start gap-2 text-sm text-white/65">
           <input
             type="checkbox"
             checked={accept}
             onChange={(e) => setAccept(e.target.checked)}
-            className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--gs-border-strong)] text-[var(--gs-accent)] focus:ring-[var(--gs-accent)]"
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/30 bg-white/10 text-[#f15a24] focus:ring-[#f15a24]"
           />
           <span>
-            I agree to the <button type="button" className="font-semibold text-[var(--gs-accent)] hover:underline">Terms</button> and{" "}
-            <button type="button" className="font-semibold text-[var(--gs-accent)] hover:underline">Privacy policy</button> (demo).
+            I agree to the{" "}
+            <button type="button" className="font-semibold text-white hover:underline">
+              Terms
+            </button>{" "}
+            and{" "}
+            <button type="button" className="font-semibold text-white hover:underline">
+              Privacy policy
+            </button>
+            .
           </span>
         </label>
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-xl bg-[var(--gs-accent)] py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[var(--gs-accent-hover)] disabled:opacity-60"
+          className="w-full rounded-xl bg-[#f15a24] py-3.5 text-sm font-bold text-white shadow-[0_12px_30px_rgba(241,90,36,0.35)] transition hover:bg-[#d14a1c] disabled:opacity-60"
         >
           {busy ? "Creating account..." : "Create account"}
         </button>
