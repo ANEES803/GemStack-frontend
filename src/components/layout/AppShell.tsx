@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { MustChangePasswordModal } from "@/components/auth/MustChangePasswordModal";
+import { SolvraMark } from "@/components/brand/SolvraMark";
 import { DateFormatProvider } from "@/contexts/DateFormatContext";
 import { PermissionProvider } from "@/contexts/PermissionContext";
 import { GlobalSearchBar } from "@/components/layout/GlobalSearchBar";
@@ -93,7 +94,7 @@ function shellHeading(pathname: string): { title: string; sub?: string } {
   }
   const mapped = ROUTE_HEADINGS[pathname];
   if (mapped) return mapped;
-  return { title: "GemStack ERP", sub: "Workspace" };
+  return { title: "Solvra ERP", sub: "Workspace" };
 }
 
 function CreateMenu() {
@@ -465,23 +466,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               href="/dashboard"
               className="group flex min-w-0 max-w-[min(20rem,calc(100vw-10rem))] shrink-0 items-center gap-2.5 rounded-xl py-1 outline-none ring-offset-2 ring-offset-[var(--gs-shell-header)] transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)]"
-              title="GemStack — Home"
+              title="Solvra Home"
             >
-              <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--gs-card)] text-[var(--gs-accent)] shadow-sm ring-1 ring-[var(--gs-border)] transition-transform duration-200 ease-out will-change-transform group-hover:scale-[1.03]">
-                <span className="absolute inset-0 rounded-lg bg-gradient-to-br from-[var(--gs-card)] via-[var(--gs-card)] to-[var(--gs-card)]" />
-                <svg className="relative h-[14px] w-[14px] drop-shadow-[0_4px_12px_rgba(241,90,36,0.2)]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                  <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6L12 2z" />
-                </svg>
+              <span className="transition-transform duration-200 ease-out will-change-transform group-hover:scale-[1.03]">
+                <SolvraMark size="sm" showWordmark={false} />
               </span>
               <span className="min-w-0">
                 <span className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-base font-black leading-tight tracking-tight sm:text-[1.05rem]">
-                    <span className="bg-gradient-to-r from-[var(--gs-text)] via-[var(--gs-muted)] to-[var(--gs-accent)] bg-clip-text text-transparent">
-                      GemStack
-                    </span>
+                  <span className="text-base font-bold leading-tight tracking-tight text-[var(--gs-text)] sm:text-[1.05rem]">
+                    Solvra
                   </span>
                   <span className="shrink-0 rounded-full bg-[var(--gs-accent-soft)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--gs-accent)] ring-1 ring-[var(--gs-border)]">
-                    Beta
+                    ERP
                   </span>
                 </span>
               </span>

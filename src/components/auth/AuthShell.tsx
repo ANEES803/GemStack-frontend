@@ -1,5 +1,20 @@
 import Link from "next/link";
+import { Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
+
+import { SolvraMark } from "@/components/brand/SolvraMark";
+
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-solvra-sans",
+  display: "swap",
+});
+
+const grotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-solvra-display",
+  display: "swap",
+});
 
 type AuthShellProps = {
   title: string;
@@ -10,42 +25,42 @@ type AuthShellProps = {
 
 export function AuthShell({ title, subtitle, children, footer }: AuthShellProps) {
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-slate-50 via-[var(--gs-page-bg)] to-slate-100/80 px-4 py-10">
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.35]"
-        style={{
-          backgroundImage: "radial-gradient(circle at 20% 20%, rgba(241,90,36,0.12), transparent 45%), radial-gradient(circle at 80% 0%, rgba(15,23,42,0.06), transparent 40%)",
-        }}
-        aria-hidden
-      />
-      <div className="relative w-full max-w-[420px] sm:max-w-[520px]">
+    <div
+      className={`${jakarta.variable} ${grotesk.variable} relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-10 text-white`}
+      style={{ fontFamily: "var(--font-solvra-sans), ui-sans-serif, sans-serif" }}
+    >
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+        <div className="absolute inset-0 bg-[linear-gradient(160deg,#0b1f2a_0%,#123041_38%,#1a3d4d_68%,#214454_100%)]" />
+        <div
+          className="absolute inset-0 opacity-90"
+          style={{
+            backgroundImage:
+              "radial-gradient(ellipse 55% 45% at 18% 20%, rgba(241,90,36,0.28), transparent 58%), radial-gradient(ellipse 50% 40% at 82% 15%, rgba(125,211,216,0.16), transparent 55%), radial-gradient(ellipse 70% 55% at 60% 100%, rgba(15,90,95,0.35), transparent 60%)",
+          }}
+        />
+        <div className="absolute -left-20 top-10 h-80 w-80 animate-[solvra-float_14s_ease-in-out_infinite] rounded-full bg-[rgba(241,90,36,0.18)] blur-3xl" />
+        <div className="absolute -right-24 bottom-0 h-96 w-96 animate-[solvra-float_18s_ease-in-out_infinite_reverse] rounded-full bg-[rgba(125,211,216,0.14)] blur-3xl" />
+      </div>
+
+      <div className="relative w-full max-w-[420px] sm:max-w-[480px]">
         <Link
-          href="/dashboard"
-          className="mb-8 flex items-center justify-center gap-2 rounded-xl outline-none ring-offset-2 transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[var(--gs-accent)]"
+          href="/"
+          className="mb-8 flex justify-center rounded-xl outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[#f15a24]"
         >
-          <span className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--gs-card)] text-[var(--gs-accent)] shadow-sm ring-1 ring-orange-100/80">
-            <svg className="relative h-4 w-4 drop-shadow-[0_4px_12px_rgba(241,90,36,0.2)]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6L12 2z" />
-            </svg>
-          </span>
-          <span className="bg-gradient-to-r from-[var(--gs-navy)] via-slate-900 to-[var(--gs-accent)] bg-clip-text text-xl font-black tracking-tight text-transparent">
-            GemStack
-          </span>
-          <span className="rounded-full bg-orange-100/80 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-orange-800 ring-1 ring-orange-200/70">
-            Beta
-          </span>
+          <SolvraMark size="md" tone="onDark" />
         </Link>
 
-        <div className="rounded-2xl border border-[var(--gs-border)] bg-[var(--gs-card)]/95 p-6 shadow-[0_8px_40px_rgba(15,23,42,0.08)] sm:p-8 md:p-10">
-          <h1 className="text-center text-2xl font-bold tracking-tight text-[var(--gs-text)] md:text-3xl">{title}</h1>
-          {subtitle ? <p className="mt-2 text-center text-sm leading-relaxed text-[var(--gs-muted)] md:text-base">{subtitle}</p> : null}
+        <div className="rounded-[1.75rem] border border-white/20 bg-white/12 p-6 shadow-[0_30px_90px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:p-8">
+          <h1
+            className="text-center text-2xl font-bold tracking-tight text-white"
+            style={{ fontFamily: "var(--font-solvra-display), var(--font-solvra-sans), sans-serif" }}
+          >
+            {title}
+          </h1>
+          {subtitle ? <p className="mt-2 text-center text-sm leading-relaxed text-white/65">{subtitle}</p> : null}
           <div className="mt-6">{children}</div>
-          {footer ? <div className="mt-6 border-t border-[var(--gs-border)] pt-5 text-center text-sm text-[var(--gs-muted)]">{footer}</div> : null}
+          {footer ? <div className="mt-6 border-t border-white/10 pt-5 text-center text-sm text-white/60">{footer}</div> : null}
         </div>
-
-        <p className="mt-6 text-center text-xs text-[var(--gs-muted)]">
-          Demo only — connect your auth API (email + password, OTP per SRS).
-        </p>
       </div>
     </div>
   );
