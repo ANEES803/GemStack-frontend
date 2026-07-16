@@ -74,8 +74,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "GemStack — Gemstone ERP",
-  description: "Inventory, sales, and accounting for gemstone trading",
+  title: "Solvra | Business ERP",
+  description: "Business solutions for operations, finance, and teams",
 };
 
 export default function RootLayout({
