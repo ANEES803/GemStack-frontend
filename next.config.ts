@@ -22,18 +22,27 @@ function appDir(absoluteDir: string): string {
 const rootDir = appDir(__dirname);
 const nodeModulesRoot = path.join(rootDir, "node_modules");
 
+/** Backend target for /gemstack-api proxy (local uvicorn or EC2). No trailing slash. */
+const apiProxyTarget = (
+  process.env.GEMSTACK_API_PROXY_TARGET || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
 /**
  * Pin the app root when another lockfile exists higher up (e.g. under your user profile).
  * @see https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats
  */
 const nextConfig: NextConfig = {
   outputFileTracingRoot: rootDir,
-  /** Proxy API calls through Next (same origin as :3000) so profile upload always hits the running backend. */
+  /**
+   * Browser calls same-origin /gemstack-api; Next proxies to the real backend.
+   * This avoids Chrome "Not secure" / mixed-content when frontend is HTTPS (Vercel)
+   * and backend is plain HTTP on EC2.
+   */
   async rewrites() {
     return [
       {
         source: "/gemstack-api/:path*",
-        destination: "http://127.0.0.1:8000/:path*",
+        destination: `${apiProxyTarget}/:path*`,
       },
     ];
   },
